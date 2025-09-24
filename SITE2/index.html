@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pcalc Modular</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">Pcalc • Treino de Mãos</header>
+
+  <main class="container">
+    <section class="panel">
+      <h2>Baralho</h2>
+      <div id="deck" class="deck"></div>
+
+      <div class="controls">
+        <button id="btnFlop" class="btn">Sortear Flop</button>
+        <button id="btnTurn" class="btn">Sortear Turn</button>
+        <button id="btnRiver" class="btn">Sortear River</button>
+        <button id="btnClear" class="btn alt">Limpar</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Pré-flop (Chen)</h2>
+      <div id="preflopBox" style="display:none"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Equidade & Sugestão</h2>
+      <div id="equityBox" style="display:none"></div>
+      <div class="nutsline"></div>
+      <div id="nutsCat" class="mut small"></div>
+      <div id="handCat" class="mut small"></div>
+    </section>
+
+    <section class="panel">
+      <div id="ctxInfo" class="mut"></div>
+      <div id="stateHint" class="mut">Selecione flop para ver outs</div>
+      <div id="outs" class="outs"></div>
+    </section>
+  </main>
+
+  <script src="login-guard.js"></script>
+  <script type="module" src="pcalc-app.js"></script>
+</body>
+</html>

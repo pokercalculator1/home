@@ -1,0 +1,13 @@
+{
+  "Dirciano": "2025-10-25",
+  "Guest": "31/12/2025",
+  "Maria": {
+    "exp": "2026-01-10",
+    "valor": "R$ 29,90",
+    "plano": "Mensal"
+  },
+  "Bloq": {
+    "exp": "2026-12-31",
+    "blocked": true
+  }
+}
