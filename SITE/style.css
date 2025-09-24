@@ -1,0 +1,45 @@
+:root{
+  --bg:#0b1324;
+  --panel:#111827;
+  --mut:#9ca3af;
+  --fg:#e5e7eb;
+  --line:#334155;
+  --brand:#2563eb;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#0b1324;color:var(--fg);font:14px system-ui,Segoe UI,Roboto,Arial,sans-serif}
+.topbar{position:sticky;top:0;background:#0f172a;border-bottom:1px solid var(--line);padding:12px 16px;font-weight:600}
+.container{display:grid;grid-template-columns:1fr;gap:16px;padding:16px;max-width:1100px;margin:0 auto}
+@media(min-width:900px){.container{grid-template-columns: 1fr 1fr}}
+.panel{background:#111827;border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+h2{margin:0 0 8px;font-size:16px}
+.mut{color:var(--mut)}
+.small{font-size:12px}
+.btn{background:var(--brand);border:1px solid var(--brand);color:#fff;border-radius:10px;padding:8px 10px;cursor:pointer}
+.btn.alt{background:transparent;color:#cbd5e1}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+
+.deck{display:grid;grid-template-columns:repeat(13, minmax(32px,1fr));gap:6px}
+.cell{border:1px solid var(--line);border-radius:8px;padding:6px;text-align:center;cursor:pointer;user-select:none}
+.cell.sel{outline:2px solid var(--brand)}
+.s{color:#cbd5e1}.h{color:#ef4444}.d{color:#22c55e}.c{color:#eab308}
+.cardtag{display:inline-flex;gap:4px;border:1px solid var(--line);border-radius:8px;padding:4px 6px;margin:2px 4px}
+.lbl{border:1px solid var(--line);padding:3px 6px;border-radius:8px;margin-right:6px}
+
+.bar{height:10px;background:#0f172a;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.bar>i{display:block;height:100%;width:0%;background:var(--brand)}
+
+.outs{display:grid;grid-template-columns:1fr;gap:10px}
+@media(min-width:700px){.outs{grid-template-columns:1fr 1fr}}
+.out{border:1px solid var(--line);border-radius:10px;padding:8px}
+.out h3{margin:0 0 6px;font-size:14px}
+.out .cards{margin-top:6px}
+
+.decision{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.decision-title{padding:8px 10px;font-weight:700}
+.decision-detail{padding:8px 10px;border-top:1px solid var(--line);color:#cbd5e1}
+.decision-title.ok{background:#064e3b}
+.decision-title.warn{background:#78350f}
+.decision-title.info{background:#1f2937}
+.decision-title.danger{background:#7f1d1d}
+.decision.glow{box-shadow:0 0 0 3px rgba(37,99,235,.25)}
