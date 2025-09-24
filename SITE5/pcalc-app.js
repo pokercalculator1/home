@@ -200,15 +200,6 @@
     return {win:win/tot*100, tie:tie/tot*100, lose:lose/tot*100, _method:'exact-turn'};
   }
 
-  function computeEquity(hand, board, nOpp=1, trials=5000){
-    if(board.length===4 && nOpp===1){
-      return exactTurnEquity(hand, board);
-    }
-    const mc = simulateEquity(hand,board,nOpp,trials);
-    mc._method = 'mc';
-    return mc;
-  }
-
   function renderEquityPanel(){
     const box=document.getElementById('equityBox');
     if(!box) return;
@@ -224,11 +215,11 @@
           <h3>${stage}: Equidade até o showdown</h3>
           <div class="labels" style="align-items:center;margin-top:6px;gap:6px;flex-wrap:wrap">
             <span class="lbl">Oponentes:
-            <select id="eqOpp" style="background:#0b1324;color:#e5e7eb;border:none;outline:0">
-             ${Array.from({length:8},(_,i)=>`<option value="${i+1}" ${i===1?'selected':''}>${i+1}</option>`).join('')}
-             </select>
-             </span>
-              <span class="lbl">Amostras:
+              <select id="eqOpp" style="background:#0b1324;color:#e5e7eb;border:none;outline:0">
+                ${Array.from({length:8},(_,i)=>`<option value="${i+1}" ${i===1?'selected':''}>${i+1}</option>`).join('')}
+              </select>
+            </span>
+            <span class="lbl">Amostras:
               <select id="eqTrials" style="background:#0b1324;color:#e5e7eb;border:none;outline:0">
                 <option value="3000">3k</option>
                 <option value="5000" selected>5k</option>
@@ -327,7 +318,7 @@
       }
     }
 
-    // 🔒 BLOQUEIO DE SUGESTÃO/TTS QUANDO O FLOP ESTIVER INCOMPLETO (1 ou 2 cartas)
+    // Não sugerir com flop parcial (1–2 cartas)
     const out   = document.getElementById('suggestOut');
     const partialFlop = (board.length === 1 || board.length === 2);
     if (partialFlop) {
@@ -339,12 +330,12 @@
           </div>
         `;
       }
-      // Impede TTS e sugestão até o flop ter 3 cartas
       return;
     }
 
-    const eqPct = board.length<3 ? PC.chenPercent(PC.chenScore(hand[0],hand[1]).score)
-                                 : (res.win + res.tie/2);
+    // Equidade SEMPRE por simulação (pré e pós-flop)
+    const eqPct = (res.win + res.tie/2);
+
     const sugg = PC.suggestAction(eqPct, hand, board, opp);
     const cls   = PC.decisionClass(sugg.title);
     const glow  = PC.shouldGlow(cls);
@@ -406,18 +397,17 @@
   function pairLabelByRank(r1,r2){ const hi=Math.max(r1,r2), lo=Math.min(r1,r2); return `${RANK_CHAR(hi)}${RANK_CHAR(lo)}`; }
 
   function computeTop5PreflopChen(){
+    // Mantido só para overlay "nutsline" pré-flop (informativo)
     const all=[];
     for(let i=0;i<RANKS.length;i++){
       for(let j=i;j<RANKS.length;j++){
         const r1=RANKS[j], r2=RANKS[i];
-        const chenS = PC.chenScore({r:r1,s:'s'},{r:r2,s:'s'}).score;
-        const chenO = PC.chenScore({r:r1,s:'s'},{r:r2,s:'h'}).score;
-        const best = Math.max(chenS, chenO);
-        all.push({label:pairLabelByRank(r1,r2), score:best});
+        const score = (r1===r2? 10 + (r1-2)/2 : 6 + (r1+r2)/30);
+        all.push({label:pairLabelByRank(r1,r2), score});
       }
     }
     all.sort((a,b)=>b.score-a.score);
-    return all.slice(0,5).map(x=>({label:x.label, right:`Chen ${x.score.toFixed(1)}/20`}));
+    return all.slice(0,5).map(x=>({label:x.label, right:`Rank`}));
   }
 
   function computeTop5Postflop(){
@@ -513,7 +503,6 @@
   g.__pcalc_start_app__ = __pcalc_start_app__;
 
   document.addEventListener('DOMContentLoaded', ()=>{
-    // authInit é disparado pelo login-guard.js; aqui apenas aguardamos o start via __pcalc_start_app__
-    // Nada a fazer neste momento.
+    // aguardando start via __pcalc_start_app__ (login-guard)
   });
 })(window);
