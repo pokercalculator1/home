@@ -90,7 +90,7 @@
       wrap = document.createElement('div');
       wrap.id = BADGE_ID;
       wrap.style.cssText = `
-        position:absolute; right:12px; top:12px; z-index:100001;
+        position:absolute; right:12px; top:24px; z-index:100001;
         display:flex; flex-direction:column; align-items:flex-end; gap:6px;
       `;
       document.body.appendChild(wrap);
