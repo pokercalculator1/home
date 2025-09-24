@@ -1,4 +1,3 @@
-<script>
 (function(){
 
   // =============== LOGIN GUARD v3 (carrega de JSON) ===============
@@ -1049,3 +1048,4 @@
   });
 
 })();
+
