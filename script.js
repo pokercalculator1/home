@@ -115,7 +115,7 @@
     badge.innerHTML = `👤 <b style="color:#e5e7eb">${s.u}</b> • expira: ${s.exp}
                        ${extraBits.length?`<br><span class="mut" style="color:#9ca3af">${extraBits.join(' • ')}</span>`:''}
                        <div style="display:flex;gap:8px;margin-top:4px;align-items:center">
-                         <span id="pcalc-logout" style="color:#93c5fd;cursor:pointer;text-decoration:underline">sair</span>
+                         <span id="pcalc-logout" style="color:#93c5fd;cursor:pointer;text-decoration:underline;margin-left:40%;width:20%">sair</span>
                          
                        </div>`;
     const logoutEl = document.getElementById('pcalc-logout');
@@ -1054,6 +1054,7 @@
   });
 
 })();
+
 
 
 
