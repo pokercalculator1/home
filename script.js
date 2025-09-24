@@ -143,8 +143,8 @@
         <input id="pcalcLoginUser" type="text" placeholder="Digite seu Usuário" style="width:100%;background:#0b1324;color:#e5e7eb;border:1px solid #334155;border-radius:10px;padding:8px">
         <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
           <button id="pcalcLoginBtn" class="btn" style="background:#2563eb;border-color:#2563eb;color:#fff;border:1px solid #2563eb;border-radius:10px;padding:8px 10px;cursor:pointer">Entrar</button>
-          <button id="pcalcLoginClear" class="btn" style="background:#0b1324;color:#e5e7eb;border:1px solid #334155;border-radius:10px;padding:8px 10px;cursor:pointer">Limpar sessão</button>
-          <button id="pcalcReloadJson" class="btn" style="background:#0b1324;color:#e5e7eb;border:1px solid #334155;border-radius:10px;padding:8px 10px;cursor:pointer">Recarregar JSON</button>
+          
+          
         </div>
         <div id="pcalcLoginErr" style="color:#fca5a5;margin-top:8px;min-height:18px"></div>
         <div style="color:#94a3b8;margin-top:8px;font-size:12px">
@@ -1055,5 +1055,6 @@
   });
 
 })();
+
 
 
