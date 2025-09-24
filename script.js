@@ -137,9 +137,8 @@
     const allowed = listAllowedUsers();
     return `
       <div style="background:#111827;border:1px solid #1f2937;border-radius:14px;box-shadow:0 12px 30px rgba(0,0,0,.35);padding:18px;max-width:360px;width:92%">
-        <h3 style="margin:0 0 8px;color:#e5e7eb;font-size:18px">Entrar</h3>
-        <div style="color:#94a3b8;margin-bottom:10px">Informe seu usuário para começar</div>
-        <label style="display:block;color:#cbd5e1;font-size:13px;margin-bottom:6px">Usuário</label>
+        <h3 style="margin:0 0 8px;color:#e5e7eb;font-size:18px;text-align:center">Entrar</h3>
+        <div style="color:#94a3b8;margin-bottom:10px;text-align:center">Informe seu usuário</div>
         <input id="pcalcLoginUser" type="text" placeholder="Digite seu Usuário" style="width:100%;background:#0b1324;color:#e5e7eb;border:1px solid #334155;border-radius:10px;padding:8px">
         <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
           <button id="pcalcLoginBtn" class="btn" style="background:#2563eb;border-color:#2563eb;color:#fff;border:1px solid #2563eb;border-radius:10px;padding:8px 10px;cursor:pointer;width: 24%;margin-left: 38%;">Entrar</button>
@@ -1055,6 +1054,7 @@
   });
 
 })();
+
 
 
 
