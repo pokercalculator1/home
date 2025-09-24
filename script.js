@@ -116,7 +116,7 @@
                        ${extraBits.length?`<br><span class="mut" style="color:#9ca3af">${extraBits.join(' • ')}</span>`:''}
                        <div style="display:flex;gap:8px;margin-top:4px;align-items:center">
                          <span id="pcalc-logout" style="color:#93c5fd;cursor:pointer;text-decoration:underline">sair</span>
-                         <span class="mut" style="font-size:11px;color:${_lastFetchOk?'#86efac':'#fca5a5'}" title="status do JSON">JSON: ${_lastFetchOk?'ok':'erro'}</span>
+                         
                        </div>`;
     const logoutEl = document.getElementById('pcalc-logout');
     if(logoutEl){
@@ -1055,6 +1055,7 @@
   });
 
 })();
+
 
 
 
