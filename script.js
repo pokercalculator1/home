@@ -791,7 +791,6 @@
             <span class="lbl">Voz:
               <select id="ttsVoice" style="max-width:160px;background:#0b1324;color:#e5e7eb;border:none;outline:0"></select>
             </span>
-            <button class="btn" id="ttsTest">🔊 Testar</button>
             <button class="btn" id="btnEqCalc">↻ Recalcular</button>
           </div>
           <div id="eqStatus" class="mut" style="margin-top:8px"></div>
@@ -1054,6 +1053,7 @@
   });
 
 })();
+
 
 
 
