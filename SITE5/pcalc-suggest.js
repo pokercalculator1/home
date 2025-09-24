@@ -8,8 +8,8 @@
     const t = (title || '').toUpperCase();
     if (t.includes('APOSTE') || t.includes('VALOR') || t.includes('AUMENTE')) return 'ok';
     if (t.includes('SEMI-BLEFE')) return 'warn';
-    if (t.includes('CHECK OU DESISTA') || t.includes('DESISTA') || t.includes('FOLD')) return 'danger';
-    if (t.includes('CONTROLE') || t.includes('CHECK') || t.includes('POT CONTROL') || t.includes('PAGUE')) return 'info';
+    if (t.includes('PASSA OU DESISTA') || t.includes('DESISTA') || t.includes('DESISTA')) return 'danger';
+    if (t.includes('CONTROLE') || t.includes('PASSA') || t.includes('CONTROLE O POTE') || t.includes('PAGUE')) return 'info';
     return 'info';
   };
 
@@ -39,9 +39,9 @@
       // 45–60%: mãos boas/ok — controle do pote
       if (ge(45)) return { title: 'CONTROLE O POTE', detail: 'Call/Aumento pequeno (posição ajuda)' };
       // 35–45%: mãos marginais — ver flop barato (ex.: 55 ~40% em 3-way)
-      if (ge(35)) return { title: 'PAGUE BARATO / VEJA O FLOP', detail: 'Evite pot grande fora de posição' };
+      if (ge(35)) return { title: 'PAGUE BARATO VEJA O FLOP', detail: 'Evite pot grande fora de posição' };
       // <35%: fold
-      return { title: 'CHECK OU DESISTA', detail: 'Sem equidade suficiente pré-flop' };
+      return { title: 'PASSA OU DESISTA', detail: 'Sem equidade suficiente pré-flop' };
     }
 
     // ---------- PÓS-FLOP EM DIANTE ----------
@@ -57,9 +57,9 @@
     if (eqPct >= (28 + adj) && eqPct < (45 + adj)) {
       if (strongDraw) return { title: 'SEMI-BLEFE', detail: '~ 60% pot (draw forte)' };
       if (weakDraw && opp === 1 && eqPct >= (32 + adj)) return { title: 'SEMI-BLEFE leve (HU)', detail: '30% – 40% pot' };
-      return { title: 'CHECK', detail: 'Sem valor suficiente para apostar' };
+      return { title: 'PASSA', detail: 'Sem valor suficiente para apostar' };
     }
 
-    return { title: 'CHECK OU DESISTA', detail: 'Blefe puro só com muito fold equity (~75% pot)' };
+    return { title: 'PASSA OU DESISTA', detail: 'Blefe puro só com muito fold equity (~75% pot)' };
   };
 })(window);
