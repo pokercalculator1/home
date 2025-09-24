@@ -224,11 +224,11 @@
           <h3>${stage}: Equidade até o showdown</h3>
           <div class="labels" style="align-items:center;margin-top:6px;gap:6px;flex-wrap:wrap">
             <span class="lbl">Oponentes:
-              <select id="eqOpp" style="background:#0b1324;color:#e5e7eb;border:none;outline:0">
-                ${Array.from({length:8},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('')}
-              </select>
-            </span>
-            <span class="lbl">Amostras:
+            <select id="eqOpp" style="background:#0b1324;color:#e5e7eb;border:none;outline:0">
+             ${Array.from({length:8},(_,i)=>`<option value="${i+1}" ${i===1?'selected':''}>${i+1}</option>`).join('')}
+             </select>
+             </span>
+              <span class="lbl">Amostras:
               <select id="eqTrials" style="background:#0b1324;color:#e5e7eb;border:none;outline:0">
                 <option value="3000">3k</option>
                 <option value="5000" selected>5k</option>
