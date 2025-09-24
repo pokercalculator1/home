@@ -327,10 +327,25 @@
       }
     }
 
+    // 🔒 BLOQUEIO DE SUGESTÃO/TTS QUANDO O FLOP ESTIVER INCOMPLETO (1 ou 2 cartas)
+    const out   = document.getElementById('suggestOut');
+    const partialFlop = (board.length === 1 || board.length === 2);
+    if (partialFlop) {
+      if (out) {
+        out.innerHTML = `
+          <div class="decision">
+            <div class="decision-title info">Aguarde o flop completo</div>
+            <div class="decision-detail">Selecione as 3 cartas do flop para sugerir ação.</div>
+          </div>
+        `;
+      }
+      // Impede TTS e sugestão até o flop ter 3 cartas
+      return;
+    }
+
     const eqPct = board.length<3 ? PC.chenPercent(PC.chenScore(hand[0],hand[1]).score)
                                  : (res.win + res.tie/2);
     const sugg = PC.suggestAction(eqPct, hand, board, opp);
-    const out   = document.getElementById('suggestOut');
     const cls   = PC.decisionClass(sugg.title);
     const glow  = PC.shouldGlow(cls);
 
