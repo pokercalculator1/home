@@ -75,39 +75,100 @@
     return now() <= d;
   }
 
+  // ===== NOVO LAYOUT: botão 👤 + painel (popover) =====
   function ensureBadge(){
     if(!isSessionValid()) { removeBadge(); return; }
-    let badge = document.getElementById(BADGE_ID);
-    const s = sessGet();
-    if(!badge){
-      badge = document.createElement('div');
-      badge.id = BADGE_ID;
-      badge.style.cssText = 'position:absolute;right:10px;top:10px;background:#0b1324;color:#cbd5e1;border:1px solid #334155;border-radius:10px;padding:6px 10px;font-size:12px;z-index:99999';
-      document.body.appendChild(badge);
-    }
-    const extra = s?.extra;
-    const extraBits = [];
-    if(extra?.plano) extraBits.push(`plano: ${extra.plano}`);
-    if(extra?.valor) extraBits.push(`valor: ${extra.valor}`);
 
-    badge.innerHTML = `👤 <b style="color:#e5e7eb">${s.u}</b> • expira: ${s.exp}
-                       ${extraBits.length?`<br><span class="mut" style="color:#9ca3af">${extraBits.join(' • ')}</span>`:''}
-                       <div style="display:flex;gap:8px;margin-top:4px;align-items:center">
-                         <span id="pcalc-logout" style="color:#93c5fd;cursor:pointer;text-decoration:underline;margin-left:40%;width:20%">sair</span>
-                       </div>`;
-    const logoutEl = document.getElementById('pcalc-logout');
-    if(logoutEl){
-      logoutEl.onclick = (e)=>{
-        e.preventDefault();
-        sessClear();
-        removeBadge();
-        showOverlay();
-      };
+    let wrap = document.getElementById(BADGE_ID);
+    const s = sessGet();
+    const extra = s?.extra || {};
+    const extraBits = [];
+    if(extra?.plano) extraBits.push(`Plano: ${extra.plano}`);
+    if(extra?.valor) extraBits.push(`Valor: ${extra.valor}`);
+
+    if(!wrap){
+      wrap = document.createElement('div');
+      wrap.id = BADGE_ID;
+      wrap.style.cssText = `
+        position:fixed; right:12px; bottom:12px; z-index:100001;
+        display:flex; flex-direction:column; align-items:flex-end; gap:6px;
+      `;
+      document.body.appendChild(wrap);
+
+      // Botão circular com ícone 👤
+      const btn = document.createElement('button');
+      btn.id = 'pcalc-prof-btn';
+      btn.setAttribute('aria-label','Perfil');
+      btn.style.cssText = `
+        width:48px;height:48px;border-radius:999px;border:1px solid #334155;
+        background:#0b1324;color:#e5e7eb;cursor:pointer;
+        box-shadow:0 10px 24px rgba(0,0,0,.35);
+        display:grid; place-items:center; font-size:22px;
+      `;
+      btn.innerText = '👤';
+      wrap.appendChild(btn);
+
+      // Painel (popover) oculto por padrão
+      const panel = document.createElement('div');
+      panel.id = 'pcalc-prof-panel';
+      panel.style.cssText = `
+        display:none; min-width:240px; max-width:86vw;
+        background:#111827;border:1px solid #1f2937;border-radius:12px;
+        color:#cbd5e1; box-shadow:0 16px 36px rgba(0,0,0,.45);
+        padding:12px; transform:translateY(-6px);
+      `;
+      wrap.appendChild(panel);
+
+      // Fecha ao clicar fora
+      document.addEventListener('click', (e)=>{
+        const open = panel.style.display === 'block';
+        if(!open) return;
+        if(!wrap.contains(e.target)) panel.style.display = 'none';
+      });
+
+      // Toggle no clique do botão
+      btn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
+      });
+    }
+
+    // (re)preenche os dados do painel
+    const panel = document.getElementById('pcalc-prof-panel');
+    if(panel){
+      panel.innerHTML = `
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:8px">
+          <div style="width:36px;height:36px;border-radius:999px;display:grid;place-items:center;
+                      background:#0b1324;border:1px solid #334155;font-size:18px">👤</div>
+          <div>
+            <div style="color:#e5e7eb;font-weight:600">${s.u}</div>
+            <div class="mut" style="color:#9ca3af;font-size:12px">Expira: ${s.exp}</div>
+          </div>
+        </div>
+        ${extraBits.length ? `<div style="font-size:12px; color:#9ca3af; margin:6px 0">${extraBits.join(' • ')}</div>` : ''}
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px">
+          <button id="pcalc-logout" class="btn"
+            style="background:#ef4444;border:1px solid #ef4444;color:#fff;border-radius:10px;padding:8px 10px;cursor:pointer">
+            Sair
+          </button>
+        </div>
+      `;
+
+      // wire do logout
+      const logoutEl = panel.querySelector('#pcalc-logout');
+      if(logoutEl){
+        logoutEl.onclick = (e)=>{
+          e.preventDefault();
+          sessClear();
+          removeBadge();
+          showOverlay();
+        };
+      }
     }
   }
   function removeBadge(){
-    const b = document.getElementById(BADGE_ID);
-    if(b) b.remove();
+    const w = document.getElementById(BADGE_ID);
+    if(w) w.remove();
   }
 
   function overlayHtml(){
