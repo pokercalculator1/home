@@ -138,9 +138,9 @@
     return `
       <div style="background:#111827;border:1px solid #1f2937;border-radius:14px;box-shadow:0 12px 30px rgba(0,0,0,.35);padding:18px;max-width:360px;width:92%">
         <h3 style="margin:0 0 8px;color:#e5e7eb;font-size:18px">Entrar</h3>
-        <div style="color:#94a3b8;margin-bottom:10px">Informe seu usuário (precisa estar no arquivo JSON) para liberar a calculadora.</div>
+        <div style="color:#94a3b8;margin-bottom:10px">Informe seu usuário</div>
         <label style="display:block;color:#cbd5e1;font-size:13px;margin-bottom:6px">Usuário</label>
-        <input id="pcalcLoginUser" type="text" placeholder="ex.: Dirciano" style="width:100%;background:#0b1324;color:#e5e7eb;border:1px solid #334155;border-radius:10px;padding:8px">
+        <input id="pcalcLoginUser" type="text" placeholder="Digite seu Usuário" style="width:100%;background:#0b1324;color:#e5e7eb;border:1px solid #334155;border-radius:10px;padding:8px">
         <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
           <button id="pcalcLoginBtn" class="btn" style="background:#2563eb;border-color:#2563eb;color:#fff;border:1px solid #2563eb;border-radius:10px;padding:8px 10px;cursor:pointer">Entrar</button>
           <button id="pcalcLoginClear" class="btn" style="background:#0b1324;color:#e5e7eb;border:1px solid #334155;border-radius:10px;padding:8px 10px;cursor:pointer">Limpar sessão</button>
@@ -148,7 +148,6 @@
         </div>
         <div id="pcalcLoginErr" style="color:#fca5a5;margin-top:8px;min-height:18px"></div>
         <div style="color:#94a3b8;margin-top:8px;font-size:12px">
-          Usuários (JSON): ${allowed.length? allowed.join(', ') : '—'}
         </div>
       </div>
     `;
@@ -174,7 +173,7 @@
     async function doLogin(){
       const u = (inp.value||'').trim();
       if(!u){ err.textContent='Informe o usuário.'; return; }
-      if(!isUserAllowed(u)){ err.textContent='Usuário não encontrado no JSON.'; return; }
+      if(!isUserAllowed(u)){ err.textContent='Usuário não cadastrado.'; return; }
       const rec = getUserRecord(u);
       const exp = rec?.exp;
       const d = parseExpiry(exp);
@@ -1056,4 +1055,5 @@
   });
 
 })();
+
 
