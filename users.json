@@ -1,5 +1,6 @@
 {
-  "Dirciano": { "exp": "2025-10-24", "valor": 149.90, "blocked": false },
+  "Dirciano": { "exp": "2025-10-25", "valor": 149.90, "blocked": false },
   "Guest":    { "exp": "31/12/2025",  "valor": 0,      "blocked": true }
 }
+
 
