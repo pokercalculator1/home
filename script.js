@@ -104,7 +104,7 @@
     if(!badge){
       badge = document.createElement('div');
       badge.id = BADGE_ID;
-      badge.style.cssText = 'position:fixed;right:10px;top:10px;background:#0b1324;color:#cbd5e1;border:1px solid #334155;border-radius:10px;padding:6px 10px;font-size:12px;z-index:99999';
+      badge.style.cssText = 'position:absolute;right:10px;top:10px;background:#0b1324;color:#cbd5e1;border:1px solid #334155;border-radius:10px;padding:6px 10px;font-size:12px;z-index:99999';
       document.body.appendChild(badge);
     }
     const extra = s?.extra;
@@ -1054,6 +1054,7 @@
   });
 
 })();
+
 
 
 
