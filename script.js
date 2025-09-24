@@ -1,3 +1,4 @@
+
 (function(){
 
   // =============== LOGIN GUARD v3 (carrega de JSON) ===============
@@ -9,7 +10,7 @@
   // }
 
   const AUTH_URL   = 'users.json'; // <-- ajuste o caminho do seu JSON
-  const TICK_MS    = 10000;              // revalidação a cada 10s (e recarrega o JSON)
+  const TICK_MS    = 10000;        // revalidação a cada 10s (e recarrega o JSON)
   const SESS_KEY   = 'pcalc_session';
   const OVERLAY_ID = 'pcalc-login-overlay';
   const BADGE_ID   = 'pcalc-user-badge';
@@ -18,7 +19,7 @@
   let USER_MAP = {};        // { username: { exp:"AAAA-MM-DD|DD/MM/AAAA", ...extras } }
   let _lastFetchOk = false;
 
-  // ---------- Utilidades de data / sessão ----------
+  // ============== Utilidades de data / sessão ==============
   function parseExpiry(str){
     if(!str) return null;
     const s = String(str).trim();
@@ -44,7 +45,7 @@
   }
   function sessClear(){ localStorage.removeItem(SESS_KEY); }
 
-  // ---------- Carregar JSON (sem cache) ----------
+  // ============== Carregar JSON (sem cache) ==============
   async function fetchWhitelist(){
     try{
       const url = `${AUTH_URL}${AUTH_URL.includes('?') ? '&' : '?'}_=${Date.now()}`;
@@ -76,7 +77,6 @@
   function getUserRecord(u){
     const rec = USER_MAP[u];
     if(!rec) return null;
-    // compatibilidade: se for string no JSON original, virá como {exp: "..."}
     return rec && typeof rec === 'object' ? rec : {exp: rec};
   }
 
@@ -96,7 +96,7 @@
     return now() <= d;
   }
 
-  // ---------- UI: Badge / Overlay ----------
+  // ============== UI: Badge / Overlay ==============
   function ensureBadge(){
     if(!isSessionValid()) { removeBadge(); return; }
     let badge = document.getElementById(BADGE_ID);
@@ -205,15 +205,19 @@
     if(ov) ov.remove();
   }
 
-  // ---------- Loop de guarda ----------
+  // ============== Loop de guarda ==============
   async function guardTick(){
-    // Recarrega JSON (sem cache) a cada tick para pegar mudanças do servidor
     await fetchWhitelist();
 
     const valid = isSessionValid();
     if(valid){
       hideOverlay();
       ensureBadge();
+      // >>> AUTO-START pós-tick (se ainda não iniciou)
+      if(typeof __pcalc_start_app__ === 'function' && !window.__PCALC_APP_STARTED__){
+        window.__PCALC_APP_STARTED__ = true;
+        __pcalc_start_app__();
+      }
     }else{
       showOverlay();
       removeBadge();
@@ -228,6 +232,11 @@
     if(valid){
       hideOverlay();
       ensureBadge();
+      // >>> AUTO-START no carregamento (F5 friendly)
+      if(typeof __pcalc_start_app__ === 'function' && !window.__PCALC_APP_STARTED__){
+        window.__PCALC_APP_STARTED__ = true;
+        __pcalc_start_app__();
+      }
     }else{
       showOverlay();
     }
@@ -1040,12 +1049,11 @@
     prevBoardLen = Math.max(0, selected.length-2);
     renderDeck();
   }
+
   document.addEventListener('DOMContentLoaded', ()=>{
-    authInit(); // mostra overlay ou inicia se já houver sessão válida
-    // Se já existe sessão válida ao carregar, inicia a app
-    if(isSessionValid() && !window.__PCALC_APP_STARTED__){
-      window.__PCALC_APP_STARTED__ = true;
-      __pcalc_start_app__();
-    }
+    // Só chamamos authInit(); ele mesmo dá o auto-start quando a sessão está válida.
+    authInit();
   });
+
 })();
+
