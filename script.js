@@ -1,4 +1,4 @@
-
+<script>
 (function(){
 
   // =============== LOGIN GUARD v3 (carrega de JSON) ===============
@@ -71,9 +71,6 @@
     }
   }
 
-  function listAllowedUsers(){
-    return Object.keys(USER_MAP).sort();
-  }
   function getUserRecord(u){
     const rec = USER_MAP[u];
     if(!rec) return null;
@@ -116,7 +113,6 @@
                        ${extraBits.length?`<br><span class="mut" style="color:#9ca3af">${extraBits.join(' • ')}</span>`:''}
                        <div style="display:flex;gap:8px;margin-top:4px;align-items:center">
                          <span id="pcalc-logout" style="color:#93c5fd;cursor:pointer;text-decoration:underline;margin-left:40%;width:20%">sair</span>
-                         
                        </div>`;
     const logoutEl = document.getElementById('pcalc-logout');
     if(logoutEl){
@@ -134,7 +130,6 @@
   }
 
   function overlayHtml(){
-    const allowed = listAllowedUsers();
     return `
       <div style="background:#111827;border:1px solid #1f2937;border-radius:14px;box-shadow:0 12px 30px rgba(0,0,0,.35);padding:18px;max-width:360px;width:92%">
         <h3 style="margin:0 0 8px;color:#e5e7eb;font-size:18px;text-align:center">Entrar</h3>
@@ -142,12 +137,8 @@
         <input id="pcalcLoginUser" type="text" placeholder="Digite seu Usuário" style="width:100%;background:#0b1324;color:#e5e7eb;border:1px solid #334155;border-radius:10px;padding:8px">
         <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
           <button id="pcalcLoginBtn" class="btn" style="background:#2563eb;border-color:#2563eb;color:#fff;border:1px solid #2563eb;border-radius:10px;padding:8px 10px;cursor:pointer;width: 24%;margin-left: 38%;">Entrar</button>
-          
-          
         </div>
         <div id="pcalcLoginErr" style="color:#fca5a5;margin-top:8px;min-height:18px"></div>
-        <div style="color:#94a3b8;margin-top:8px;font-size:12px">
-        </div>
       </div>
     `;
   }
@@ -165,8 +156,6 @@
   function wireOverlay(ov){
     const inp = ov.querySelector('#pcalcLoginUser');
     const btn = ov.querySelector('#pcalcLoginBtn');
-    const clr = ov.querySelector('#pcalcLoginClear');
-    const rld = ov.querySelector('#pcalcReloadJson');
     const err = ov.querySelector('#pcalcLoginErr');
 
     async function doLogin(){
@@ -189,14 +178,6 @@
     }
     btn.addEventListener('click', doLogin);
     inp.addEventListener('keydown', (e)=>{ if(e.key==='Enter') doLogin(); });
-    clr.addEventListener('click', ()=>{ sessClear(); err.textContent='Sessão apagada.'; });
-    rld.addEventListener('click', async ()=>{
-      err.textContent='Recarregando JSON...';
-      await fetchWhitelist();
-      err.textContent = _lastFetchOk ? 'JSON recarregado.' : 'Falha ao recarregar JSON.';
-      // atualiza lista de usuários exibida
-      showOverlay();
-    });
   }
   function hideOverlay(){
     const ov = document.getElementById(OVERLAY_ID);
@@ -316,6 +297,9 @@
     renderEquityPanel();
 
     wiredNuts=false; wireNutsOverlayOnce(); hideNutsOverlay();
+
+    // Recalcular decisão imediatamente (fix pré-flop)
+    safeRecalc();
   }
 
   function updateStageChange(oldLen, newLen){
@@ -335,6 +319,7 @@
     const newLen = Math.max(0, selected.length-2);
     updateStageChange(prevBoardLen, newLen);
     renderDeck();
+    safeRecalc(); // garante atualização instantânea
   }
 
   // ========= Botões sorteio / limpar =========
@@ -367,6 +352,7 @@
     const newLen = Math.max(0, selected.length-2);
     updateStageChange(oldLen, newLen);
     renderDeck();
+    safeRecalc();
   };
   if(btnTurn) btnTurn.onclick = ()=>{
     if(selected.length<5){ alert('Defina o flop.'); return; }
@@ -377,6 +363,7 @@
     const newLen = Math.max(0, selected.length-2);
     updateStageChange(oldLen, newLen);
     renderDeck();
+    safeRecalc();
   };
   if(btnRiver) btnRiver.onclick = ()=>{
     if(selected.length<6){ alert('Defina o turn.'); return; }
@@ -387,9 +374,10 @@
     const newLen = Math.max(0, selected.length-2);
     updateStageChange(oldLen, newLen);
     renderDeck();
+    safeRecalc();
   };
   if(btnClear) btnClear.onclick = ()=>{
-    selected=[]; updateStageChange(prevBoardLen, 0); renderDeck();
+    selected=[]; updateStageChange(prevBoardLen, 0); renderDeck(); safeRecalc();
   };
 
   // ========= Avaliador de mão =========
@@ -807,7 +795,6 @@
         const hasTTS = !!(window.TTS) && ('speechSynthesis' in window);
         const enableEl=document.getElementById('ttsEnable');
         const voiceSel=document.getElementById('ttsVoice');
-        const testBtn=document.getElementById('ttsTest');
 
         if(hasTTS){
           window.TTS.populateVoices();
@@ -824,12 +811,10 @@
             const v = speechSynthesis.getVoices().find(v=>v.name===name);
             if(v) window.TTS.state.voice=v;
           };
-          testBtn.onclick = ()=> window.TTS.speak('Sugestão: aposte por valor');
         }else{
           enableEl.disabled=true;
           voiceSel.disabled=true;
           voiceSel.innerHTML = '<option>(sem suporte no navegador)</option>';
-          testBtn.disabled=true;
         }
       }else{
         box.querySelector('h3').textContent=`${stage}: Equidade até o showdown`;
@@ -844,8 +829,14 @@
 
   function calcEquity(){
     const {hand,board}=getKnown();
-    const opp=parseInt(document.getElementById('eqOpp').value,10);
-    const trials=parseInt(document.getElementById('eqTrials').value,10);
+    if(hand.length<2){ return; }
+
+    const oppSel=document.getElementById('eqOpp');
+    const trialsSel=document.getElementById('eqTrials');
+    if(!oppSel || !trialsSel) return;
+
+    const opp=parseInt(oppSel.value,10);
+    const trials=parseInt(trialsSel.value,10);
     const st=document.getElementById('eqStatus');
 
     const useExactTurn = (board.length===4 && opp===1);
@@ -892,6 +883,11 @@
         window.TTS.speak(`Sugestão: ${sugg.title}`);
       }
     }
+  }
+
+  // chama calcEquity sem quebrar caso elementos não existam ainda
+  function safeRecalc(){
+    try{ calcEquity(); }catch(e){}
   }
 
   // ========= Nuts =========
@@ -1053,13 +1049,3 @@
   });
 
 })();
-
-
-
-
-
-
-
-
-
-
