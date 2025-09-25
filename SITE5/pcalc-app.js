@@ -1,11 +1,17 @@
-// pcalc-app.js — rank PF (JSON) só no pré-flop + pós-flop Top5 + PF:ready + bugfix
+// pcalc-app.js — PF (JSON) no pré-flop (linha e hover), pós-flop Top5, watchdog e sem "kicker undefined"
 (function(g){
   const PC = g.PCALC;
   const { RANKS, SUITS, SUIT_CLASS, SUIT_GLYPH, fmtRank, cardId, makeDeck, evalBest, cmpEval, CAT, CAT_NAME } = PC;
 
-  // ===== PF (preflop169.json via preflop_rank.js) =====
-  function hasPF(){ return typeof g.PF !== 'undefined' && g.PF && typeof g.PF.normalize2 === 'function' && typeof g.PF.describe === 'function'; }
+  // ========== Helpers PF (preflop169.json via preflop_rank.js) ==========
+  function hasPF(){
+    return typeof g.PF !== 'undefined'
+      && g.PF
+      && typeof g.PF.normalize2 === 'function'
+      && typeof g.PF.describe === 'function';
+  }
   function rankNumToChar(n){
+    if(n==null) return '';
     if(typeof n === 'string'){
       const u = n.toUpperCase();
       if('AKQJT98765432'.includes(u)) return u;
@@ -36,7 +42,43 @@
     }
   }
 
-  // === Mostra a linha do rank PF APENAS no pré-flop (remove nas demais streets) ===
+  // Gera todas as 169 mãos canônicas (AA, KK, ..., AKo, AKs)
+  function all169Tags(){
+    const order = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
+    const tags = [];
+    for(let i=0;i<order.length;i++){
+      for(let j=0;j<=i;j++){
+        const hi = order[i], lo = order[j];
+        if(hi === lo){
+          tags.push(hi+lo);      // par: "77"
+        }else{
+          tags.push(hi+lo+'s');  // suited
+          tags.push(hi+lo+'o');  // offsuit
+        }
+      }
+    }
+    return tags; // 169
+  }
+
+  // Top 5 do PRÉ-FLOP baseado no JSON (PF). Fallback para Chen se PF indisponível.
+  function computeTop5PreflopPF(){
+    if(!hasPF()) return null;
+    const tags = all169Tags();
+    const rows = [];
+    for(const t of tags){
+      try{
+        const info = g.PF.describe(t); // {hand, rank, tier}
+        if(info && typeof info.rank === 'number'){
+          rows.push({ label: info.hand, rank: info.rank, tier: info.tier || '' });
+        }
+      }catch(e){}
+    }
+    if(!rows.length) return null;
+    rows.sort((a,b)=>a.rank - b.rank); // 1 é melhor
+    return rows.slice(0,5).map((it)=>({ label: it.label, right: `Rank ${it.rank}` }));
+  }
+
+  // ========== Linha do Rank PF (só no pré-flop) ==========
   function renderPreflopRankLineInto(box){
     if(!box) return;
     const { hand, board } = PC.getKnown();
@@ -66,7 +108,7 @@
     }
 
     if(!hasPF()){
-      line.textContent = 'Pré-flop: ranking 1–169 indisponível (preflop_rank.js/JSON não carregado).';
+      line.textContent = 'Pré-flop: ranking 1–169 indisponível (aguardando JSON)...';
       return;
     }
 
@@ -81,33 +123,124 @@
     }
   }
 
+  // Watchdog: tenta atualizar o rank PF por até 15s (30 tentativas / 500ms)
+  let pfWatchdogTimer = null;
+  let pfWatchdogTries = 0;
+  function startPFWatchdog(){
+    stopPFWatchdog();
+    pfWatchdogTries = 0;
+    pfWatchdogTimer = setInterval(()=>{
+      pfWatchdogTries++;
+      const box = document.getElementById('equityBox');
+      if(box) renderPreflopRankLineInto(box);
+
+      if(hasPF()){
+        const { hand, board } = PC.getKnown();
+        if((!board || board.length<3) && hand && hand.length===2){
+          const tag = getPreflopTagFromHand();
+          try{
+            const info = tag ? g.PF.describe(tag) : null;
+            if(info && typeof info.rank === 'number'){ stopPFWatchdog(); }
+          }catch(_){}
+        }
+      }
+      if(pfWatchdogTries >= 30){ stopPFWatchdog(); }
+    }, 500);
+  }
+  function stopPFWatchdog(){
+    if(pfWatchdogTimer){ clearInterval(pfWatchdogTimer); pfWatchdogTimer = null; }
+  }
+
   // Re-renderiza a linha de rank PF assim que o JSON terminar de carregar
   window.addEventListener('PF:ready', ()=>{
     try{
       const box = document.getElementById('equityBox');
       if(box) renderPreflopRankLineInto(box);
+      stopPFWatchdog();
     }catch(e){}
   });
 
-  // ===== Leaderboard PÓS-FLOP =====
+  // ========== Leaderboard pós-flop ==========
   function keyFromEval(ev){ return JSON.stringify({ c: ev.cat, k: ev.kick }); }
   function describeEval(ev){
+    // Sem "kicker undefined": só mostra o que existir.
     const name = CAT_NAME[ev.cat] || '—';
-    const r2c = (r)=>r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r);
-    let detail = '';
+    const r2c = (r)=> (r==null ? '' : (r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r)));
     const k = ev.kick || [];
+    let detail = '';
+
     switch(ev.cat){
-      case CAT.ROYAL: detail = 'Royal Flush'; break;
-      case CAT.SFLUSH: detail = `Straight Flush (alto ${r2c(k[0])})`; break;
-      case CAT.QUADS: detail = `Quadra de ${r2c(k[0])} (kicker ${r2c(k[1])})`; break;
-      case CAT.FULL: detail = `Full House (${r2c(k[0])} cheio de ${r2c(k[1])})`; break;
-      case CAT.FLUSH: detail = `Flush (alto ${r2c(k[0])})`; break;
-      case CAT.STRAIGHT: detail = `Sequência (alto ${r2c(k[0])})`; break;
-      case CAT.TRIPS: detail = `Trinca de ${r2c(k[0])} (kickers ${r2c(k[1])},${r2c(k[2])})`; break;
-      case CAT.TWO: detail = `Dois Pares (${r2c(k[0])} & ${r2c(k[1])}, kicker ${r2c(k[2])})`; break;
-      case CAT.ONE: detail = `Par de ${r2c(k[0])} (kickers ${r2c(k[1])},${r2c(k[2])},${r2c(k[3])})`; break;
-      case CAT.HIGH: detail = `Carta Alta ${r2c(k[0])}`; break;
-      default: detail = name;
+      case CAT.ROYAL:
+        detail = 'Royal Flush';
+        break;
+
+      case CAT.SFLUSH: {
+        const hi = r2c(k[0]);
+        detail = hi ? `Straight Flush (alto ${hi})` : 'Straight Flush';
+        break;
+      }
+
+      case CAT.QUADS: {
+        const quad = r2c(k[0]);
+        const kick = r2c(k[1]);
+        detail = quad ? `Quadra de ${quad}` : 'Quadra';
+        if(kick) detail += ` (kicker ${kick})`;
+        break;
+      }
+
+      case CAT.FULL: {
+        const t = r2c(k[0]);
+        const p = r2c(k[1]);
+        if(t && p) detail = `Full House (${t} cheio de ${p})`;
+        else detail = 'Full House';
+        break;
+      }
+
+      case CAT.FLUSH: {
+        const hi = r2c(k[0]);
+        detail = hi ? `Flush (alto ${hi})` : 'Flush';
+        break;
+      }
+
+      case CAT.STRAIGHT: {
+        const hi = r2c(k[0]);
+        detail = hi ? `Sequência (alto ${hi})` : 'Sequência';
+        break;
+      }
+
+      case CAT.TRIPS: {
+        const t = r2c(k[0]);
+        const ks = [r2c(k[1]), r2c(k[2])].filter(Boolean);
+        detail = t ? `Trinca de ${t}` : 'Trinca';
+        if(ks.length) detail += ` (kickers ${ks.join(', ')})`;
+        break;
+      }
+
+      case CAT.TWO: {
+        const a = r2c(k[0]), b = r2c(k[1]);
+        const kick = r2c(k[2]);
+        if(a && b) detail = `Dois Pares (${a} & ${b})`;
+        else detail = 'Dois Pares';
+        if(kick) detail += `, kicker ${kick}`;
+        break;
+      }
+
+      case CAT.ONE: {
+        const p = r2c(k[0]);
+        const ks = [r2c(k[1]), r2c(k[2]), r2c(k[3])].filter(Boolean);
+        detail = p ? `Par de ${p}` : 'Par';
+        if(ks.length) detail += ` (kickers ${ks.join(', ')})`;
+        break;
+      }
+
+      case CAT.HIGH: {
+        const hi = r2c(k[0]);
+        detail = hi ? `Carta Alta ${hi}` : 'Carta Alta';
+        break;
+      }
+
+      default:
+        detail = name || '—';
     }
     return { name, detail };
   }
@@ -182,7 +315,7 @@
     };
   }
 
-  // ======= (seu código original + integrações) =======
+  // ========== UI base ==========
   let nutsOverlay=null, nutsHover=false, overlayTimer=null, wiredNuts=false;
   const deckEl = document.getElementById('deck');
 
@@ -318,6 +451,7 @@
     el.textContent = CAT_NAME[ev.cat] || '—';
   }
 
+  // ===== Equidade =====
   function simulateEquity(hand,board,nOpp=1,trials=5000){
     const missing=5-board.length;
     if(missing<0) return {win:0,tie:0,lose:100};
@@ -344,7 +478,7 @@
         const ev=evalBest(opps[k].concat(full));
         const cmp=cmpEval(ev,bestEv);
         if(cmp>0){ best=`opp${k}`; bestEv=ev; winners=[`opp${k}`]; }
-        else if(cmp===0){ winners.push(`opp${k}`); } // bugfix
+        else if(cmp===0){ winners.push(`opp${k}`); } // empate conta tie
       }
       if(best==='hero' && winners.length===1) win++;
       else if(winners.includes('hero')) tie++;
@@ -439,7 +573,7 @@
           g.TTS.state.enabled = true;
           enableEl.checked = true;
 
-          enableEl.onchange = (e)=>{
+        enableEl.onchange = (e)=>{
             g.TTS.state.enabled = e.target.checked;
             if(g.TTS.state.enabled) g.TTS.speak('Voz ativada');
           };
@@ -457,8 +591,9 @@
         box.querySelector('h3').textContent=`${stage}: Equidade até o showdown`;
       }
 
-      // Chama SEMPRE: a própria função se encarrega de mostrar/sumir conforme a street
+      // Tenta renderizar a linha PF imediatamente e inicia watchdog
       renderPreflopRankLineInto(box);
+      startPFWatchdog();
 
       calcEquity();
     }else{
@@ -515,7 +650,6 @@
           </div>
         `;
       }
-      // Atualiza/Remove a linha PF conforme a street
       const box=document.getElementById('equityBox');
       if(box) renderPreflopRankLineInto(box);
       return;
@@ -551,7 +685,7 @@
 
   function safeRecalc(){ try{ calcEquity(); }catch(e){} }
 
-  // ======= NUTS + overlay com leaderboard pós-flop =======
+  // ========== Nuts + overlay ==========
   function computeNutsPair(){
     const {board}=PC.getKnown();
     if(board.length<3) return null;
@@ -587,7 +721,6 @@
   function pairKeyByRank(r1,r2){ const hi=Math.max(r1,r2), lo=Math.min(r1,r2); return `${hi}-${lo}`; }
   function pairLabelByRank(r1,r2){ const hi=Math.max(r1,r2), lo=Math.min(r1,r2); return `${RANK_CHAR(hi)}${RANK_CHAR(lo)}`; }
 
-  // (pré-flop informativo – mantido)
   function computeTop5PreflopChen(){
     const all=[];
     for(let i=0;i<RANKS.length;i++){
@@ -601,7 +734,7 @@
     return all.slice(0,5).map(x=>({label:x.label, right:`Rank`}));
   }
 
-  // ===== Top 5 REAL pós-flop para overlay =====
+  // Top 5 REAL pós-flop para overlay
   function computeTop5PostflopLeaderboard(){
     const data = computePostflopLeaderboard();
     if(!data) return null;
@@ -642,14 +775,15 @@
     title.className='mut';
     title.style.cssText='margin-bottom:6px;font-weight:600';
     const isPreflop = board.length<3;
-    title.textContent = isPreflop ? 'Top 5 mãos (pré-flop, informativo)' : 'Top 5 mãos possíveis (board atual)';
+    title.textContent = isPreflop ? 'Top 5 mãos (pré-flop, JSON)' : 'Top 5 mãos possíveis (board atual)';
     wrap.appendChild(title);
 
     const list=document.createElement('div');
 
     if(isPreflop){
-      const rows = computeTop5PreflopChen();
-      if(rows.length){
+      // >>> AGORA usa o JSON (PF). Se não disponível, cai para Chen.
+      const rows = computeTop5PreflopPF() || computeTop5PreflopChen();
+      if(rows && rows.length){
         rows.forEach((it,idx)=>{
           const row=document.createElement('div');
           row.style.cssText='display:flex;justify-content:space-between;gap:10px;padding:4px 0';
