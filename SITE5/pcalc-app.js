@@ -365,98 +365,99 @@
     el.style.zIndex='9999';
   }
   function showNutsOverlay(anchor){
-    const {hand, board} = PC.getKnown();
-    if(!anchor){
-      anchor = document.querySelector('.nutsline') || document.getElementById('nutsCat') || document.getElementById('n0');
-      if(!anchor) return;
-    }
-    hideNutsOverlay();
+  const {hand, board} = PC.getKnown();
+  if(!anchor){
+    anchor = document.querySelector('.nutsline') || document.getElementById('nutsCat') || document.getElementById('n0');
+    if(!anchor) return;
+  }
+  hideNutsOverlay();
 
-    const isPreflop = board.length<3;
-    const wrap=document.createElement('div');
-    wrap.id='nutsOverlay';
-    wrap.style.cssText='background:#0b1324;border:1px solid #334155;border-radius:12px;box-shadow:0 16px 36px rgba(0,0,0,.45);padding:10px 12px;min-width:240px;color:#cbd5e1;font-size:13px';
+  const isPreflop = board.length<3;
+  const wrap=document.createElement('div');
+  wrap.id='nutsOverlay';
+  wrap.style.cssText='background:#0b1324;border:1px solid #334155;border-radius:12px;box-shadow:0 16px 36px rgba(0,0,0,.45);padding:10px 12px;min-width:240px;color:#cbd5e1;font-size:13px';
 
-    const title=document.createElement('div');
-    title.className='mut';
-    title.style.cssText='margin-bottom:8px;font-weight:700;color:#e5e7eb';
-    title.textContent = isPreflop ? 'Ranking (169) • Top 5' : 'Melhores mãos absolutas • Top 5';
-    wrap.appendChild(title);
+  const title=document.createElement('div');
+  title.className='mut';
+  title.style.cssText='margin-bottom:8px;font-weight:700;color:#e5e7eb';
+  title.textContent = isPreflop ? 'Ranking (169) • Top 5' : 'Melhores mãos absolutas • Top 5';
+  wrap.appendChild(title);
 
-    const list=document.createElement('div');
+  const list=document.createElement('div');
 
-    if(isPreflop){
-      const table169 = rankPreflop169();
-      const heroNorm = (hand.length===2) ? normalizeHand2(hand) : null;
+  if(isPreflop){
+    const table169 = rankPreflop169();
+    const heroNorm = (hand.length===2) ? normalizeHand2(hand) : null;
 
-      table169.slice(0,5).forEach((it,idx)=>{
-        const isHero = (heroNorm && it.norm===heroNorm);
-        const row=document.createElement('div');
-        row.style.cssText=`display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-radius:8px;${isHero?'background:#1f2937;color:#fff;':''}`;
-        row.innerHTML = `<div>${idx+1}) ${it.norm}${isHero?' <span style="opacity:.9">— você</span>':''}</div><div class="mut">${Math.round((it.chen/20)*100)}%</div>`;
-        list.appendChild(row);
-      });
+    table169.slice(0,5).forEach((it,idx)=>{
+      const isHero = (heroNorm && it.norm===heroNorm);
+      const row=document.createElement('div');
+      row.style.cssText=`display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-radius:8px;${isHero?'background:#1f2937;color:#fff;':''}`;
+      row.innerHTML = `<div>${idx+1}) ${it.norm}${isHero?' <span style="opacity:.9">— você</span>':''}</div><div class="mut">${Math.round((it.chen/20)*100)}%</div>`;
+      list.appendChild(row);
+    });
 
-      if(heroNorm){
-        const heroIdx = table169.findIndex(it=>it.norm===heroNorm);
-        if(heroIdx>=0 && heroIdx>=5){
-          const sep=document.createElement('div');
-          sep.className='mut'; sep.style.cssText='padding:4px 0 2px;font-size:12px;opacity:.8';
-          sep.textContent='…';
-          list.appendChild(sep);
-
-          const hero=table169[heroIdx];
-          const row=document.createElement('div');
-          row.style.cssText='display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-radius:8px;background:#1f2937;color:#fff';
-          row.innerHTML = `<div>${heroIdx+1}) ${hero.norm} <span style="opacity:.9">— você</span></div><div class="mut">${Math.round((hero.chen/20)*100)}%</div>`;
-          list.appendChild(row);
-        }
-      }
-    }else{
-      const abs = rankAbsolutePostflop(board);
-      const top5 = abs.slice(0,5);
-      const heroEv = (hand.length===2) ? evalBest(hand.concat(board)) : null;
-
-      let heroRank = null;
-      if(heroEv){
-        for(let i=0;i<abs.length;i++){
-          const cmp = cmpEval(heroEv, abs[i].ev);
-          if(cmp>=0){ heroRank = i+1; break; }
-        }
-        if(heroRank===null) heroRank = abs.length;
-      }
-
-      top5.forEach((it,idx)=>{
-        const thisRank = idx+1;
-        const isHeroHere = (heroRank===thisRank);
-        const row=document.createElement('div');
-        row.style.cssText=`display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-radius:8px;${isHeroHere?'background:#1f2937;color:#fff;':''}`;
-        row.innerHTML = `<div>${thisRank}) ${it.label}${isHeroHere?' <span style="opacity:.9">— você</span>':''}</div><div class="mut">${CAT_NAME[it.ev.cat]||''}</div>`;
-        list.appendChild(row);
-      });
-
-      if(heroEv && heroRank>5){
+    if(heroNorm){
+      const heroIdx = table169.findIndex(it=>it.norm===heroNorm);
+      if(heroIdx>=0 && heroIdx>=5){
         const sep=document.createElement('div');
         sep.className='mut'; sep.style.cssText='padding:4px 0 2px;font-size:12px;opacity:.8';
         sep.textContent='…';
         list.appendChild(sep);
 
-        const labelHero = pairLabelHuman(hand[0], hand[1]);
+        const hero=table169[heroIdx];
         const row=document.createElement('div');
-        row.style.cssText='display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-radius:8px;background:#1f2937;color:#fff';
-        row.innerHTML = `<div>${heroRank}) ${labelHero} <span style="opacity:.9">— você</span></div><div class="mut">${CAT_NAME[heroEv.cat]||''}</div>`;
+        row.style.cssText='display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-radius:8px;background:#1f2937;color:#fff';
+        row.innerHTML = `<div>${heroIdx+1}) ${hero.norm} <span style="opacity:.9">— você</span></div><div class="mut">${Math.round((hero.chen/20)*100)}%</div>`;
         list.appendChild(row);
       }
     }
+  }else{
+    const abs = rankAbsolutePostflop(board);
+    const top5 = abs.slice(0,5);
+    const heroEv = (hand.length===2) ? evalBest(hand.concat(board)) : null;
 
-    wrap.appendChild(list);
+    let heroRank = null;
+    if(heroEv){
+      for(let i=0;i<abs.length;i++){
+        const cmp = cmpEval(heroEv, abs[i].ev);
+        if(cmp>=0){ heroRank = i+1; break; }
+      }
+      if(heroRank===null) heroRank = abs.length;
+    }
 
-    wrap.addEventListener('mouseenter', ()=>{ nutsHover=true; if(overlayTimer){clearTimeout(overlayTimer); overlayTimer=null;} });
-    wrap.addEventListener('mouseleave', ()=>{ nutsHover=false; overlayTimer=setTimeout(()=>{ if(!nutsHover) hideNutsOverlay(); }, 180); });
+    top5.forEach((it,idx)=>{
+      const thisRank = idx+1;
+      const isHeroHere = (heroRank===thisRank);
+      const row=document.createElement('div');
+      row.style.cssText=`display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-radius:8px;${isHeroHere?'background:#1f2937;color:#fff;':''}`;
+      row.innerHTML = `<div>${thisRank}) ${it.label}${isHeroHere?' <span style="opacity:.9">— você</span>':''}</div><div class="mut">${CAT_NAME[it.ev.cat]||''}</div>`;
+      list.appendChild(row);
+    });
 
-    positionOverlayNear(anchor, wrap);
-    nutsOverlay=wrap;
+    if(heroEv && heroRank>5){
+      const sep=document.createElement('div');
+      sep.className='mut'; sep.style.cssText='padding:4px 0 2px;font-size:12px;opacity:.8';
+      sep.textContent='…';
+      list.appendChild(sep);
+
+      const labelHero = pairLabelHuman(hand[0], hand[1]);
+      const row=document.createElement('div');
+      row.style.cssText='display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-radius:8px;background:#1f2937;color:#fff';
+      row.innerHTML = `<div>${heroRank}) ${labelHero} <span style="opacity:.9">— você</span></div><div class="mut">${CAT_NAME[heroEv.cat]||''}</div>`;
+      list.appendChild(row);
+    }
   }
+
+  wrap.appendChild(list);
+
+  wrap.addEventListener('mouseenter', ()=>{ nutsHover=true; if(overlayTimer){clearTimeout(overlayTimer); overlayTimer=null;} });
+  wrap.addEventListener('mouseleave', ()=>{ nutsHover=false; overlayTimer=setTimeout(()=>{ if(!nutsHover) hideNutsOverlay(); }, 180); });
+
+  positionOverlayNear(anchor, wrap);
+  nutsOverlay=wrap;
+}
+
   function wireNutsOverlayOnce(){
     if(wiredNuts) return;
     const anchor =
