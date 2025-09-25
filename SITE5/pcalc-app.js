@@ -1,10 +1,10 @@
-// pcalc-app.js (rank PF sempre visível + pós-flop Top5 + bugfix) — COMPLETO
+// pcalc-app.js — rank PF (JSON) só no pré-flop + pós-flop Top5 + PF:ready + bugfix
 (function(g){
   const PC = g.PCALC;
   const { RANKS, SUITS, SUIT_CLASS, SUIT_GLYPH, fmtRank, cardId, makeDeck, evalBest, cmpEval, CAT, CAT_NAME } = PC;
 
-  // ===== PF (preflop_rank.js) para rank 1–169 (AKs ≠ AKo) =====
-  function hasPF(){ return typeof g.PF !== 'undefined' && g.PF && typeof g.PF.normalize2 === 'function'; }
+  // ===== PF (preflop169.json via preflop_rank.js) =====
+  function hasPF(){ return typeof g.PF !== 'undefined' && g.PF && typeof g.PF.normalize2 === 'function' && typeof g.PF.describe === 'function'; }
   function rankNumToChar(n){
     if(typeof n === 'string'){
       const u = n.toUpperCase();
@@ -29,28 +29,32 @@
     const s2 = String(hand[1].s || '').toLowerCase();
     try{
       const tag = g.PF.normalize2(r1, s1, r2, s2); // "AKs","QJo","77"
-      if(tag){
-        const info = g.PF.describe(tag);
-        console.debug('[Pré-flop PF]', { tag, rank: info?.rank, tier: info?.tier });
-      }
       return tag;
     }catch(e){
       console.warn('[PF] normalize2 falhou:', e);
       return null;
     }
   }
-  // === ALTERADO: mantém a linha do rank PF em TODAS as streets ===
+
+  // === Mostra a linha do rank PF APENAS no pré-flop (remove nas demais streets) ===
   function renderPreflopRankLineInto(box){
     if(!box) return;
     const { hand, board } = PC.getKnown();
 
+    // Se já existe flop (board >= 3), remove a linha (se existir) e sai
+    if(board && board.length >= 3){
+      const old = box.querySelector('#preflopRankLine');
+      if(old) old.remove();
+      return;
+    }
+
+    // PRÉ-FLOP
     let line = box.querySelector('#preflopRankLine');
     if(!line){
       line = document.createElement('div');
       line.id = 'preflopRankLine';
       line.className = 'mut';
       line.style.marginTop = '6px';
-      // inserir antes da barra se existir
       const bar = box.querySelector('.bar');
       if(bar) box.insertBefore(line, bar);
       else box.insertBefore(line, box.firstChild);
@@ -61,23 +65,29 @@
       return;
     }
 
-    const stageLabel = (board && board.length>=3) ? 'Pré-flop (inicial)' : 'Pré-flop';
     if(!hasPF()){
-      line.textContent = `${stageLabel}: ranking 1–169 indisponível (preflop_rank.js não carregado).`;
+      line.textContent = 'Pré-flop: ranking 1–169 indisponível (preflop_rank.js/JSON não carregado).';
       return;
     }
+
     const tag = getPreflopTagFromHand();
-    if(!tag){
-      line.textContent = `${stageLabel}: (rank indisponível para esta mão)`;
-      return;
-    }
-    const info = g.PF.describe(tag);
+    let info = null;
+    try{ if(tag) info = g.PF.describe(tag); }catch(e){ console.warn('[PF] describe falhou:', e); }
+
     if(info?.rank){
-      line.innerHTML = `<b>${stageLabel}:</b> ${info.hand} • <b>Rank</b> ${info.rank}/169 • ${info.tier}`;
+      line.innerHTML = `<b>Pré-flop:</b> ${info.hand} • <b>Rank</b> ${info.rank}/169 • ${info.tier}`;
     }else{
-      line.textContent = `${stageLabel}: (ranking indisponível para esta mão)`;
+      line.textContent = 'Pré-flop: (ranking indisponível para esta mão)';
     }
   }
+
+  // Re-renderiza a linha de rank PF assim que o JSON terminar de carregar
+  window.addEventListener('PF:ready', ()=>{
+    try{
+      const box = document.getElementById('equityBox');
+      if(box) renderPreflopRankLineInto(box);
+    }catch(e){}
+  });
 
   // ===== Leaderboard PÓS-FLOP =====
   function keyFromEval(ev){ return JSON.stringify({ c: ev.cat, k: ev.kick }); }
@@ -172,7 +182,7 @@
     };
   }
 
-  // ======= (seu código original) =======
+  // ======= (seu código original + integrações) =======
   let nutsOverlay=null, nutsHover=false, overlayTimer=null, wiredNuts=false;
   const deckEl = document.getElementById('deck');
 
@@ -334,7 +344,7 @@
         const ev=evalBest(opps[k].concat(full));
         const cmp=cmpEval(ev,bestEv);
         if(cmp>0){ best=`opp${k}`; bestEv=ev; winners=[`opp${k}`]; }
-        else if(cmp===0){ winners.push(`opp${k}`); } // bugfix aplicado
+        else if(cmp===0){ winners.push(`opp${k}`); } // bugfix
       }
       if(best==='hero' && winners.length===1) win++;
       else if(winners.includes('hero')) tie++;
@@ -408,7 +418,7 @@
             <button class="btn" id="btnEqCalc">↻ Recalcular</button>
           </div>
           <div id="eqStatus" class="mut" style="margin-top:8px"></div>
-          <!-- A LINHA DE RANK PRÉ-FLOP (inicial) é inserida AQUI, antes da barra -->
+          <!-- A LINHA DE RANK PRÉ-FLOP (JSON) será inserida AQUI (antes da barra) quando for pré-flop -->
           <div class="bar" style="margin-top:8px"><i id="eqBarWin" style="width:0%"></i></div>
           <div style="display:flex;gap:8px;margin-top:6px" id="eqBreak"></div>
           <div class="hint" id="suggestOut" style="margin-top:10px"></div>
@@ -447,7 +457,7 @@
         box.querySelector('h3').textContent=`${stage}: Equidade até o showdown`;
       }
 
-      // Agora SEMPRE mostramos/atualizamos a linha do rank PF
+      // Chama SEMPRE: a própria função se encarrega de mostrar/sumir conforme a street
       renderPreflopRankLineInto(box);
 
       calcEquity();
@@ -505,7 +515,7 @@
           </div>
         `;
       }
-      // Mesmo com flop parcial, mantemos a linha PF visível/atualizada
+      // Atualiza/Remove a linha PF conforme a street
       const box=document.getElementById('equityBox');
       if(box) renderPreflopRankLineInto(box);
       return;
@@ -534,14 +544,14 @@
       }
     }
 
-    // === ALTERADO: atualizar a linha PF independentemente da street ===
+    // Atualiza/Remove a linha PF conforme a street
     const box=document.getElementById('equityBox');
     if(box) renderPreflopRankLineInto(box);
   }
 
   function safeRecalc(){ try{ calcEquity(); }catch(e){} }
 
-  // ======= NUTS (SEU CÓDIGO) + overlay com leaderboard pós-flop =======
+  // ======= NUTS + overlay com leaderboard pós-flop =======
   function computeNutsPair(){
     const {board}=PC.getKnown();
     if(board.length<3) return null;
@@ -591,7 +601,7 @@
     return all.slice(0,5).map(x=>({label:x.label, right:`Rank`}));
   }
 
-  // ===== NOVO: Top 5 REAL pós-flop para overlay =====
+  // ===== Top 5 REAL pós-flop para overlay =====
   function computeTop5PostflopLeaderboard(){
     const data = computePostflopLeaderboard();
     if(!data) return null;
