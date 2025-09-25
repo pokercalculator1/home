@@ -1,4 +1,4 @@
-// pcalc-app.js (SEU CÓDIGO ORIGINAL + RANK PRÉ-FLOP POR PF + LEADERBOARD PÓS-FLOP)
+// pcalc-app.js (SEU CÓDIGO ORIGINAL + RANK PRÉ-FLOP POR PF + LEADERBOARD PÓS-FLOP) [corrigido]
 (function(g){
   const PC = g.PCALC;
   const { RANKS, SUITS, SUIT_CLASS, SUIT_GLYPH, fmtRank, cardId, makeDeck, evalBest, cmpEval, CAT, CAT_NAME } = PC;
@@ -77,20 +77,14 @@
   }
 
   // ===== Leaderboard PÓS-FLOP =====
-  // Gera uma "chave" para agrupar avaliações idênticas (mesma categoria e mesmos kickers)
-  function keyFromEval(ev){
-    // ev: { cat: number, kick: number[] }
-    return JSON.stringify({ c: ev.cat, k: ev.kick });
-  }
-  // Descreve humanamente uma avaliação (ex.: "Quadra de 4 (K kicker)")
+  function keyFromEval(ev){ return JSON.stringify({ c: ev.cat, k: ev.kick }); }
   function describeEval(ev){
     const name = CAT_NAME[ev.cat] || '—';
     const r2c = (r)=>r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r);
-    // Heurística de descrição extra por categoria:
     let detail = '';
     const k = ev.kick || [];
     switch(ev.cat){
-      case CAT.ROYAL: detail = 'Royal Flush'; break; // redundante, mas explícito
+      case CAT.ROYAL: detail = 'Royal Flush'; break;
       case CAT.SFLUSH: detail = `Straight Flush (alto ${r2c(k[0])})`; break;
       case CAT.QUADS: detail = `Quadra de ${r2c(k[0])} (kicker ${r2c(k[1])})`; break;
       case CAT.FULL: detail = `Full House (${r2c(k[0])} cheio de ${r2c(k[1])})`; break;
@@ -104,8 +98,6 @@
     }
     return { name, detail };
   }
-
-  // Lista todas as mãos adversárias possíveis (2 cartas) dado o baralho restante
   function listOpponentHoles(deadIds){
     const dead = new Set(deadIds);
     const deck = makeDeck().filter(c=>!dead.has(cardId(c)));
@@ -117,23 +109,18 @@
     }
     return holes;
   }
-
-  // Constrói o leaderboard do board atual
   function computePostflopLeaderboard(){
     const { hand, board } = PC.getKnown();
-    if(board.length < 3) return null; // só faz sentido com flop completo ou mais
+    if(board.length < 3) return null;
 
-    // cartas mortas: sua mão + board
     const deadIds = [];
     for(const c of hand) deadIds.push(cardId(c));
     for(const c of board) deadIds.push(cardId(c));
     const oppHoles = listOpponentHoles(deadIds);
 
-    // Avalia sua mão (para posicionamento)
     const heroEv = evalBest(hand.concat(board));
 
-    // Agrupa por avaliação
-    const groups = new Map(); // key -> {ev:any, count:number, examples:[string], beatsHero:boolean, cmpToHero:number}
+    const groups = new Map();
     let betterCombos=0, tieCombos=0, worseCombos=0;
 
     for(const [a,b] of oppHoles){
@@ -145,7 +132,7 @@
         groups.set(key, g);
       }
       g.count++;
-      if(g.examples.length < 5){ // limitar exemplos
+      if(g.examples.length < 5){
         g.examples.push(cardId(a)+','+cardId(b));
       }
 
@@ -155,11 +142,9 @@
       else tieCombos++;
     }
 
-    // Ordena grupos do melhor para o pior
     const arr = [...groups.values()];
-    arr.sort((x,y)=> -cmpEval(x.ev, y.ev)); // melhor primeiro
+    arr.sort((x,y)=> -cmpEval(x.ev, y.ev));
 
-    // Posição do herói entre as CLASSES distintas (não combos)
     let heroClassPos = 1;
     for(const g of arr){
       if(cmpEval(g.ev, heroEv) > 0) heroClassPos++;
@@ -167,15 +152,9 @@
     }
     const heroClassesTotal = arr.length;
 
-    // Retorna top5 + estatísticas do herói
     const top5 = arr.slice(0,5).map(g=>{
       const desc = describeEval(g.ev);
-      return {
-        name: desc.name,
-        detail: desc.detail,
-        count: g.count,
-        examples: g.examples
-      };
+      return { name: desc.name, detail: desc.detail, count: g.count, examples: g.examples };
     });
 
     return {
@@ -352,7 +331,7 @@
         const ev=evalBest(opps[k].concat(full));
         const cmp=cmpEval(ev,bestEv);
         if(cmp>0){ best=`opp${k}`; bestEv=ev; winners=[`opp${k}`]; }
-        else if(cmp===0){ winners.push(`opp${k}`]; }
+        else if(cmp===0){ winners.push(`opp${k}`); } // <— BUG FIX: removeu colchete extra
       }
       if(best==='hero' && winners.length===1) win++;
       else if(winners.includes('hero')) tie++;
@@ -606,17 +585,15 @@
     return all.slice(0,5).map(x=>({label:x.label, right:`Rank`}));
   }
 
-  // ===== NOVO: Top 5 REAL pós-flop =====
+  // ===== NOVO: Top 5 REAL pós-flop para overlay =====
   function computeTop5PostflopLeaderboard(){
     const data = computePostflopLeaderboard();
     if(!data) return null;
-
     const rows = data.top5.map((it, idx)=>({
-      left: `${idx+1}) ${it.detail}`, // ex.: "1) Quadra de 4 (kicker K)"
+      left: `${idx+1}) ${it.detail}`,
       right: `(${it.count} combos)`,
-      examples: it.examples // array de "AhKh","7d2c",...
+      examples: it.examples
     }));
-
     const hero = data.hero;
     return { rows, hero };
   }
@@ -636,7 +613,7 @@
     el.style.zIndex='9999';
   }
   function showNutsOverlay(){
-    const {board, hand}=PC.getKnown();
+    const {board}=PC.getKnown();
     const anchor=document.querySelector('.nutsline');
     if(!anchor) return;
     hideNutsOverlay();
@@ -645,7 +622,6 @@
     wrap.id='nutsOverlay';
     wrap.style.cssText='background:#0b1324;border:1px solid #334155;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.35);padding:8px 10px;min-width:280px;color:#e5e7eb;font-size:14px';
 
-    // Título
     const title=document.createElement('div');
     title.className='mut';
     title.style.cssText='margin-bottom:6px;font-weight:600';
@@ -693,7 +669,6 @@
           list.appendChild(row);
         });
 
-        // Bloco “Sua mão agora”
         const heroBlock=document.createElement('div');
         heroBlock.style.cssText='margin-top:8px;padding-top:6px;border-top:1px solid #22304b';
         const heroTitle=document.createElement('div');
@@ -738,7 +713,6 @@
     document.addEventListener('click', (e)=>{ if(nutsOverlay && !nutsOverlay.contains(e.target) && !anchor.contains(e.target)) hideNutsOverlay(); });
   }
 
-  // ===== bootstrap (seu original) =====
   function __pcalc_start_app__(){
     PC.state.prevBoardLen = Math.max(0, PC.state.selected.length-2);
     renderDeck();
