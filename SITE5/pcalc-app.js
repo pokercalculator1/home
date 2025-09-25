@@ -1,4 +1,4 @@
-// pcalc-app.js
+// pcalc-app.js (COMPLETO E CORRIGIDO)
 import {
   PCalcState, makeDeck, RANKS, SUITS, cardId, fmtRank,
   SUIT_CLASS, SUIT_GLYPH, evalBest
@@ -8,14 +8,16 @@ import { renderOuts } from './pcalc-outs.js';
 import { suggestAction, decisionClass, shouldGlow, eqPctPreflop } from './pcalc-suggest.js';
 import { TTS } from './pcalc-tts.js';
 
-// ===== Checagem leve do módulo PF (preflop_rank.js) =====
+// ========= PF (preflop_rank.js) =========
 function hasPF(){
   return typeof window !== 'undefined' && window.PF && typeof PF.normalize2 === 'function';
 }
 
+// ========= DOM refs / estado local =========
 const deckEl = document.getElementById('deck');
 let stageJustSet = null;
 
+// ========= Estágio por tamanho do board =========
 function stageFromBoardLen(n){
   return n<3 ? 'Pré-flop' : (n===3 ? 'Pós-flop' : (n===4 ? 'Pós-turn' : 'Pós-river'));
 }
@@ -26,8 +28,53 @@ function updateStageChange(oldLen, newLen){
   PCalcState.setPrevBoardLen(newLen);
 }
 
-function renderSlots(){ /* seus slots custom se aplicam; mantido mínimo aqui */ }
+// ========= Render dos “slots” (h0,h1,b0..b4) =========
+function slotIds(){ return ['h0','h1','b0','b1','b2','b3','b4']; }
 
+function renderSlots(){
+  const ids = slotIds();
+  const { hand, board } = PCalcState.getKnown();
+
+  // helper para desenhar uma carta
+  const draw = (el, c) => {
+    if(!el) return;
+    if(!c){
+      el.innerHTML = '<span class="mut">—</span>';
+      el.removeAttribute('data-r'); el.removeAttribute('data-s');
+      return;
+    }
+    const rank = typeof c.r === 'number' ? (c.r===14?'A':c.r===13?'K':c.r===12?'Q':c.r===11?'J':c.r===10?'T':String(c.r)) : String(c.r).toUpperCase();
+    const suit = String(c.s).toLowerCase(); // 'h','d','c','s'
+    const cls  = SUIT_CLASS[suit] || '';
+    const gly  = SUIT_GLYPH[suit] || '';
+    el.classList.remove('red','blk','heart','diamond','club','spade');
+    if(cls) el.classList.add(cls);
+    el.dataset.r = rank;
+    el.dataset.s = suit;
+    el.innerHTML = `<div class="cr">${rank}</div><div class="cs">${gly}</div>`;
+  };
+
+  // preencher mão
+  const h0 = document.getElementById('h0');
+  const h1 = document.getElementById('h1');
+  draw(h0, hand[0] || null);
+  draw(h1, hand[1] || null);
+
+  // preencher board
+  const b0 = document.getElementById('b0');
+  const b1 = document.getElementById('b1');
+  const b2 = document.getElementById('b2');
+  const b3 = document.getElementById('b3');
+  const b4 = document.getElementById('b4');
+
+  draw(b0, board[0] || null);
+  draw(b1, board[1] || null);
+  draw(b2, board[2] || null);
+  draw(b3, board[3] || null);
+  draw(b4, board[4] || null);
+}
+
+// ========= Render do “baralho” clicável =========
 function renderDeck(){
   if(!deckEl) return;
   const selected = PCalcState.getSelected();
@@ -52,6 +99,7 @@ function renderDeck(){
   renderEverything();
 }
 
+// ========= Categoria (feito atual) =========
 function renderHeroMade(){
   const el=document.getElementById('handCat'); if(!el) return;
   const {hand,board}=PCalcState.getKnown();
@@ -61,6 +109,7 @@ function renderHeroMade(){
   el.textContent = txt;
 }
 
+// ========= Simulação (pós-flop) =========
 function simulateEquity(hand,board,nOpp=1,trials=5000){
   const missing=5-board.length;
   if(missing<0) return {win:0,tie:0,lose:100};
@@ -103,13 +152,12 @@ function compare(a,b){
   return 0;
 }
 
-// ===== CORRIGIDO: derive SEMPRE da mão real (evita confundir com bordo) =====
+// ========= Tag pré-flop (AKs/QJo/77) usando a MÃO real =========
 function getPreflopTag(){
   if(!hasPF()) return null;
-  const { hand } = PCalcState.getKnown(); // mão do herói (2 cartas)
+  const { hand } = PCalcState.getKnown();
   if(!hand || hand.length<2) return null;
 
-  // cartas no formato {r:14..2 ou 'A'..'2'; s:'h/d/c/s'}
   const r1 = String(hand[0].r).toUpperCase();
   const r2 = String(hand[1].r).toUpperCase();
   const s1 = String(hand[0].s).toLowerCase();
@@ -128,18 +176,18 @@ function getPreflopTag(){
   }
 }
 
-// ===== Linha de ranking pré-flop (mostra só antes do flop) =====
+// ========= Linha de ranking pré-flop (só antes do flop) =========
 function renderPreflopRankLine(container){
   if(!container) return;
   const {hand,board}=PCalcState.getKnown();
-  // remove quando já há 3+ cartas na mesa
+
+  // remove se já tiver 3+ cartas no board
   if(hand.length<2 || board.length>=3) {
     const old = container.querySelector('#preflopRankLine');
     if(old) old.remove();
     return;
   }
 
-  // cria o bloco se não existir (insere no topo do painel)
   let line = container.querySelector('#preflopRankLine');
   if(!line){
     line = document.createElement('div');
@@ -166,6 +214,7 @@ function renderPreflopRankLine(container){
   }
 }
 
+// ========= Painel de Equidade (pré/pós-flop) =========
 function renderEquityPanel(){
   const box=document.getElementById('equityBox');
   if(!box) return;
@@ -236,7 +285,7 @@ function renderEquityPanel(){
       box.querySelector('h3').textContent=`${stage}: Equidade até o showdown`;
     }
 
-    // Mostra/atualiza a linha de ranking apenas no pré-flop
+    // Mostra/atualiza a linha de ranking somente no pré-flop
     renderPreflopRankLine(box);
 
     calcEquity();
@@ -247,6 +296,7 @@ function renderEquityPanel(){
   }
 }
 
+// ========= Cálculo de equidade + sugestão =========
 function calcEquity(){
   const {hand,board}=PCalcState.getKnown();
   if(hand.length<2) return;
@@ -294,6 +344,7 @@ function calcEquity(){
   }
 }
 
+// ========= Util: comprar cartas aleatórias =========
 function pickRandom(n, excludeIds){
   const deck = makeDeck();
   const ex = new Set(excludeIds);
@@ -307,6 +358,7 @@ function pickRandom(n, excludeIds){
   return out;
 }
 
+// ========= Botões =========
 function wireButtons(){
   const btnFlop = document.getElementById('btnFlop');
   const btnTurn = document.getElementById('btnTurn');
@@ -358,6 +410,7 @@ function wireButtons(){
   });
 }
 
+// ========= Ciclo de render =========
 function renderEverything(){
   renderPreflopPanel();
   renderOuts();
@@ -365,8 +418,10 @@ function renderEverything(){
   renderEquityPanel();
 }
 
+// ========= Eventos =========
 PCalcState.on('pcalc:state-changed', ()=>{ renderDeck(); });
 
+// ========= Boot =========
 window.__pcalc_start_app__ = function(){
   renderDeck();
   wireButtons();
