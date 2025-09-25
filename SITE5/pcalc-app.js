@@ -164,7 +164,8 @@
       for(let k=0;k<nOpp;k++){
         const ev=evalBest(opps[k].concat(full));
         const cmp=cmpEval(ev,bestEv);
-        if(cmp>0){ best=`opp${k}`; bestEv=ev; winners=[`opp${k}`]; }
+        // IMPORTANTE: cmp<0 => ev é melhor
+        if(cmp<0){ best=`opp${k}`; bestEv=ev; winners=[`opp${k}`]; }
         else if(cmp===0){ winners.push(`opp${k}`); }
       }
       if(best==='hero' && winners.length===1) win++;
@@ -191,8 +192,9 @@
           const cb = pool[b];
           const oppEv = evalBest([ca,cb].concat(finalBoard));
           const cmp = cmpEval(heroEv, oppEv);
-          if(cmp>0) win++;
-          else if(cmp<0) lose++;
+          // heroEv melhor se cmp<0
+          if(cmp<0) win++;
+          else if(cmp>0) lose++;
           else tie++;
         }
       }
@@ -334,9 +336,7 @@
       return;
     }
 
-    // Equidade SEMPRE por simulação (pré e pós-flop)
     const eqPct = (res.win + res.tie/2);
-
     const sugg = PC.suggestAction(eqPct, hand, board, opp);
     const cls   = PC.decisionClass(sugg.title);
     const glow  = PC.shouldGlow(cls);
@@ -372,11 +372,13 @@
       for(let j=i+1;j<remaining.length;j++){
         const a=remaining[i], b=remaining[j];
         const ev = evalBest([a,b].concat(board));
-        if(!bestEv || cmpEval(ev,bestEv)>0){ bestEv=ev; bestPair=[a,b]; }
+        // CORREÇÃO: cmp<0 => ev é melhor
+        if(!bestEv || cmpEval(ev,bestEv)<0){ bestEv=ev; bestPair=[a,b]; }
       }
     }
     return bestPair? {pair:bestPair, ev:bestEv}: null;
   }
+
   function renderNuts(){
     const n0=document.getElementById('n0'), n1=document.getElementById('n1'), ncat=document.getElementById('nutsCat');
     function clear(el){ if(!el) return; el.classList.remove('filled'); el.textContent=''; }
@@ -399,7 +401,7 @@
   function pairKeyByRank(r1,r2){ const hi=Math.max(r1,r2), lo=Math.min(r1,r2); return `${hi}-${lo}`; }
   function pairLabelByRank(r1,r2){ const hi=Math.max(r1,r2), lo=Math.min(r1,r2); return `${RANK_CHAR(hi)}${RANK_CHAR(lo)}`; }
 
-  // --- label da mão do herói (ex.: "AK")
+  // Label da mão do herói (ex.: "AK")
   function heroLabel(){
     const {hand}=PC.getKnown();
     if(!hand || hand.length<2) return '';
@@ -408,7 +410,6 @@
   }
 
   // ===== Rankings completos =====
-  // Pré-flop: ranking estilo "Chen simplificado" (mantido do seu código original para o pré)
   function buildFullRankingPreflop(){
     const all=[];
     for(let i=0;i<RANKS.length;i++){
@@ -419,11 +420,9 @@
       }
     }
     all.sort((a,b)=> b.score-a.score);
-    return all.map((x)=>({label:x.label, right:'Rank'})); // right textual só informativo
+    return all.map((x)=>({label:x.label, right:'Rank'}));
   }
 
-  // Pós-flop+: ranking por melhor categoria/força resultante **por chave de ranks**,
-  // pegando a MELHOR combinação possível que ainda existe no baralho (por rank).
   function buildFullRankingPostflop(){
     const {board}=PC.getKnown();
     const remaining = makeDeck().filter(c=>!PC.state.selected.includes(cardId(c)));
@@ -434,44 +433,34 @@
         const key = pairKeyByRank(a.r,b.r);
         const ev = evalBest([a,b].concat(board));
         const cur = bestByKey.get(key);
-        if(!cur || cmpEval(ev, cur.ev)>0){
-          bestByKey.set(key,{ev,label:pairLabelByRank(a.r,b.a?b.a:b.r)}); // fix label by ranks only
+        // CORREÇÃO: cmp<0 => ev é melhor
+        if(!cur || cmpEval(ev, cur.ev)<0){
+          bestByKey.set(key,{ev,label:pairLabelByRank(a.r,b.r)});
         }
       }
     }
-    // Corrige o label (a linha acima tinha um typo proposital p/ garantir ranks)
-    for(const [k,v] of bestByKey){
-      const [hi,lo] = k.split('-').map(Number);
-      v.label = pairLabelByRank(hi,lo);
-    }
 
-    // Garante que a mão do herói exista no ranking (caso impossível por exaustão de cartas)
+    // Garante entrada para a mão do herói
     const hlab = heroLabel();
     if(hlab){
-      const {hand,board} = PC.getKnown();
-      const evHero = evalBest(hand.concat(board));
+      const {hand}=PC.getKnown();
       const [rA,rB] = hand.map(c=>c.r);
       const hkey = pairKeyByRank(rA,rB);
       if(!bestByKey.has(hkey)){
+        const evHero = evalBest(hand.concat(board));
         bestByKey.set(hkey, { ev: evHero, label: hlab, _injected:true });
-      }else{
-        // Mantém o melhor por key já calculado (para comparabilidade entre keys)
-        // (não substituímos para não enviesar o ranking)
       }
     }
 
     const arr=[...bestByKey.values()];
-    arr.sort((x,y)=> -cmpEval(x.ev,y.ev));
+    // CORREÇÃO: ordenar com cmpEval direto (melhor primeiro quando cmp<0)
+    arr.sort((x,y)=> cmpEval(x.ev,y.ev));
     return arr.map(x=>({label:x.label, right:(CAT_NAME[x.ev.cat]||'')}));
   }
 
-  // ====== Top5 helpers antigos (agora usando os FULL rankings) ======
-  function computeTop5PreflopChen(){
-    return buildFullRankingPreflop().slice(0,5);
-  }
-  function computeTop5Postflop(){
-    return buildFullRankingPostflop().slice(0,5);
-  }
+  // Mantém APIs de Top5
+  function computeTop5PreflopChen(){ return buildFullRankingPreflop().slice(0,5); }
+  function computeTop5Postflop(){ return buildFullRankingPostflop().slice(0,5); }
 
   function hideNutsOverlay(){ if(nutsOverlay){ nutsOverlay.remove(); nutsOverlay=null; } if(overlayTimer){ clearTimeout(overlayTimer); overlayTimer=null; } }
   function positionOverlayNear(anchor, el){
@@ -488,7 +477,6 @@
     el.style.zIndex='9999';
   }
 
-  // ========= Overlay com destaque e posição da sua mão =========
   function showNutsOverlay(){
     const {board}=PC.getKnown();
     const anchor=document.querySelector('.nutsline');
@@ -498,16 +486,12 @@
     const isPreflop = board.length<3;
     const titleText = isPreflop ? 'Top 5 mãos (pré-flop)' : 'Top 5 mãos (ranks)';
 
-    // Ranking completo + Top5
     const fullRows = isPreflop ? buildFullRankingPreflop() : buildFullRankingPostflop();
     const rows = fullRows.slice(0,5);
 
-    // Label do herói e posição no ranking completo
     const hLabel = heroLabel();
     let heroIndex = -1;
-    if(hLabel){
-      heroIndex = fullRows.findIndex(x => x.label === hLabel);
-    }
+    if(hLabel){ heroIndex = fullRows.findIndex(x => x.label === hLabel); }
 
     const wrap=document.createElement('div');
     wrap.id='nutsOverlay';
@@ -550,7 +534,6 @@
     }
     wrap.appendChild(list);
 
-    // Se a mão NÃO estiver no Top5, mostra a posição completa logo abaixo
     if(hLabel && heroIndex>=0 && heroIndex>=5){
       const sep=document.createElement('div');
       sep.style.cssText='height:8px';
