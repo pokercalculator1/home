@@ -3,6 +3,23 @@
   const PC = g.PCALC;
   const { RANKS, SUITS, SUIT_CLASS, SUIT_GLYPH, fmtRank, cardId, makeDeck, evalBest, cmpEval, CAT, CAT_NAME } = PC;
 
+  // ===== Helpers de ranks/labels (DECLARADOS ANTES DE QUALQUER USO) =====
+  const RANK_CHAR = r=>r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r);
+  const RANK_PRINT = RANK_CHAR;
+  function pairLabelHuman(c1, c2){
+    const hi = Math.max(c1.r,c2.r), lo = Math.min(c1.r,c2.r);
+    const suited = (c1.s===c2.s) ? 's' : 'o';
+    return `${RANK_PRINT(hi)}${RANK_PRINT(lo)}${suited}`;
+  }
+  function normalizeHand2(h){
+    if(!h || h.length<2) return '';
+    const ranks = h.map(c=>c.r).sort((a,b)=>b-a);
+    const suited = (h[0].s===h[1].s);
+    const a=RANK_PRINT(ranks[0]), b=RANK_PRINT(ranks[1]);
+    return (a===b) ? (a+a) : (a+b+(suited?'s':'o'));
+  }
+
+  // ===== Estado/UI base =====
   let nutsOverlay=null, nutsHover=false, overlayTimer=null, wiredNuts=false;
   const deckEl = document.getElementById('deck');
 
@@ -85,6 +102,8 @@
     }
     return out;
   }
+
+  // ==== Botões ====
   const btnFlop = document.getElementById('btnFlop');
   const btnTurn = document.getElementById('btnTurn');
   const btnRiver= document.getElementById('btnRiver');
@@ -130,6 +149,7 @@
     PC.state.selected=[]; updateStageChange(PC.state.prevBoardLen, 0); renderDeck(); safeRecalc();
   };
 
+  // ==== Render mão herói ====
   function renderHeroMade(){
     const el=document.getElementById('handCat'); if(!el) return;
     const {hand,board}=PC.getKnown();
@@ -138,6 +158,7 @@
     el.textContent = CAT_NAME[ev.cat] || '—';
   }
 
+  // ==== Monte Carlo simulação de equidade ====
   function simulateEquity(hand,board,nOpp=1,trials=5000){
     const missing=5-board.length;
     if(missing<0) return {win:0,tie:0,lose:100};
@@ -174,6 +195,7 @@
     return {win:win/tot*100, tie:tie/tot*100, lose:lose/tot*100};
   }
 
+  // ==== Equidade exata no turn ====
   function exactTurnEquity(hand, board){
     if(board.length!==4) return null;
     const remainingAll = makeDeck().filter(c=>!PC.state.selected.includes(cardId(c)));
@@ -200,15 +222,258 @@
     return {win:win/tot*100, tie:tie/tot*100, lose:lose/tot*100, _method:'exact-turn'};
   }
 
-  function computeEquity(hand, board, nOpp=1, trials=5000){
-    if(board.length===4 && nOpp===1){
-      return exactTurnEquity(hand, board);
+  // ==== Ranking absoluto pós-flop com chaves lógicas (todas categorias) ====
+  function rankAbsolutePostflop(board){
+    const deck = makeDeck();
+    const exclude = new Set(board.map(cardId)); // ABSOLUTO: remove só o board
+    const rem = deck.filter(c=>!exclude.has(cardId(c)));
+
+    const bestByKey = new Map();
+
+    for(let i=0;i<rem.length;i++){
+      for(let j=i+1;j<rem.length;j++){
+        const a=rem[i], b=rem[j];
+        const ev = evalBest([a,b].concat(board));
+
+        let key='', label='';
+        switch(ev.cat){
+          case CAT.HIGH:
+            key = `HIGH-${ev.ranks[0]}`;
+            label = `${RANK_CHAR(ev.ranks[0])} high`;
+            break;
+          case CAT.PAIR:
+            key = `PAIR-${ev.ranks[0]}`;
+            label = `Par de ${RANK_CHAR(ev.ranks[0])}`;
+            break;
+          case CAT.TWOPAIR:
+            key = `2P-${ev.ranks[0]}-${ev.ranks[1]}`;
+            label = `Dois pares ${RANK_CHAR(ev.ranks[0])}+${RANK_CHAR(ev.ranks[1])}`;
+            break;
+          case CAT.TRIPS:
+            key = `TRIPS-${ev.ranks[0]}`;
+            label = `Trinca de ${RANK_CHAR(ev.ranks[0])}`;
+            break;
+          case CAT.STRAIGHT:
+            key = `ST-${ev.ranks[0]}`; // maior carta da sequência
+            label = `Sequência até ${RANK_CHAR(ev.ranks[0])}`;
+            break;
+          case CAT.FLUSH:
+            key = `FL-${ev.ranks[0]}`; // maior carta do flush
+            label = `Flush ${RANK_CHAR(ev.ranks[0])} high`;
+            break;
+          case CAT.FULL:
+            key = `FH-${ev.ranks[0]}-${ev.ranks[1]}`; // trio+par
+            label = `Full house ${RANK_CHAR(ev.ranks[0])} over ${RANK_CHAR(ev.ranks[1])}`;
+            break;
+          case CAT.QUADS:
+            key = `4K-${ev.ranks[0]}`;
+            label = `Quadra de ${RANK_CHAR(ev.ranks[0])}`;
+            break;
+          case CAT.STFLUSH:
+            key = ev.ranks[0]===14 ? `ROYAL` : `SF-${ev.ranks[0]}`;
+            label = ev.ranks[0]===14 ? `Royal Flush` : `Straight flush até ${RANK_CHAR(ev.ranks[0])}`;
+            break;
+          default:
+            key = JSON.stringify(ev.ranks);
+            label = CAT_NAME[ev.cat]||'Mão';
+        }
+
+        const cur = bestByKey.get(key);
+        if(!cur || cmpEval(ev, cur.ev)>0){
+          bestByKey.set(key,{ev,label});
+        }
+      }
     }
-    const mc = simulateEquity(hand,board,nOpp,trials);
-    mc._method = 'mc';
-    return mc;
+
+    const arr=[...bestByKey.values()];
+    arr.sort((x,y)=> -cmpEval(x.ev,y.ev));
+    return arr;
   }
 
+  // ==== Ranking 169 pré-flop canônico (sem duplicatas) ====
+  function rankPreflop169(){
+    const order = [14,13,12,11,10,9,8,7,6,5,4,3,2]; // A..2
+    const chenScore = PC.chenScore; // se existir
+    const out = [];
+    for (let i = 0; i < order.length; i++){
+      for (let j = 0; j < order.length; j++){
+        const hi = order[i], lo = order[j];
+        if (i === j){
+          const norm = `${RANK_PRINT(hi)}${RANK_PRINT(hi)}`;
+          const s = chenScore ? chenScore({pair:hi}) : (10 + (hi-2)/2);
+          out.push({ norm, chen:s });
+        } else if (i < j){
+          const normS = `${RANK_PRINT(hi)}${RANK_PRINT(lo)}s`;
+          const s1 = chenScore ? chenScore({hi,lo,suited:true}) : (6 + (hi+lo)/30 + 1.5);
+          out.push({ norm:normS, chen:s1 });
+        } else {
+          const normO = `${RANK_PRINT(hi)}${RANK_PRINT(lo)}o`;
+          const s2 = chenScore ? chenScore({hi,lo,suited:false}) : (6 + (hi+lo)/30);
+          out.push({ norm:normO, chen:s2 });
+        }
+      }
+    }
+    out.sort((a,b)=> b.chen - a.chen);
+    return out; // 169 únicas
+  }
+
+  // ==== Render “melhor mão” básica (cards + label principal) ====
+  function computeNutsPair(){
+    const {board}=PC.getKnown();
+    if(board.length<3) return null;
+    const remaining = makeDeck().filter(c=>!PC.state.selected.includes(cardId(c)));
+    let bestPair=null, bestEv=null;
+    for(let i=0;i<remaining.length;i++){
+      for(let j=i+1;j<remaining.length;j++){
+        const a=remaining[i], b=remaining[j];
+        const ev = evalBest([a,b].concat(board));
+        if(!bestEv || cmpEval(ev,bestEv)>0){ bestEv=ev; bestPair=[a,b]; }
+      }
+    }
+    return bestPair? {pair:bestPair, ev:bestEv}: null;
+  }
+  function renderNuts(){
+    const n0=document.getElementById('n0'), n1=document.getElementById('n1'), ncat=document.getElementById('nutsCat');
+    function clear(el){ if(!el) return; el.classList.remove('filled'); el.textContent=''; }
+    function paint(el,c){ if(!el) return; el.classList.add('filled'); el.innerHTML = `<div class="${SUIT_CLASS[c.s]}" style="text-align:center"><div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div><div style="font-size:18px">${SUIT_GLYPH[c.s]}</div></div>`; }
+
+    const {board}=PC.getKnown();
+    if(board.length<3){
+      paint(n0,{r:14,s:'s'}); paint(n1,{r:14,s:'h'});
+      if(ncat) ncat.textContent='A Melhor Mão: Par de Ases';
+      return;
+    }
+    const res=computeNutsPair();
+    if(!res){ clear(n0); clear(n1); if(ncat) ncat.textContent=''; return; }
+    const [c1,c2]=res.pair; paint(n0,c1); paint(n1,c2);
+    if(ncat) ncat.textContent = (CAT_NAME[res.ev.cat]||'');
+  }
+
+  // ==== Overlay Top 5 + destaque da sua mão (pré e pós-flop) ====
+  function hideNutsOverlay(){ if(nutsOverlay){ nutsOverlay.remove(); nutsOverlay=null; } if(overlayTimer){ clearTimeout(overlayTimer); overlayTimer=null; } }
+  function positionOverlayNear(anchor, el){
+    const r=anchor.getBoundingClientRect();
+    const top=r.bottom + window.scrollY + 6;
+    let left=r.left + window.scrollX;
+    document.body.appendChild(el);
+    const w=el.getBoundingClientRect().width;
+    const maxLeft=window.scrollX + window.innerWidth - w - 8;
+    if(left>maxLeft) left = Math.max(8, maxLeft);
+    el.style.position='absolute';
+    el.style.top=`${top}px`;
+    el.style.left=`${left}px`;
+    el.style.zIndex='9999';
+  }
+  function showNutsOverlay(anchor){
+    const {hand, board} = PC.getKnown();
+    if(!anchor){
+      anchor = document.querySelector('.nutsline') || document.getElementById('nutsCat') || document.getElementById('n0');
+      if(!anchor) return;
+    }
+    hideNutsOverlay();
+
+    const isPreflop = board.length<3;
+    const wrap=document.createElement('div');
+    wrap.id='nutsOverlay';
+    wrap.style.cssText='background:#0b1324;border:1px solid #334155;border-radius:12px;box-shadow:0 16px 36px rgba(0,0,0,.45);padding:10px 12px;min-width:240px;color:#cbd5e1;font-size:13px';
+
+    const title=document.createElement('div');
+    title.className='mut';
+    title.style.cssText='margin-bottom:8px;font-weight:700;color:#e5e7eb';
+    title.textContent = isPreflop ? 'Ranking (169) • Top 5' : 'Melhores mãos absolutas • Top 5';
+    wrap.appendChild(title);
+
+    const list=document.createElement('div');
+
+    if(isPreflop){
+      const table169 = rankPreflop169();
+      const heroNorm = (hand.length===2) ? normalizeHand2(hand) : null;
+
+      table169.slice(0,5).forEach((it,idx)=>{
+        const isHero = (heroNorm && it.norm===heroNorm);
+        const row=document.createElement('div');
+        row.style.cssText=`display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-radius:8px;${isHero?'background:#1f2937;color:#fff;':''}`;
+        row.innerHTML = `<div>${idx+1}) ${it.norm}${isHero?' <span style="opacity:.9">— você</span>':''}</div><div class="mut">${Math.round((it.chen/20)*100)}%</div>`;
+        list.appendChild(row);
+      });
+
+      if(heroNorm){
+        const heroIdx = table169.findIndex(it=>it.norm===heroNorm);
+        if(heroIdx>=0 && heroIdx>=5){
+          const sep=document.createElement('div');
+          sep.className='mut'; sep.style.cssText='padding:4px 0 2px;font-size:12px;opacity:.8';
+          sep.textContent='…';
+          list.appendChild(sep);
+
+          const hero=table169[heroIdx];
+          const row=document.createElement('div');
+          row.style.cssText='display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-radius:8px;background:#1f2937;color:#fff';
+          row.innerHTML = `<div>${heroIdx+1}) ${hero.norm} <span style="opacity:.9">— você</span></div><div class="mut">${Math.round((hero.chen/20)*100)}%</div>`;
+          list.appendChild(row);
+        }
+      }
+    }else{
+      const abs = rankAbsolutePostflop(board);
+      const top5 = abs.slice(0,5);
+      const heroEv = (hand.length===2) ? evalBest(hand.concat(board)) : null;
+
+      let heroRank = null;
+      if(heroEv){
+        for(let i=0;i<abs.length;i++){
+          const cmp = cmpEval(heroEv, abs[i].ev);
+          if(cmp>=0){ heroRank = i+1; break; }
+        }
+        if(heroRank===null) heroRank = abs.length;
+      }
+
+      top5.forEach((it,idx)=>{
+        const thisRank = idx+1;
+        const isHeroHere = (heroRank===thisRank);
+        const row=document.createElement('div');
+        row.style.cssText=`display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-radius:8px;${isHeroHere?'background:#1f2937;color:#fff;':''}`;
+        row.innerHTML = `<div>${thisRank}) ${it.label}${isHeroHere?' <span style="opacity:.9">— você</span>':''}</div><div class="mut">${CAT_NAME[it.ev.cat]||''}</div>`;
+        list.appendChild(row);
+      });
+
+      if(heroEv && heroRank>5){
+        const sep=document.createElement('div');
+        sep.className='mut'; sep.style.cssText='padding:4px 0 2px;font-size:12px;opacity:.8';
+        sep.textContent='…';
+        list.appendChild(sep);
+
+        const labelHero = pairLabelHuman(hand[0], hand[1]);
+        const row=document.createElement('div');
+        row.style.cssText='display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-radius:8px;background:#1f2937;color:#fff';
+        row.innerHTML = `<div>${heroRank}) ${labelHero} <span style="opacity:.9">— você</span></div><div class="mut">${CAT_NAME[heroEv.cat]||''}</div>`;
+        list.appendChild(row);
+      }
+    }
+
+    wrap.appendChild(list);
+
+    wrap.addEventListener('mouseenter', ()=>{ nutsHover=true; if(overlayTimer){clearTimeout(overlayTimer); overlayTimer=null;} });
+    wrap.addEventListener('mouseleave', ()=>{ nutsHover=false; overlayTimer=setTimeout(()=>{ if(!nutsHover) hideNutsOverlay(); }, 180); });
+
+    positionOverlayNear(anchor, wrap);
+    nutsOverlay=wrap;
+  }
+  function wireNutsOverlayOnce(){
+    if(wiredNuts) return;
+    const anchor =
+      document.querySelector('.nutsline') ||
+      document.getElementById('nutsCat') ||
+      document.getElementById('n0');
+    if(!anchor) return;
+
+    wiredNuts = true;
+    anchor.style.cursor = 'pointer';
+    anchor.addEventListener('click', (e)=>{ e.stopPropagation(); if(nutsOverlay) hideNutsOverlay(); else showNutsOverlay(anchor); });
+    anchor.addEventListener('mouseenter', ()=>{ showNutsOverlay(anchor); });
+    anchor.addEventListener('mouseleave', ()=>{ overlayTimer=setTimeout(()=>{ if(!nutsHover) hideNutsOverlay(); }, 180); });
+    document.addEventListener('click', (e)=>{ if(nutsOverlay && !nutsOverlay.contains(e.target) && !anchor.contains(e.target)) hideNutsOverlay(); });
+  }
+
+  // ==== Painel de equidade ====
   function renderEquityPanel(){
     const box=document.getElementById('equityBox');
     if(!box) return;
@@ -225,7 +490,7 @@
           <div class="labels" style="align-items:center;margin-top:6px;gap:6px;flex-wrap:wrap">
             <span class="lbl">Oponentes:
               <select id="eqOpp" style="background:#0b1324;color:#e5e7eb;border:none;outline:0">
-                ${Array.from({length:8},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('')}
+                ${Array.from({length:8},(_,i)=>`<option value="${i+1}" ${i===1?'selected':''}>${i+1}</option>`).join('')}
               </select>
             </span>
             <span class="lbl">Amostras:
@@ -327,10 +592,25 @@
       }
     }
 
-    const eqPct = board.length<3 ? PC.chenPercent(PC.chenScore(hand[0],hand[1]).score)
-                                 : (res.win + res.tie/2);
-    const sugg = PC.suggestAction(eqPct, hand, board, opp);
+    // Não sugerir com flop parcial (1–2 cartas)
     const out   = document.getElementById('suggestOut');
+    const partialFlop = (board.length === 1 || board.length === 2);
+    if (partialFlop) {
+      if (out) {
+        out.innerHTML = `
+          <div class="decision">
+            <div class="decision-title info">Aguarde o flop completo</div>
+            <div class="decision-detail">Selecione as 3 cartas do flop para sugerir ação.</div>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    // Equidade SEMPRE por simulação (pré e pós-flop)
+    const eqPct = (res.win + res.tie/2);
+
+    const sugg = PC.suggestAction(eqPct, hand, board, opp);
     const cls   = PC.decisionClass(sugg.title);
     const glow  = PC.shouldGlow(cls);
 
@@ -355,142 +635,24 @@
 
   function safeRecalc(){ try{ calcEquity(); }catch(e){} }
 
-  function computeNutsPair(){
-    const {board}=PC.getKnown();
-    if(board.length<3) return null;
-    const remaining = makeDeck().filter(c=>!PC.state.selected.includes(cardId(c)));
-    let bestPair=null, bestEv=null;
-    for(let i=0;i<remaining.length;i++){
-      for(let j=i+1;j<remaining.length;j++){
-        const a=remaining[i], b=remaining[j];
-        const ev = evalBest([a,b].concat(board));
-        if(!bestEv || cmpEval(ev,bestEv)>0){ bestEv=ev; bestPair=[a,b]; }
-      }
-    }
-    return bestPair? {pair:bestPair, ev:bestEv}: null;
-  }
-  function renderNuts(){
-    const n0=document.getElementById('n0'), n1=document.getElementById('n1'), ncat=document.getElementById('nutsCat');
-    function clear(el){ if(!el) return; el.classList.remove('filled'); el.textContent=''; }
-    function paint(el,c){ if(!el) return; el.classList.add('filled'); el.innerHTML = `<div class="${SUIT_CLASS[c.s]}" style="text-align:center"><div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div><div style="font-size:18px">${SUIT_GLYPH[c.s]}</div></div>`; }
-
-    const {board}=PC.getKnown();
-    if(board.length<3){
-      paint(n0,{r:14,s:'s'}); paint(n1,{r:14,s:'h'});
-      if(ncat) ncat.textContent='Par de Ases';
-      return;
-    }
-    const res=computeNutsPair();
-    if(!res){ clear(n0); clear(n1); if(ncat) ncat.textContent=''; return; }
-    const [c1,c2]=res.pair; paint(n0,c1); paint(n1,c2);
-    if(ncat) ncat.textContent = (CAT_NAME[res.ev.cat]||'');
-  }
-
-  const RANK_CHAR=r=>r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r);
-  function pairKeyByRank(r1,r2){ const hi=Math.max(r1,r2), lo=Math.min(r1,r2); return `${hi}-${lo}`; }
-  function pairLabelByRank(r1,r2){ const hi=Math.max(r1,r2), lo=Math.min(r1,r2); return `${RANK_CHAR(hi)}${RANK_CHAR(lo)}`; }
-
-  function computeTop5PreflopChen(){
-    const all=[];
-    for(let i=0;i<RANKS.length;i++){
-      for(let j=i;j<RANKS.length;j++){
-        const r1=RANKS[j], r2=RANKS[i];
-        const chenS = PC.chenScore({r:r1,s:'s'},{r:r2,s:'s'}).score;
-        const chenO = PC.chenScore({r:r1,s:'s'},{r:r2,s:'h'}).score;
-        const best = Math.max(chenS, chenO);
-        all.push({label:pairLabelByRank(r1,r2), score:best});
-      }
-    }
-    all.sort((a,b)=>b.score-a.score);
-    return all.slice(0,5).map(x=>({label:x.label, right:`Chen ${x.score.toFixed(1)}/20`}));
-  }
-
-  function computeTop5Postflop(){
-    const {board}=PC.getKnown();
-    const remaining = makeDeck().filter(c=>!PC.state.selected.includes(cardId(c)));
-    const bestByKey = new Map();
-    for(let i=0;i<remaining.length;i++){
-      for(let j=i+1;j<remaining.length;j++){
-        const a=remaining[i], b=remaining[j];
-        const key = pairKeyByRank(a.r,b.r);
-        const ev = evalBest([a,b].concat(board));
-        const cur = bestByKey.get(key);
-        if(!cur || cmpEval(ev, cur.ev)>0){
-          bestByKey.set(key,{ev,label:pairLabelByRank(a.r,b.r)});
-        }
-      }
-    }
-    const arr=[...bestByKey.values()];
-    arr.sort((x,y)=> -cmpEval(x.ev,y.ev));
-    return arr.slice(0,5).map(x=>({label:x.label, right:(CAT_NAME[x.ev.cat]||'')}));
-  }
-
-  function hideNutsOverlay(){ if(nutsOverlay){ nutsOverlay.remove(); nutsOverlay=null; } if(overlayTimer){ clearTimeout(overlayTimer); overlayTimer=null; } }
-  function positionOverlayNear(anchor, el){
-    const r=anchor.getBoundingClientRect();
-    const top=r.bottom + window.scrollY + 6;
-    let left=r.left + window.scrollX;
-    document.body.appendChild(el);
-    const w=el.getBoundingClientRect().width;
-    const maxLeft=window.scrollX + window.innerWidth - w - 8;
-    if(left>maxLeft) left = Math.max(8, maxLeft);
-    el.style.position='absolute';
-    el.style.top=`${top}px`;
-    el.style.left=`${left}px`;
-    el.style.zIndex='9999';
-  }
-  function showNutsOverlay(){
-    const {board}=PC.getKnown();
-    const anchor=document.querySelector('.nutsline');
-    if(!anchor) return;
-    hideNutsOverlay();
-
-    const isPreflop = board.length<3;
-    const titleText = isPreflop ? 'Top 5 mãos (pré-flop)' : 'Top 5 mãos (ranks)';
-    const rows = isPreflop ? computeTop5PreflopChen() : computeTop5Postflop();
-
-    const wrap=document.createElement('div');
-    wrap.id='nutsOverlay';
-    wrap.style.cssText='background:#0b1324;border:1px solid #334155;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.35);padding:8px 10px;min-width:180px;';
-    const title=document.createElement('div');
-    title.className='mut';
-    title.style.cssText='margin-bottom:6px;font-weight:600';
-    title.textContent=titleText;
-    wrap.appendChild(title);
-
-    const list=document.createElement('div');
-    if(rows.length){
-      rows.forEach((it,idx)=>{
-        const row=document.createElement('div');
-        row.style.cssText='display:flex;justify-content:space-between;gap:10px;padding:4px 0';
-        const left=document.createElement('div'); left.textContent=`${idx+1}) ${it.label}`;
-        const right=document.createElement('div'); right.className='mut'; right.textContent=it.right;
-        row.appendChild(left); row.appendChild(right);
-        list.appendChild(row);
-      });
-    }else{
-      const row=document.createElement('div'); row.className='mut'; row.textContent='—';
-      list.appendChild(row);
-    }
-    wrap.appendChild(list);
-
-    wrap.addEventListener('mouseenter', ()=>{ nutsHover=true; if(overlayTimer){clearTimeout(overlayTimer); overlayTimer=null;} });
-    wrap.addEventListener('mouseleave', ()=>{ nutsHover=false; overlayTimer=setTimeout(()=>{ if(!nutsHover) hideNutsOverlay(); }, 180); });
-
-    positionOverlayNear(anchor, wrap);
-    nutsOverlay=wrap;
-  }
+  // ==== Inicialização do overlay ====
   function wireNutsOverlayOnce(){
     if(wiredNuts) return;
-    const anchor=document.querySelector('.nutsline');
+    const anchor =
+      document.querySelector('.nutsline') ||
+      document.getElementById('nutsCat') ||
+      document.getElementById('n0');
     if(!anchor) return;
-    wiredNuts=true;
-    anchor.addEventListener('click', (e)=>{ e.stopPropagation(); if(nutsOverlay) hideNutsOverlay(); else showNutsOverlay(); });
-    anchor.addEventListener('mouseenter', ()=>{ showNutsOverlay(); });
+
+    wiredNuts = true;
+    anchor.style.cursor = 'pointer';
+    anchor.addEventListener('click', (e)=>{ e.stopPropagation(); if(nutsOverlay) hideNutsOverlay(); else showNutsOverlay(anchor); });
+    anchor.addEventListener('mouseenter', ()=>{ showNutsOverlay(anchor); });
     anchor.addEventListener('mouseleave', ()=>{ overlayTimer=setTimeout(()=>{ if(!nutsHover) hideNutsOverlay(); }, 180); });
     document.addEventListener('click', (e)=>{ if(nutsOverlay && !nutsOverlay.contains(e.target) && !anchor.contains(e.target)) hideNutsOverlay(); });
   }
 
+  // ==== Start app ====
   function __pcalc_start_app__(){
     PC.state.prevBoardLen = Math.max(0, PC.state.selected.length-2);
     renderDeck();
@@ -498,7 +660,6 @@
   g.__pcalc_start_app__ = __pcalc_start_app__;
 
   document.addEventListener('DOMContentLoaded', ()=>{
-    // authInit é disparado pelo login-guard.js; aqui apenas aguardamos o start via __pcalc_start_app__
-    // Nada a fazer neste momento.
+    // aguardando start via __pcalc_start_app__ (login-guard)
   });
 })(window);
