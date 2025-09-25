@@ -650,4 +650,3 @@ Claro, aqui está o script completo com a função duplicada `wireNutsOverlayOnc
     // aguardando start via __pcalc_start_app__ (login-guard)
   });
 })(window);
-```
