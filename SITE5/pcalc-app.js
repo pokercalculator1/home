@@ -1,16 +1,27 @@
 // pcalc-app.js
 (function(g){
+  // ===== Dependências do namespace PCALC =====
   const PC = g.PCALC;
-  const { RANKS, SUITS, SUIT_CLASS, SUIT_GLYPH, fmtRank, cardId, makeDeck, evalBest, cmpEval, CAT, CAT_NAME } = PC;
+  if(!PC){
+    console.error('[PCALC] Namespace ausente.');
+    return;
+  }
+  const {
+    RANKS, SUITS, SUIT_CLASS, SUIT_GLYPH,
+    fmtRank, cardId, makeDeck, evalBest, cmpEval,
+    CAT, CAT_NAME
+  } = PC;
 
   // ===== Helpers de ranks/labels =====
   const RANK_CHAR  = r=>r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r);
   const RANK_PRINT = RANK_CHAR;
+
   function pairLabelHuman(c1, c2){
     const hi = Math.max(c1.r,c2.r), lo = Math.min(c1.r,c2.r);
     const suited = (c1.s===c2.s) ? 's' : 'o';
     return `${RANK_PRINT(hi)}${RANK_PRINT(lo)}${suited}`;
   }
+
   function normalizeHand2(h){
     if(!h || h.length<2) return '';
     const ranks = h.map(c=>c.r).sort((a,b)=>b-a);
@@ -23,10 +34,13 @@
   let nutsOverlay=null, nutsHover=false, overlayTimer=null;
   const deckEl = document.getElementById('deck');
 
+  // ===== Renderização de slots (mão/board/nuts) =====
   function renderSlots(){
+    if(!PC?.state) return;
     const ids=[...PC.state.selected];
     const byId = Object.fromEntries(makeDeck().map(c=>[cardId(c),c]));
     const map=['h0','h1','b0','b1','b2','b3','b4','n0','n1'];
+
     map.forEach((sid)=>{
       const el=document.getElementById(sid);
       if(!el) return;
@@ -34,6 +48,7 @@
       let id=null; if(idx>=0) id=ids[idx];
       if(id){
         const c=byId[id];
+        if(!c){ el.classList.remove('filled'); el.textContent=''; return; }
         el.classList.add('filled');
         el.innerHTML = `<div class="${SUIT_CLASS[c.s]}" style="text-align:center">
           <div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div>
@@ -46,8 +61,10 @@
     });
   }
 
+  // ===== Render baralho (grid de cartas clicáveis) =====
   function renderDeck(){
-    if(!deckEl) return;
+    if(!deckEl || !PC?.state) return;
+
     deckEl.innerHTML='';
     for(const s of SUITS){
       for(const r of RANKS){
@@ -60,33 +77,43 @@
         deckEl.appendChild(el);
       }
     }
+
     renderSlots();
     renderNuts();
     renderHeroMade();
-    PC.computeAndRenderOuts();
+    PC.computeAndRenderOuts?.();
     renderEquityPanel();
 
-    hideNutsOverlay();        // fecha qualquer overlay aberto
-    wireNutsOverlayOnce();    // (re)liga eventos nos anchors existentes
+    // fecha overlay se houver e (re)liga hover/click nos anchors existentes
+    hideNutsOverlay();
+    wireNutsOverlayOnce();
+
     safeRecalc();
   }
 
+  // ===== Controle de estágio (para TTS e lógica de sugestão) =====
   function updateStageChange(oldLen, newLen){
+    if(!PC?.state) return;
     if(newLen>=3 && oldLen<3) PC.state.stageJustSet='Flop definido';
     else if(newLen>=4 && oldLen<4) PC.state.stageJustSet='Turn definido';
     else if(newLen>=5 && oldLen<5) PC.state.stageJustSet='River definido';
     PC.state.prevBoardLen = newLen;
   }
 
+  // ===== Seleção de cartas =====
   function toggleCard(id){
+    if(!PC?.state) return;
     const idx=PC.state.selected.indexOf(id);
+    const oldLen = Math.max(0, PC.state.selected.length-2);
+
     if(idx>=0){ PC.state.selected.splice(idx,1); }
     else{
       if(PC.state.selected.length>=7) return;
       PC.state.selected.push(id);
     }
+
     const newLen = Math.max(0, PC.state.selected.length-2);
-    updateStageChange(PC.state.prevBoardLen, newLen);
+    updateStageChange(oldLen, newLen);
     renderDeck();
     safeRecalc();
   }
@@ -104,7 +131,7 @@
     return out;
   }
 
-  // ==== Botões ====
+  // ===== Botões =====
   const btnFlop = document.getElementById('btnFlop');
   const btnTurn = document.getElementById('btnTurn');
   const btnRiver= document.getElementById('btnRiver');
@@ -114,16 +141,19 @@
     if(PC.state.selected.length<2){ alert('Selecione 2 cartas.'); return; }
     const need=[2,3,4].filter(i=>!PC.state.selected[i]);
     if(!need.length){ alert('Flop já definido.'); return; }
+
     const oldLen = Math.max(0, PC.state.selected.length-2);
     const add=pickRandom(need.length, PC.state.selected).map(cardId);
     const before=PC.state.selected.slice(0,2), after=PC.state.selected.slice(2);
     for(let i=0;i<need.length;i++) after.splice(need[i]-2, 0, add[i]);
     PC.state.selected = before.concat(after);
+
     const newLen = Math.max(0, PC.state.selected.length-2);
     updateStageChange(oldLen, newLen);
     renderDeck();
     safeRecalc();
   };
+
   if(btnTurn) btnTurn.onclick = ()=>{
     if(PC.state.selected.length<5){ alert('Defina o flop.'); return; }
     if(PC.state.selected[5]){ alert('Turn já definido.'); return; }
@@ -135,6 +165,7 @@
     renderDeck();
     safeRecalc();
   };
+
   if(btnRiver) btnRiver.onclick = ()=>{
     if(PC.state.selected.length<6){ alert('Defina o turn.'); return; }
     if(PC.state.selected[6]){ alert('River já definido.'); return; }
@@ -146,11 +177,16 @@
     renderDeck();
     safeRecalc();
   };
+
   if(btnClear) btnClear.onclick = ()=>{
-    PC.state.selected=[]; updateStageChange(PC.state.prevBoardLen, 0); renderDeck(); safeRecalc();
+    const oldLen = Math.max(0, PC.state.selected.length-2);
+    PC.state.selected=[];
+    updateStageChange(oldLen, 0);
+    renderDeck();
+    safeRecalc();
   };
 
-  // ==== Render mão do herói (categoria pronta) ====
+  // ===== Render da categoria pronta do herói =====
   function renderHeroMade(){
     const el=document.getElementById('handCat'); if(!el) return;
     const {hand,board}=PC.getKnown();
@@ -159,7 +195,7 @@
     el.textContent = CAT_NAME[ev.cat] || '—';
   }
 
-  // ==== Monte Carlo simulação de equidade ====
+  // ===== Simulação Monte Carlo de equidade =====
   function simulateEquity(hand,board,nOpp=1,trials=5000){
     const missing=5-board.length;
     if(missing<0) return {win:0,tie:0,lose:100};
@@ -169,10 +205,13 @@
     for(let t=0;t<trials;t++){
       const pool=base.slice();
       const need=2*nOpp+missing;
+
+      // Fisher-Yates parcial
       for(let i=0;i<need;i++){
         const j=i+Math.floor(Math.random()*(pool.length-i));
         const tmp=pool[i]; pool[i]=pool[j]; pool[j]=tmp;
       }
+
       let idx=0;
       const opps=[];
       for(let k=0;k<nOpp;k++){ opps.push([pool[idx++],pool[idx++]]); }
@@ -196,15 +235,18 @@
     return {win:win/tot*100, tie:tie/tot*100, lose:lose/tot*100};
   }
 
-  // ==== Equidade exata no turn ====
+  // ===== Equidade exata (turn, 1 oponente) =====
   function exactTurnEquity(hand, board){
     if(board.length!==4) return null;
     const remainingAll = makeDeck().filter(c=>!PC.state.selected.includes(cardId(c)));
     let win=0, tie=0, lose=0;
+
     for(let i=0;i<remainingAll.length;i++){
       const river = remainingAll[i];
       const finalBoard = board.concat([river]);
       const heroEv = evalBest(hand.concat(finalBoard));
+
+      // gera pares distintos para 1 vilão
       const pool = [];
       for(let k=0;k<remainingAll.length;k++){ if(k!==i) pool.push(remainingAll[k]); }
       for(let a=0;a<pool.length-1;a++){
@@ -223,10 +265,10 @@
     return {win:win/tot*100, tie:tie/tot*100, lose:lose/tot*100, _method:'exact-turn'};
   }
 
-  // ==== Ranking absoluto pós-flop (chaves lógicas por categoria) ====
+  // ===== Ranking absoluto pós-flop =====
   function rankAbsolutePostflop(board){
     const deck = makeDeck();
-    const exclude = new Set(board.map(cardId)); // ABSOLUTO: remove só o board
+    const exclude = new Set(board.map(cardId)); // remove só o board
     const rem = deck.filter(c=>!exclude.has(cardId(c)));
 
     const bestByKey = new Map();
@@ -255,15 +297,15 @@
             label = `Trinca de ${RANK_CHAR(ev.ranks[0])}`;
             break;
           case CAT.STRAIGHT:
-            key = `ST-${ev.ranks[0]}`; // maior carta da sequência
+            key = `ST-${ev.ranks[0]}`;
             label = `Sequência até ${RANK_CHAR(ev.ranks[0])}`;
             break;
           case CAT.FLUSH:
-            key = `FL-${ev.ranks[0]}`; // maior carta do flush
+            key = `FL-${ev.ranks[0]}`;
             label = `Flush ${RANK_CHAR(ev.ranks[0])} high`;
             break;
           case CAT.FULL:
-            key = `FH-${ev.ranks[0]}-${ev.ranks[1]}`; // trio+par
+            key = `FH-${ev.ranks[0]}-${ev.ranks[1]}`;
             label = `Full house ${RANK_CHAR(ev.ranks[0])} over ${RANK_CHAR(ev.ranks[1])}`;
             break;
           case CAT.QUADS:
@@ -291,7 +333,7 @@
     return arr;
   }
 
-  // ==== Ranking 169 pré-flop canônico ====
+  // ===== Ranking 169 pré-flop =====
   function rankPreflop169(){
     const order = [14,13,12,11,10,9,8,7,6,5,4,3,2]; // A..2
     const chenScore = PC.chenScore; // se existir
@@ -318,7 +360,7 @@
     return out; // 169 únicas
   }
 
-  // ==== “Melhor mão” básica (cartas sugeridas) ====
+  // ===== “Melhor mão” (nuts) =====
   function computeNutsPair(){
     const {board}=PC.getKnown();
     if(board.length<3) return null;
@@ -333,13 +375,23 @@
     }
     return bestPair? {pair:bestPair, ev:bestEv}: null;
   }
+
   function renderNuts(){
     const n0=document.getElementById('n0'), n1=document.getElementById('n1'), ncat=document.getElementById('nutsCat');
+
     function clear(el){ if(!el) return; el.classList.remove('filled'); el.textContent=''; }
-    function paint(el,c){ if(!el) return; el.classList.add('filled'); el.innerHTML = `<div class="${SUIT_CLASS[c.s]}" style="text-align:center"><div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div><div style="font-size:18px">${SUIT_GLYPH[c.s]}</div></div>`; }
+    function paint(el,c){
+      if(!el) return;
+      el.classList.add('filled');
+      el.innerHTML = `<div class="${SUIT_CLASS[c.s]}" style="text-align:center">
+        <div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div>
+        <div style="font-size:18px">${SUIT_GLYPH[c.s]}</div>
+      </div>`;
+    }
 
     const {board}=PC.getKnown();
     if(board.length<3){
+      // placeholder pré-flop
       paint(n0,{r:14,s:'s'}); paint(n1,{r:14,s:'h'});
       if(ncat) ncat.textContent='A Melhor Mão: Par de Ases';
       return;
@@ -350,11 +402,12 @@
     if(ncat) ncat.textContent = (CAT_NAME[res.ev.cat]||'');
   }
 
-  // ==== Overlay Top 5 + sua mão (hover/click com fallback) ====
-  function hideNutsOverlay(){ 
+  // ===== Overlay Top 5 + sua mão =====
+  function hideNutsOverlay(){
     if(nutsOverlay){ nutsOverlay.remove(); nutsOverlay=null; }
     if(overlayTimer){ clearTimeout(overlayTimer); overlayTimer=null; }
   }
+
   function positionOverlayNear(anchor, el){
     const r=anchor.getBoundingClientRect();
     const top=r.bottom + window.scrollY + 6;
@@ -368,6 +421,7 @@
     el.style.left=`${left}px`;
     el.style.zIndex='9999';
   }
+
   function showNutsOverlay(anchor){
     const {hand, board} = PC.getKnown();
     if(!anchor){
@@ -462,23 +516,17 @@
     });
     wrap.addEventListener('mouseleave', ()=>{
       nutsHover=false;
-      overlayTimer=setTimeout(()=>{ if(!nutsHover) hideNutsOverlay(); }, 180);
+      overlayTimer=setTimeout(()=>{ if(!nutsHover) hideNutsOverlay(); }, 250);
     });
 
     positionOverlayNear(anchor, wrap);
     nutsOverlay=wrap;
   }
 
-  function hideNutsOverlayDelayed(){
-    overlayTimer=setTimeout(()=>{ if(!nutsHover) hideNutsOverlay(); }, 180);
-  }
-
-  // ==== Overlay Top 5: wiring robusto e multi-anchors ====
+  // ===== Wiring do overlay (multi-anchors, idempotente) =====
   function wireNutsOverlayOnce(){
-    // Guarda quais anchors já foram “wired” para não duplicar listeners
     if(!wireNutsOverlayOnce._wiredSet) wireNutsOverlayOnce._wiredSet = new WeakSet();
 
-    // Podemos ter vários anchors possíveis
     const anchors = [
       ...document.querySelectorAll('.nutsline'),
       document.getElementById('nutsCat'),
@@ -486,11 +534,10 @@
       document.getElementById('n1'),
     ].filter(Boolean);
 
-    if(!anchors.length) return; // ainda não existem no DOM, tentaremos novamente quando renderDeck rodar
+    if(!anchors.length) return;
 
     anchors.forEach((anchor)=>{
-      if(wireNutsOverlayOnce._wiredSet.has(anchor)) return; // já ligado
-
+      if(wireNutsOverlayOnce._wiredSet.has(anchor)) return;
       wireNutsOverlayOnce._wiredSet.add(anchor);
       anchor.style.cursor = 'pointer';
 
@@ -506,15 +553,14 @@
 
       anchor.addEventListener('mouseleave', ()=>{
         nutsHover = false;
-        // dá um tempo maior para permitir a transição do mouse até o overlay
         overlayTimer = setTimeout(()=>{ if(!nutsHover) hideNutsOverlay(); }, 250);
       });
     });
 
-    // fecha ao clicar em qualquer lugar fora do overlay
     if(!wireNutsOverlayOnce._globalClickBound){
       document.addEventListener('click', (e)=>{
         if(!nutsOverlay) return;
+        // fecha se clicou fora do overlay (pode ter vários anchors na página)
         if(!nutsOverlay.contains(e.target)){
           hideNutsOverlay();
         }
@@ -523,7 +569,7 @@
     }
   }
 
-  // ==== Painel de equidade ====
+  // ===== Painel de equidade =====
   function renderEquityPanel(){
     const box=document.getElementById('equityBox');
     if(!box) return;
@@ -558,4 +604,147 @@
             </span>
             <span class="lbl">Voz:
               <select id="ttsVoice" style="max-width:160px;background:#0b1324;color:#e5e7eb;border:none;outline:0"></select>
-           
+            </span>
+            <button class="btn" id="btnEqCalc">↻ Recalcular</button>
+          </div>
+          <div id="eqStatus" class="mut" style="margin-top:8px"></div>
+          <div class="bar" style="margin-top:8px"><i id="eqBarWin" style="width:0%"></i></div>
+          <div style="display:flex;gap:8px;margin-top:6px" id="eqBreak"></div>
+          <div class="hint" id="suggestOut" style="margin-top:10px"></div>
+        `;
+        box.dataset.wired='1';
+
+        document.getElementById('btnEqCalc').onclick=calcEquity;
+        document.getElementById('eqOpp').onchange=calcEquity;
+        document.getElementById('eqTrials').onchange=calcEquity;
+
+        const hasTTS = !!(g.TTS) && ('speechSynthesis' in g);
+        const enableEl=document.getElementById('ttsEnable');
+        const voiceSel=document.getElementById('ttsVoice');
+
+        if(hasTTS){
+          g.TTS.populateVoices();
+          speechSynthesis.onvoiceschanged = g.TTS.populateVoices;
+          g.TTS.state.enabled = true;
+          enableEl.checked = true;
+
+          enableEl.onchange = (e)=>{
+            g.TTS.state.enabled = e.target.checked;
+            if(g.TTS.state.enabled) g.TTS.speak('Voz ativada');
+          };
+          voiceSel.onchange = (e)=>{
+            const name=e.target.value;
+            const v = speechSynthesis.getVoices().find(v=>v.name===name);
+            if(v) g.TTS.state.voice=v;
+          };
+        }else{
+          enableEl.disabled=true;
+          voiceSel.disabled=true;
+          voiceSel.innerHTML = '<option>(sem suporte no navegador)</option>';
+        }
+      }else{
+        box.querySelector('h3').textContent=`${stage}: Equidade até o showdown`;
+      }
+      calcEquity();
+    }else{
+      box.style.display='none';
+      box.innerHTML='';
+      delete box.dataset.wired;
+    }
+  }
+
+  function calcEquity(){
+    const {hand,board}=PC.getKnown();
+    if(hand.length<2) return;
+
+    const oppSel=document.getElementById('eqOpp');
+    const trialsSel=document.getElementById('eqTrials');
+    if(!oppSel || !trialsSel) return;
+
+    const opp=parseInt(oppSel.value,10);
+    const trials=parseInt(trialsSel.value,10);
+    const st=document.getElementById('eqStatus');
+
+    const useExactTurn = (board.length===4 && opp===1);
+    if(st) st.textContent= useExactTurn ? 'Calculando (exato no turn)...' : 'Calculando...';
+
+    const res = (function(){
+      if(board.length===4 && opp===1) return exactTurnEquity(hand,board);
+      const mc = simulateEquity(hand,board,opp,trials); mc._method='mc'; return mc;
+    })();
+
+    const bar=document.getElementById('eqBarWin');
+    if(bar) bar.style.width=`${res.win.toFixed(1)}%`;
+    const br=document.getElementById('eqBreak');
+    if(br) br.innerHTML=`<small><b>Win:</b> ${res.win.toFixed(1)}%</small>
+                  <small><b>Tie:</b> ${res.tie.toFixed(1)}%</small>
+                  <small><b>Lose:</b> ${res.lose.toFixed(1)}%</small>`;
+
+    if(st){
+      if(res._method==='exact-turn'){
+        st.textContent=`Exato (turn) vs ${opp} oponente`;
+      }else{
+        st.textContent=`Monte Carlo vs ${opp} oponente(s) • ${trials.toLocaleString()} amostras`;
+      }
+    }
+
+    // Não sugerir com flop parcial (1–2 cartas)
+    const out   = document.getElementById('suggestOut');
+    const partialFlop = (board.length === 1 || board.length === 2);
+    if (partialFlop) {
+      if (out) {
+        out.innerHTML = `
+          <div class="decision">
+            <div class="decision-title info">Aguarde o flop completo</div>
+            <div class="decision-detail">Selecione as 3 cartas do flop para sugerir ação.</div>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    // Equidade por simulação (pré e pós-flop)
+    const eqPct = (res.win + res.tie/2);
+
+    const sugg = PC.suggestAction(eqPct, hand, board, opp);
+    const cls   = PC.decisionClass(sugg.title);
+    const glow  = PC.shouldGlow(cls);
+
+    if(out){
+      out.innerHTML = `
+        <div class="decision ${glow ? 'glow' : ''}">
+          <div class="decision-title ${cls}">${sugg.title}</div>
+          <div class="decision-detail">${sugg.detail}</div>
+        </div>
+      `;
+    }
+
+    if(g.TTS?.state?.enabled){
+      if(PC.state.stageJustSet){
+        g.TTS.speak(`${PC.state.stageJustSet}. Sugestão: ${sugg.title}`);
+        PC.state.stageJustSet = null;
+      }else{
+        g.TTS.speak(`Sugestão: ${sugg.title}`);
+      }
+    }
+  }
+
+  function safeRecalc(){
+    try{ calcEquity(); }catch(e){
+      console.warn('safeRecalc erro:', e);
+    }
+  }
+
+  // ===== Start app =====
+  function __pcalc_start_app__(){
+    if(!PC.state) PC.state = { selected:[], prevBoardLen:0 };
+    PC.state.prevBoardLen = Math.max(0, PC.state.selected.length-2);
+    renderDeck();
+  }
+  g.__pcalc_start_app__ = __pcalc_start_app__;
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    // aguardando start via __pcalc_start_app__ (login-guard)
+  });
+
+})(window);
