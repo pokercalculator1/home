@@ -1,325 +1,405 @@
-// pcalc-app.js
-(function (g) {
+// pcalc-app.js (SEU CÓDIGO ORIGINAL + RANK PRÉ-FLOP POR PF + LEADERBOARD PÓS-FLOP)
+(function(g){
   const PC = g.PCALC;
   const { RANKS, SUITS, SUIT_CLASS, SUIT_GLYPH, fmtRank, cardId, makeDeck, evalBest, cmpEval, CAT, CAT_NAME } = PC;
 
-  // ======================
-  //  PRE-FLOP 169 LOADER
-  // ======================
-  const PREFLOP_JSON_URL = 'preflop169.json'; // <-- altere o nome/caminho se quiser
-
-  // Tabela carregada do JSON:
-  // { list: ["AA","AKs",...], map: Map([["AA",1],["AKs",2],...]) }
-  let PREFLOP = { list: [], map: new Map(), loaded: false, error: null };
-
-  // Utilitários de ranks/labels (antes de qualquer uso)
-  const RANK_CHAR = (r) => (r === 14 ? 'A' : r === 13 ? 'K' : r === 12 ? 'Q' : r === 11 ? 'J' : r === 10 ? 'T' : String(r));
-
-  // Monta label normalizada "AKs" | "AKo" | "TT" a partir de 2 cartas
-  function handLabelFromTwoCards(c1, c2) {
-    // ranks de 2 a A (14), hi>=lo
-    const r1 = c1.r, r2 = c2.r;
-    const hi = Math.max(r1, r2), lo = Math.min(r1, r2);
-    const sameSuit = (c1.s === c2.s);
-
-    if (hi === lo) {
-      // Par: "AA", "TT", ...
-      return `${RANK_CHAR(hi)}${RANK_CHAR(lo)}`;
+  // ===== PF (preflop_rank.js) para rank 1–169 (AKs ≠ AKo) =====
+  function hasPF(){ return typeof g.PF !== 'undefined' && g.PF && typeof g.PF.normalize2 === 'function'; }
+  function rankNumToChar(n){
+    if(typeof n === 'string'){
+      const u = n.toUpperCase();
+      if('AKQJT98765432'.includes(u)) return u;
+      if(u === '10') return 'T';
+      return u[0] || '';
     }
-    // Não par: hi-lo + sufixo 's' ou 'o'
-    const base = `${RANK_CHAR(hi)}${RANK_CHAR(lo)}`;
-    return base + (sameSuit ? 's' : 'o');
+    if(n===14) return 'A';
+    if(n===13) return 'K';
+    if(n===12) return 'Q';
+    if(n===11) return 'J';
+    if(n===10) return 'T';
+    return String(n);
+  }
+  function getPreflopTagFromHand(){
+    if(!hasPF()) return null;
+    const { hand } = PC.getKnown();
+    if(!hand || hand.length < 2) return null;
+    const r1 = rankNumToChar(hand[0].r);
+    const r2 = rankNumToChar(hand[1].r);
+    const s1 = String(hand[0].s || '').toLowerCase();
+    const s2 = String(hand[1].s || '').toLowerCase();
+    try{
+      const tag = g.PF.normalize2(r1, s1, r2, s2); // "AKs","QJo","77"
+      if(tag){
+        const info = g.PF.describe(tag);
+        console.debug('[Pré-flop PF]', { tag, rank: info?.rank, tier: info?.tier });
+      }
+      return tag;
+    }catch(e){
+      console.warn('[PF] normalize2 falhou:', e);
+      return null;
+    }
+  }
+  function renderPreflopRankLineInto(box){
+    if(!box) return;
+    const { hand, board } = PC.getKnown();
+
+    let line = box.querySelector('#preflopRankLine');
+    if(!line){
+      line = document.createElement('div');
+      line.id = 'preflopRankLine';
+      line.className = 'mut';
+      line.style.marginTop = '6px';
+      const bar = box.querySelector('.bar');
+      if(bar) box.insertBefore(line, bar);
+      else box.insertBefore(line, box.firstChild);
+    }
+
+    if(!(hand && hand.length===2) || (board && board.length>=3)){
+      line.remove();
+      return;
+    }
+
+    if(!hasPF()){
+      line.textContent = 'Pré-flop: ranking 1–169 indisponível (preflop_rank.js não carregado).';
+      return;
+    }
+    const tag = getPreflopTagFromHand();
+    if(!tag){
+      line.textContent = 'Pré-flop: (selecione 2 cartas para ver o rank)';
+      return;
+    }
+    const info = g.PF.describe(tag);
+    if(info?.rank){
+      line.innerHTML = `<b>Pré-flop:</b> ${info.hand} • <b>Rank</b> ${info.rank}/169 • ${info.tier}`;
+    }else{
+      line.textContent = 'Pré-flop: (ranking indisponível para esta mão)';
+    }
   }
 
-  // Monta label a partir da mão do herói já em IDs ("Ah", "Ks", etc.) presentes no estado
-  function currentHeroLabelStrict() {
-    const ids = [...PC.state.selected];
-    if (ids.length < 2) return null;
-
-    const byId = Object.fromEntries(makeDeck().map((c) => [cardId(c), c]));
-    const h0 = byId[ids[0]], h1 = byId[ids[1]];
-    if (!h0 || !h1) return null;
-    return handLabelFromTwoCards(h0, h1);
+  // ===== Leaderboard PÓS-FLOP =====
+  // Gera uma "chave" para agrupar avaliações idênticas (mesma categoria e mesmos kickers)
+  function keyFromEval(ev){
+    // ev: { cat: number, kick: number[] }
+    return JSON.stringify({ c: ev.cat, k: ev.kick });
+  }
+  // Descreve humanamente uma avaliação (ex.: "Quadra de 4 (K kicker)")
+  function describeEval(ev){
+    const name = CAT_NAME[ev.cat] || '—';
+    const r2c = (r)=>r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r);
+    // Heurística de descrição extra por categoria:
+    let detail = '';
+    const k = ev.kick || [];
+    switch(ev.cat){
+      case CAT.ROYAL: detail = 'Royal Flush'; break; // redundante, mas explícito
+      case CAT.SFLUSH: detail = `Straight Flush (alto ${r2c(k[0])})`; break;
+      case CAT.QUADS: detail = `Quadra de ${r2c(k[0])} (kicker ${r2c(k[1])})`; break;
+      case CAT.FULL: detail = `Full House (${r2c(k[0])} cheio de ${r2c(k[1])})`; break;
+      case CAT.FLUSH: detail = `Flush (alto ${r2c(k[0])})`; break;
+      case CAT.STRAIGHT: detail = `Sequência (alto ${r2c(k[0])})`; break;
+      case CAT.TRIPS: detail = `Trinca de ${r2c(k[0])} (kickers ${r2c(k[1])},${r2c(k[2])})`; break;
+      case CAT.TWO: detail = `Dois Pares (${r2c(k[0])} & ${r2c(k[1])}, kicker ${r2c(k[2])})`; break;
+      case CAT.ONE: detail = `Par de ${r2c(k[0])} (kickers ${r2c(k[1])},${r2c(k[2])},${r2c(k[3])})`; break;
+      case CAT.HIGH: detail = `Carta Alta ${r2c(k[0])}`; break;
+      default: detail = name;
+    }
+    return { name, detail };
   }
 
-  // Carrega + normaliza o JSON (array ordenado OU objeto com rank=1..169)
-  async function loadPreflopTableOnce() {
-    if (PREFLOP.loaded || PREFLOP.error) return PREFLOP;
-    try {
-      const resp = await fetch(PREFLOP_JSON_URL, { cache: 'no-cache' });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
+  // Lista todas as mãos adversárias possíveis (2 cartas) dado o baralho restante
+  function listOpponentHoles(deadIds){
+    const dead = new Set(deadIds);
+    const deck = makeDeck().filter(c=>!dead.has(cardId(c)));
+    const holes = [];
+    for(let i=0;i<deck.length-1;i++){
+      for(let j=i+1;j<deck.length;j++){
+        holes.push([deck[i], deck[j]]);
+      }
+    }
+    return holes;
+  }
 
-      let list = [];
-      if (Array.isArray(data)) {
-        // Array ordenado: índice+1 = rank
-        list = data.map((s) => String(s).trim()).filter(Boolean);
-      } else if (data && typeof data === 'object') {
-        // Objeto: { "AA":1, "AKs":2, ... } -> ordena por rank
-        list = Object.entries(data)
-          .map(([k, v]) => [String(k).trim(), Number(v)])
-          .filter(([, v]) => Number.isFinite(v))
-          .sort((a, b) => a[1] - b[1])
-          .map(([k]) => k);
-      } else {
-        throw new Error('Formato de preflop169.json inválido.');
+  // Constrói o leaderboard do board atual
+  function computePostflopLeaderboard(){
+    const { hand, board } = PC.getKnown();
+    if(board.length < 3) return null; // só faz sentido com flop completo ou mais
+
+    // cartas mortas: sua mão + board
+    const deadIds = [];
+    for(const c of hand) deadIds.push(cardId(c));
+    for(const c of board) deadIds.push(cardId(c));
+    const oppHoles = listOpponentHoles(deadIds);
+
+    // Avalia sua mão (para posicionamento)
+    const heroEv = evalBest(hand.concat(board));
+
+    // Agrupa por avaliação
+    const groups = new Map(); // key -> {ev:any, count:number, examples:[string], beatsHero:boolean, cmpToHero:number}
+    let betterCombos=0, tieCombos=0, worseCombos=0;
+
+    for(const [a,b] of oppHoles){
+      const ev = evalBest([a,b].concat(board));
+      const key = keyFromEval(ev);
+      let g = groups.get(key);
+      if(!g){
+        g = { ev, count:0, examples:[] };
+        groups.set(key, g);
+      }
+      g.count++;
+      if(g.examples.length < 5){ // limitar exemplos
+        g.examples.push(cardId(a)+','+cardId(b));
       }
 
-      // Garante 169 entradas distintas
-      const seen = new Set();
-      const uniq = [];
-      for (const lbl of list) {
-        if (!seen.has(lbl)) {
-          uniq.push(lbl);
-          seen.add(lbl);
-        }
-      }
-      PREFLOP.list = uniq;
-      PREFLOP.map = new Map(uniq.map((lbl, i) => [lbl, i + 1])); // 1-based rank
-      PREFLOP.loaded = true;
-      PREFLOP.error = null;
-    } catch (e) {
-      PREFLOP.error = e;
-      console.error('[PRE-FLOP 169] Falha ao carregar:', e);
+      const cmp = cmpEval(ev, heroEv);
+      if(cmp>0) betterCombos++;
+      else if(cmp<0) worseCombos++;
+      else tieCombos++;
     }
-    return PREFLOP;
+
+    // Ordena grupos do melhor para o pior
+    const arr = [...groups.values()];
+    arr.sort((x,y)=> -cmpEval(x.ev, y.ev)); // melhor primeiro
+
+    // Posição do herói entre as CLASSES distintas (não combos)
+    let heroClassPos = 1;
+    for(const g of arr){
+      if(cmpEval(g.ev, heroEv) > 0) heroClassPos++;
+      else break;
+    }
+    const heroClassesTotal = arr.length;
+
+    // Retorna top5 + estatísticas do herói
+    const top5 = arr.slice(0,5).map(g=>{
+      const desc = describeEval(g.ev);
+      return {
+        name: desc.name,
+        detail: desc.detail,
+        count: g.count,
+        examples: g.examples
+      };
+    });
+
+    return {
+      top5,
+      hero: {
+        eval: heroEv,
+        desc: describeEval(heroEv),
+        classPosition: heroClassPos,
+        classTotal: heroClassesTotal,
+        betterCombos, tieCombos, worseCombos
+      }
+    };
   }
 
-  function heroPreflopRankText() {
-    if (!PREFLOP.loaded) return null;
-    const lbl = currentHeroLabelStrict();
-    if (!lbl) return null;
-    const rank = PREFLOP.map.get(lbl);
-    if (!rank) return `${lbl} — (sem rank no JSON)`;
-    return `${lbl} — #${rank}/${PREFLOP.list.length}`;
-  }
-
-  // ======================
-  //  APP ORIGINAL (com integrações)
-  // ======================
-
-  let nutsOverlay = null, nutsHover = false, overlayTimer = null, wiredNuts = false;
+  // ======= (seu código original) =======
+  let nutsOverlay=null, nutsHover=false, overlayTimer=null, wiredNuts=false;
   const deckEl = document.getElementById('deck');
 
-  function renderSlots() {
-    const ids = [...PC.state.selected];
-    const byId = Object.fromEntries(makeDeck().map((c) => [cardId(c), c]));
-    const map = ['h0', 'h1', 'b0', 'b1', 'b2', 'b3', 'b4', 'n0', 'n1'];
-    map.forEach((sid) => {
-      const el = document.getElementById(sid);
-      if (!el) return;
-      const idx = ['h0', 'h1', 'b0', 'b1', 'b2', 'b3', 'b4'].indexOf(sid);
-      let id = null; if (idx >= 0) id = ids[idx];
-      if (id) {
-        const c = byId[id];
+  function renderSlots(){
+    const ids=[...PC.state.selected];
+    const byId = Object.fromEntries(makeDeck().map(c=>[cardId(c),c]));
+    const map=['h0','h1','b0','b1','b2','b3','b4','n0','n1'];
+    map.forEach((sid)=>{
+      const el=document.getElementById(sid);
+      if(!el) return;
+      const idx=['h0','h1','b0','b1','b2','b3','b4'].indexOf(sid);
+      let id=null; if(idx>=0) id=ids[idx];
+      if(id){
+        const c=byId[id];
         el.classList.add('filled');
         el.innerHTML = `<div class="${SUIT_CLASS[c.s]}" style="text-align:center">
           <div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div>
           <div style="font-size:18px">${SUIT_GLYPH[c.s]}</div>
         </div>`;
-      } else {
+      }else{
         el.classList.remove('filled');
-        el.textContent = '';
+        el.textContent='';
       }
     });
   }
 
-  function renderDeck() {
-    if (!deckEl) return;
-    deckEl.innerHTML = '';
-    for (const s of SUITS) {
-      for (const r of RANKS) {
-        const id = `${r}${s}`;
-        const el = document.createElement('div');
-        el.className = `cell ${SUIT_CLASS[s]} ${PC.state.selected.includes(id) ? 'sel' : ''}`;
-        el.dataset.id = id; el.title = `${fmtRank(r)}${SUIT_GLYPH[s]}`;
+  function renderDeck(){
+    if(!deckEl) return;
+    deckEl.innerHTML='';
+    for(const s of SUITS){
+      for(const r of RANKS){
+        const id=`${r}${s}`;
+        const el=document.createElement('div');
+        el.className = `cell ${SUIT_CLASS[s]} ${PC.state.selected.includes(id)?'sel':''}`;
+        el.dataset.id=id; el.title=`${fmtRank(r)}${SUIT_GLYPH[s]}`;
         el.innerHTML = `<div style="font-weight:600">${fmtRank(r)}</div><div class="mut">${SUIT_GLYPH[s]}</div>`;
-        el.addEventListener('click', () => toggleCard(id));
+        el.addEventListener('click',()=>toggleCard(id));
         deckEl.appendChild(el);
       }
     }
     renderSlots();
     renderNuts();
     renderHeroMade();
-    PC.computeAndRenderOuts?.();
+    PC.computeAndRenderOuts();
     renderEquityPanel();
 
-    wiredNuts = false; wireNutsOverlayOnce(); hideNutsOverlay();
+    wiredNuts=false; wireNutsOverlayOnce(); hideNutsOverlay();
     safeRecalc();
   }
 
-  function updateStageChange(oldLen, newLen) {
-    if (newLen >= 3 && oldLen < 3) PC.state.stageJustSet = 'Flop definido';
-    else if (newLen >= 4 && oldLen < 4) PC.state.stageJustSet = 'Turn definido';
-    else if (newLen >= 5 && oldLen < 5) PC.state.stageJustSet = 'River definido';
+  function updateStageChange(oldLen, newLen){
+    if(newLen>=3 && oldLen<3) PC.state.stageJustSet='Flop definido';
+    else if(newLen>=4 && oldLen<4) PC.state.stageJustSet='Turn definido';
+    else if(newLen>=5 && oldLen<5) PC.state.stageJustSet='River definido';
     PC.state.prevBoardLen = newLen;
   }
 
-  function toggleCard(id) {
-    const idx = PC.state.selected.indexOf(id);
-    if (idx >= 0) { PC.state.selected.splice(idx, 1); }
-    else {
-      if (PC.state.selected.length >= 7) return;
+  function toggleCard(id){
+    const idx=PC.state.selected.indexOf(id);
+    if(idx>=0){ PC.state.selected.splice(idx,1); }
+    else{
+      if(PC.state.selected.length>=7) return;
       PC.state.selected.push(id);
     }
-    const newLen = Math.max(0, PC.state.selected.length - 2);
+    const newLen = Math.max(0, PC.state.selected.length-2);
     updateStageChange(PC.state.prevBoardLen, newLen);
     renderDeck();
     safeRecalc();
   }
 
-  function pickRandom(n, excludeIds) {
+  function pickRandom(n, excludeIds){
     const deck = makeDeck();
     const ex = new Set(excludeIds);
-    const pool = deck.filter((c) => !ex.has(cardId(c)));
-    const out = [];
-    for (let i = 0; i < n && pool.length > 0; i++) {
-      const j = Math.floor(Math.random() * pool.length);
+    const pool = deck.filter(c=>!ex.has(cardId(c)));
+    const out=[];
+    for(let i=0;i<n && pool.length>0;i++){
+      const j = Math.floor(Math.random()*pool.length);
       out.push(pool[j]);
-      pool.splice(j, 1);
+      pool.splice(j,1);
     }
     return out;
   }
-
   const btnFlop = document.getElementById('btnFlop');
   const btnTurn = document.getElementById('btnTurn');
-  const btnRiver = document.getElementById('btnRiver');
-  const btnClear = document.getElementById('btnClear');
+  const btnRiver= document.getElementById('btnRiver');
+  const btnClear= document.getElementById('btnClear');
 
-  if (btnFlop) btnFlop.onclick = () => {
-    if (PC.state.selected.length < 2) { alert('Selecione 2 cartas.'); return; }
-    const need = [2, 3, 4].filter((i) => !PC.state.selected[i]);
-    if (!need.length) { alert('Flop já definido.'); return; }
-    const oldLen = Math.max(0, PC.state.selected.length - 2);
-    const add = pickRandom(need.length, PC.state.selected).map(cardId);
-    const before = PC.state.selected.slice(0, 2), after = PC.state.selected.slice(2);
-    for (let i = 0; i < need.length; i++) after.splice(need[i] - 2, 0, add[i]);
+  if(btnFlop) btnFlop.onclick = ()=>{
+    if(PC.state.selected.length<2){ alert('Selecione 2 cartas.'); return; }
+    const need=[2,3,4].filter(i=>!PC.state.selected[i]);
+    if(!need.length){ alert('Flop já definido.'); return; }
+    const oldLen = Math.max(0, PC.state.selected.length-2);
+    const add=pickRandom(need.length, PC.state.selected).map(cardId);
+    const before=PC.state.selected.slice(0,2), after=PC.state.selected.slice(2);
+    for(let i=0;i<need.length;i++) after.splice(need[i]-2, 0, add[i]);
     PC.state.selected = before.concat(after);
-    const newLen = Math.max(0, PC.state.selected.length - 2);
+    const newLen = Math.max(0, PC.state.selected.length-2);
     updateStageChange(oldLen, newLen);
     renderDeck();
     safeRecalc();
   };
-  if (btnTurn) btnTurn.onclick = () => {
-    if (PC.state.selected.length < 5) { alert('Defina o flop.'); return; }
-    if (PC.state.selected[5]) { alert('Turn já definido.'); return; }
-    const oldLen = Math.max(0, PC.state.selected.length - 2);
-    const add = pickRandom(1, PC.state.selected).map(cardId)[0];
-    PC.state.selected.splice(5, 0, add);
-    const newLen = Math.max(0, PC.state.selected.length - 2);
+  if(btnTurn) btnTurn.onclick = ()=>{
+    if(PC.state.selected.length<5){ alert('Defina o flop.'); return; }
+    if(PC.state.selected[5]){ alert('Turn já definido.'); return; }
+    const oldLen = Math.max(0, PC.state.selected.length-2);
+    const add=pickRandom(1, PC.state.selected).map(cardId)[0];
+    PC.state.selected.splice(5,0,add);
+    const newLen = Math.max(0, PC.state.selected.length-2);
     updateStageChange(oldLen, newLen);
     renderDeck();
     safeRecalc();
   };
-  if (btnRiver) btnRiver.onclick = () => {
-    if (PC.state.selected.length < 6) { alert('Defina o turn.'); return; }
-    if (PC.state.selected[6]) { alert('River já definido.'); return; }
-    const oldLen = Math.max(0, PC.state.selected.length - 2);
-    const add = pickRandom(1, PC.state.selected).map(cardId)[0];
-    PC.state.selected.splice(6, 0, add);
-    const newLen = Math.max(0, PC.state.selected.length - 2);
+  if(btnRiver) btnRiver.onclick = ()=>{
+    if(PC.state.selected.length<6){ alert('Defina o turn.'); return; }
+    if(PC.state.selected[6]){ alert('River já definido.'); return; }
+    const oldLen = Math.max(0, PC.state.selected.length-2);
+    const add=pickRandom(1, PC.state.selected).map(cardId)[0];
+    PC.state.selected.splice(6,0,add);
+    const newLen = Math.max(0, PC.state.selected.length-2);
     updateStageChange(oldLen, newLen);
     renderDeck();
     safeRecalc();
   };
-  if (btnClear) btnClear.onclick = () => {
-    PC.state.selected = []; updateStageChange(PC.state.prevBoardLen, 0); renderDeck(); safeRecalc();
+  if(btnClear) btnClear.onclick = ()=>{
+    PC.state.selected=[]; updateStageChange(PC.state.prevBoardLen, 0); renderDeck(); safeRecalc();
   };
 
-  function renderHeroMade() {
-    const el = document.getElementById('handCat'); if (!el) return;
-    const { hand, board } = PC.getKnown();
-    if (hand.length < 2) { el.textContent = 'Selecione sua mão'; return; }
-
-    // Se ainda não temos flop, mostra o rank exato do JSON (se carregado)
-    if (board.length < 3 && PREFLOP.loaded) {
-      const txt = heroPreflopRankText();
-      if (txt) {
-        el.textContent = `Pré-flop: ${txt}`;
-        return;
-      }
-    }
-
-    // Pós-flop: avalia a categoria normal
-    const ev = evalBest(hand.concat(board));
+  function renderHeroMade(){
+    const el=document.getElementById('handCat'); if(!el) return;
+    const {hand,board}=PC.getKnown();
+    if(hand.length<2){ el.textContent='Selecione sua mão'; return; }
+    const ev=evalBest(hand.concat(board));
     el.textContent = CAT_NAME[ev.cat] || '—';
   }
 
-  // ---------- EQUITY (inalterado, só integrado) ----------
-  function simulateEquity(hand, board, nOpp = 1, trials = 5000) {
-    const missing = 5 - board.length;
-    if (missing < 0) return { win: 0, tie: 0, lose: 100 };
-    const base = makeDeck().filter((c) => !PC.state.selected.includes(cardId(c)));
-    let win = 0, tie = 0, lose = 0;
+  function simulateEquity(hand,board,nOpp=1,trials=5000){
+    const missing=5-board.length;
+    if(missing<0) return {win:0,tie:0,lose:100};
+    const base=makeDeck().filter(c=>!PC.state.selected.includes(cardId(c)));
+    let win=0,tie=0,lose=0;
 
-    for (let t = 0; t < trials; t++) {
-      const pool = base.slice();
-      const need = 2 * nOpp + missing;
-      for (let i = 0; i < need; i++) {
-        const j = i + Math.floor(Math.random() * (pool.length - i));
-        const tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
+    for(let t=0;t<trials;t++){
+      const pool=base.slice();
+      const need=2*nOpp+missing;
+      for(let i=0;i<need;i++){
+        const j=i+Math.floor(Math.random()*(pool.length-i));
+        const tmp=pool[i]; pool[i]=pool[j]; pool[j]=tmp;
       }
-      let idx = 0;
-      const opps = [];
-      for (let k = 0; k < nOpp; k++) { opps.push([pool[idx++], pool[idx++]]); }
-      const extra = [];
-      for (let k = 0; k < missing; k++) { extra.push(pool[idx++]); }
-      const full = board.concat(extra);
+      let idx=0;
+      const opps=[];
+      for(let k=0;k<nOpp;k++){ opps.push([pool[idx++],pool[idx++]]); }
+      const extra=[];
+      for(let k=0;k<missing;k++){ extra.push(pool[idx++]); }
+      const full=board.concat(extra);
 
-      const hero = evalBest(hand.concat(full));
-      let best = 'hero', bestEv = hero, winners = ['hero'];
-      for (let k = 0; k < nOpp; k++) {
-        const ev = evalBest(opps[k].concat(full));
-        const cmp = cmpEval(ev, bestEv);
-        if (cmp > 0) { best = `opp${k}`; bestEv = ev; winners = [`opp${k}`]; }
-        else if (cmp === 0) { winners.push(`opp${k}`); }
+      const hero=evalBest(hand.concat(full));
+      let best='hero',bestEv=hero,winners=['hero'];
+      for(let k=0;k<nOpp;k++){
+        const ev=evalBest(opps[k].concat(full));
+        const cmp=cmpEval(ev,bestEv);
+        if(cmp>0){ best=`opp${k}`; bestEv=ev; winners=[`opp${k}`]; }
+        else if(cmp===0){ winners.push(`opp${k}`]; }
       }
-      if (best === 'hero' && winners.length === 1) win++;
-      else if (winners.includes('hero')) tie++;
+      if(best==='hero' && winners.length===1) win++;
+      else if(winners.includes('hero')) tie++;
       else lose++;
     }
-    const tot = win + tie + lose || 1;
-    return { win: (win / tot) * 100, tie: (tie / tot) * 100, lose: (lose / tot) * 100 };
+    const tot=win+tie+lose||1;
+    return {win:win/tot*100, tie:tie/tot*100, lose:lose/tot*100};
   }
 
-  function exactTurnEquity(hand, board) {
-    if (board.length !== 4) return null;
-    const remainingAll = makeDeck().filter((c) => !PC.state.selected.includes(cardId(c)));
-    let win = 0, tie = 0, lose = 0;
-    for (let i = 0; i < remainingAll.length; i++) {
+  function exactTurnEquity(hand, board){
+    if(board.length!==4) return null;
+    const remainingAll = makeDeck().filter(c=>!PC.state.selected.includes(cardId(c)));
+    let win=0, tie=0, lose=0;
+    for(let i=0;i<remainingAll.length;i++){
       const river = remainingAll[i];
       const finalBoard = board.concat([river]);
       const heroEv = evalBest(hand.concat(finalBoard));
       const pool = [];
-      for (let k = 0; k < remainingAll.length; k++) { if (k !== i) pool.push(remainingAll[k]); }
-      for (let a = 0; a < pool.length - 1; a++) {
+      for(let k=0;k<remainingAll.length;k++){ if(k!==i) pool.push(remainingAll[k]); }
+      for(let a=0;a<pool.length-1;a++){
         const ca = pool[a];
-        for (let b = a + 1; b < pool.length; b++) {
+        for(let b=a+1;b<pool.length;b++){
           const cb = pool[b];
-          const oppEv = evalBest([ca, cb].concat(finalBoard));
+          const oppEv = evalBest([ca,cb].concat(finalBoard));
           const cmp = cmpEval(heroEv, oppEv);
-          if (cmp > 0) win++;
-          else if (cmp < 0) lose++;
+          if(cmp>0) win++;
+          else if(cmp<0) lose++;
           else tie++;
         }
       }
     }
-    const tot = win + tie + lose || 1;
-    return { win: (win / tot) * 100, tie: (tie / tot) * 100, lose: (lose / tot) * 100, _method: 'exact-turn' };
+    const tot = win+tie+lose || 1;
+    return {win:win/tot*100, tie:tie/tot*100, lose:lose/tot*100, _method:'exact-turn'};
   }
 
-  function renderEquityPanel() {
-    const box = document.getElementById('equityBox');
-    if (!box) return;
+  function renderEquityPanel(){
+    const box=document.getElementById('equityBox');
+    if(!box) return;
 
-    const { hand, board } = PC.getKnown();
-    const len = board.length;
+    const {hand,board}=PC.getKnown();
+    const len=board.length;
 
-    if (hand.length === 2 && len <= 5) {
-      const stage = len < 3 ? 'Pré-flop' : (len === 3 ? 'Pós-flop' : (len === 4 ? 'Pós-turn' : 'Pós-river'));
-      box.style.display = 'block';
-      if (!box.dataset.wired) {
-        box.innerHTML = `
+    if(hand.length===2 && len<=5){
+      const stage = len<3?'Pré-flop':(len===3?'Pós-flop':(len===4?'Pós-turn':'Pós-river'));
+      box.style.display='block';
+      if(!box.dataset.wired){
+        box.innerHTML=`
           <h3>${stage}: Equidade até o showdown</h3>
           <div class="labels" style="align-items:center;margin-top:6px;gap:6px;flex-wrap:wrap">
             <span class="lbl">Oponentes:
@@ -346,88 +426,91 @@
             <button class="btn" id="btnEqCalc">↻ Recalcular</button>
           </div>
           <div id="eqStatus" class="mut" style="margin-top:8px"></div>
+          <!-- A LINHA DE RANK PRÉ-FLOP É INSERIDA DINAMICAMENTE AQUI EM CIMA DA BARRA -->
           <div class="bar" style="margin-top:8px"><i id="eqBarWin" style="width:0%"></i></div>
           <div style="display:flex;gap:8px;margin-top:6px" id="eqBreak"></div>
           <div class="hint" id="suggestOut" style="margin-top:10px"></div>
         `;
-        box.dataset.wired = '1';
+        box.dataset.wired='1';
 
-        document.getElementById('btnEqCalc').onclick = calcEquity;
-        document.getElementById('eqOpp').onchange = calcEquity;
-        document.getElementById('eqTrials').onchange = calcEquity;
+        document.getElementById('btnEqCalc').onclick=calcEquity;
+        document.getElementById('eqOpp').onchange=calcEquity;
+        document.getElementById('eqTrials').onchange=calcEquity;
 
         const hasTTS = !!(g.TTS) && ('speechSynthesis' in g);
-        const enableEl = document.getElementById('ttsEnable');
-        const voiceSel = document.getElementById('ttsVoice');
+        const enableEl=document.getElementById('ttsEnable');
+        const voiceSel=document.getElementById('ttsVoice');
 
-        if (hasTTS) {
+        if(hasTTS){
           g.TTS.populateVoices();
           speechSynthesis.onvoiceschanged = g.TTS.populateVoices;
           g.TTS.state.enabled = true;
           enableEl.checked = true;
 
-          enableEl.onchange = (e) => {
+          enableEl.onchange = (e)=>{
             g.TTS.state.enabled = e.target.checked;
-            if (g.TTS.state.enabled) g.TTS.speak('Voz ativada');
+            if(g.TTS.state.enabled) g.TTS.speak('Voz ativada');
           };
-          voiceSel.onchange = (e) => {
-            const name = e.target.value;
-            const v = speechSynthesis.getVoices().find((v) => v.name === name);
-            if (v) g.TTS.state.voice = v;
+          voiceSel.onchange = (e)=>{
+            const name=e.target.value;
+            const v = speechSynthesis.getVoices().find(v=>v.name===name);
+            if(v) g.TTS.state.voice=v;
           };
-        } else {
-          enableEl.disabled = true;
-          voiceSel.disabled = true;
+        }else{
+          enableEl.disabled=true;
+          voiceSel.disabled=true;
           voiceSel.innerHTML = '<option>(sem suporte no navegador)</option>';
         }
-      } else {
-        box.querySelector('h3').textContent = `${stage}: Equidade até o showdown`;
+      }else{
+        box.querySelector('h3').textContent=`${stage}: Equidade até o showdown`;
       }
+
+      renderPreflopRankLineInto(box);
       calcEquity();
-    } else {
-      box.style.display = 'none';
-      box.innerHTML = '';
+    }else{
+      box.style.display='none';
+      box.innerHTML='';
       delete box.dataset.wired;
     }
   }
 
-  function calcEquity() {
-    const { hand, board } = PC.getKnown();
-    if (hand.length < 2) { return; }
+  function calcEquity(){
+    const {hand,board}=PC.getKnown();
+    if(hand.length<2){ return; }
 
-    const oppSel = document.getElementById('eqOpp');
-    const trialsSel = document.getElementById('eqTrials');
-    if (!oppSel || !trialsSel) return;
+    const oppSel=document.getElementById('eqOpp');
+    const trialsSel=document.getElementById('eqTrials');
+    if(!oppSel || !trialsSel) return;
 
-    const opp = parseInt(oppSel.value, 10);
-    const trials = parseInt(trialsSel.value, 10);
-    const st = document.getElementById('eqStatus');
+    const opp=parseInt(oppSel.value,10);
+    const trials=parseInt(trialsSel.value,10);
+    const st=document.getElementById('eqStatus');
 
-    const useExactTurn = (board.length === 4 && opp === 1);
-    if (st) st.textContent = useExactTurn ? 'Calculando (exato no turn)...' : 'Calculando...';
+    const useExactTurn = (board.length===4 && opp===1);
+    if(st) st.textContent= useExactTurn ? 'Calculando (exato no turn)...' : 'Calculando...';
 
-    const res = (function () {
-      if (board.length === 4 && opp === 1) return exactTurnEquity(hand, board);
-      const mc = simulateEquity(hand, board, opp, trials); mc._method = 'mc'; return mc;
+    const res = (function(){
+      if(board.length===4 && opp===1) return exactTurnEquity(hand,board);
+      const mc = simulateEquity(hand,board,opp,trials); mc._method='mc'; return mc;
     })();
 
-    const bar = document.getElementById('eqBarWin');
-    if (bar) bar.style.width = `${res.win.toFixed(1)}%`;
-    const br = document.getElementById('eqBreak');
-    if (br) br.innerHTML = `<small><b>Win:</b> ${res.win.toFixed(1)}%</small>
+    const bar=document.getElementById('eqBarWin');
+    if(bar) bar.style.width=`${res.win.toFixed(1)}%`;
+    const br=document.getElementById('eqBreak');
+    if(br) br.innerHTML=`<small><b>Win:</b> ${res.win.toFixed(1)}%</small>
                   <small><b>Tie:</b> ${res.tie.toFixed(1)}%</small>
                   <small><b>Lose:</b> ${res.lose.toFixed(1)}%</small>`;
 
-    if (st) {
-      if (res._method === 'exact-turn') {
-        st.textContent = `Exato (turn) vs ${opp} oponente`;
-      } else {
-        st.textContent = `Monte Carlo vs ${opp} oponente(s) • ${trials.toLocaleString()} amostras`;
+    if(st){
+      if(res._method==='exact-turn'){
+        st.textContent=`Exato (turn) vs ${opp} oponente`;
+      }else{
+        st.textContent=`Monte Carlo vs ${opp} oponente(s) • ${trials.toLocaleString()} amostras`;
       }
     }
 
     // Não sugerir com flop parcial (1–2 cartas)
-    const out = document.getElementById('suggestOut');
+    const out   = document.getElementById('suggestOut');
     const partialFlop = (board.length === 1 || board.length === 2);
     if (partialFlop) {
       if (out) {
@@ -441,12 +524,12 @@
       return;
     }
 
-    const eqPct = (res.win + res.tie / 2);
+    const eqPct = (res.win + res.tie/2);
     const sugg = PC.suggestAction(eqPct, hand, board, opp);
-    const cls = PC.decisionClass(sugg.title);
-    const glow = PC.shouldGlow(cls);
+    const cls   = PC.decisionClass(sugg.title);
+    const glow  = PC.shouldGlow(cls);
 
-    if (out) {
+    if(out){
       out.innerHTML = `
         <div class="decision ${glow ? 'glow' : ''}">
           <div class="decision-title ${cls}">${sugg.title}</div>
@@ -455,183 +538,214 @@
       `;
     }
 
-    if (g.TTS?.state?.enabled) {
-      if (PC.state.stageJustSet) {
+    if(g.TTS?.state?.enabled){
+      if(PC.state.stageJustSet){
         g.TTS.speak(`${PC.state.stageJustSet}. Sugestão: ${sugg.title}`);
         PC.state.stageJustSet = null;
-      } else {
+      }else{
         g.TTS.speak(`Sugestão: ${sugg.title}`);
       }
     }
+
+    // Atualiza linha de rank PF quando ainda for pré-flop
+    if(board.length < 3){
+      const box=document.getElementById('equityBox');
+      if(box) renderPreflopRankLineInto(box);
+    }
   }
 
-  function safeRecalc() { try { calcEquity(); renderHeroMade(); } catch (e) {} }
+  function safeRecalc(){ try{ calcEquity(); }catch(e){} }
 
-  // ---------- NUTS / OVERLAY ----------
-  function computeNutsPair() {
-    const { board } = PC.getKnown();
-    if (board.length < 3) return null;
-    const remaining = makeDeck().filter((c) => !PC.state.selected.includes(cardId(c)));
-    let bestPair = null, bestEv = null;
-    for (let i = 0; i < remaining.length; i++) {
-      for (let j = i + 1; j < remaining.length; j++) {
-        const a = remaining[i], b = remaining[j];
-        const ev = evalBest([a, b].concat(board));
-        if (!bestEv || cmpEval(ev, bestEv) > 0) { bestEv = ev; bestPair = [a, b]; }
+  // ======= NUTS (SEU CÓDIGO) + overlay com leaderboard pós-flop =======
+  function computeNutsPair(){
+    const {board}=PC.getKnown();
+    if(board.length<3) return null;
+    const remaining = makeDeck().filter(c=>!PC.state.selected.includes(cardId(c)));
+    let bestPair=null, bestEv=null;
+    for(let i=0;i<remaining.length;i++){
+      for(let j=i+1;j<remaining.length;j++){
+        const a=remaining[i], b=remaining[j];
+        const ev = evalBest([a,b].concat(board));
+        if(!bestEv || cmpEval(ev,bestEv)>0){ bestEv=ev; bestPair=[a,b]; }
       }
     }
-    return bestPair ? { pair: bestPair, ev: bestEv } : null;
+    return bestPair? {pair:bestPair, ev:bestEv}: null;
   }
+  function renderNuts(){
+    const n0=document.getElementById('n0'), n1=document.getElementById('n1'), ncat=document.getElementById('nutsCat');
+    function clear(el){ if(!el) return; el.classList.remove('filled'); el.textContent=''; }
+    function paint(el,c){ if(!el) return; el.classList.add('filled'); el.innerHTML = `<div class="${SUIT_CLASS[c.s]}" style="text-align:center"><div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div><div style="font-size:18px">${SUIT_GLYPH[c.s]}</div></div>`; }
 
-  function renderNuts() {
-    const n0 = document.getElementById('n0'), n1 = document.getElementById('n1'), ncat = document.getElementById('nutsCat');
-    function clear(el) { if (!el) return; el.classList.remove('filled'); el.textContent = ''; }
-    function paint(el, c) {
-      if (!el) return;
-      el.classList.add('filled');
-      el.innerHTML = `<div class="${SUIT_CLASS[c.s]}" style="text-align:center">
-        <div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div>
-        <div style="font-size:18px">${SUIT_GLYPH[c.s]}</div>
-      </div>`;
-    }
-
-    const { board } = PC.getKnown();
-    if (board.length < 3) {
-      // Pré-flop: só placeholder visual nas cartas 'n0/n1'
-      paint(n0, { r: 14, s: 's' }); paint(n1, { r: 14, s: 'h' });
-      if (ncat) {
-        if (PREFLOP.loaded) {
-          const txt = heroPreflopRankText();
-          ncat.textContent = txt ? `Sua mão: ${txt}` : 'Top 5 (clique/hover) • JSON';
-        } else if (PREFLOP.error) {
-          ncat.textContent = 'Falha ao carregar preflop169.json';
-        } else {
-          ncat.textContent = 'Carregando preflop169.json…';
-        }
-      }
+    const {board}=PC.getKnown();
+    if(board.length<3){
+      paint(n0,{r:14,s:'s'}); paint(n1,{r:14,s:'h'});
+      if(ncat) ncat.textContent='Par de Ases';
       return;
     }
-    const res = computeNutsPair();
-    if (!res) { clear(n0); clear(n1); if (ncat) ncat.textContent = ''; return; }
-    const [c1, c2] = res.pair; paint(n0, c1); paint(n1, c2);
-    if (ncat) ncat.textContent = (CAT_NAME[res.ev.cat] || '');
+    const res=computeNutsPair();
+    if(!res){ clear(n0); clear(n1); if(ncat) ncat.textContent=''; return; }
+    const [c1,c2]=res.pair; paint(n0,c1); paint(n1,c2);
+    if(ncat) ncat.textContent = (CAT_NAME[res.ev.cat]||'');
   }
 
-  // Substitui o antigo "computeTop5PreflopChen" por versão que lê do JSON
-  function computeTop5PreflopFromJSON() {
-    if (!PREFLOP.loaded || !PREFLOP.list.length) return [];
-    // Top 5 por ordem do JSON (1..5)
-    return PREFLOP.list.slice(0, 5).map((label) => ({ label, right: `#${PREFLOP.map.get(label)}` }));
-  }
+  const RANK_CHAR=r=>r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r);
+  function pairKeyByRank(r1,r2){ const hi=Math.max(r1,r2), lo=Math.min(r1,r2); return `${hi}-${lo}`; }
+  function pairLabelByRank(r1,r2){ const hi=Math.max(r1,r2), lo=Math.min(r1,r2); return `${RANK_CHAR(hi)}${RANK_CHAR(lo)}`; }
 
-  function pairKeyByRank(r1, r2) { const hi = Math.max(r1, r2), lo = Math.min(r1, r2); return `${hi}-${lo}`; }
-  function pairLabelByRank(r1, r2) { const hi = Math.max(r1, r2), lo = Math.min(r1, r2); return `${RANK_CHAR(hi)}${RANK_CHAR(lo)}`; }
-
-  function computeTop5Postflop() {
-    const { board } = PC.getKnown();
-    const remaining = makeDeck().filter((c) => !PC.state.selected.includes(cardId(c)));
-    const bestByKey = new Map();
-    for (let i = 0; i < remaining.length; i++) {
-      for (let j = i + 1; j < remaining.length; j++) {
-        const a = remaining[i], b = remaining[j];
-        const key = pairKeyByRank(a.r, b.r);
-        const ev = evalBest([a, b].concat(board));
-        const cur = bestByKey.get(key);
-        if (!cur || cmpEval(ev, cur.ev) > 0) {
-          bestByKey.set(key, { ev, label: pairLabelByRank(a.r, b.r) });
-        }
+  // (pré-flop informativo – mantido)
+  function computeTop5PreflopChen(){
+    const all=[];
+    for(let i=0;i<RANKS.length;i++){
+      for(let j=i;j<RANKS.length;j++){
+        const r1=RANKS[j], r2=RANKS[i];
+        const score = (r1===r2? 10 + (r1-2)/2 : 6 + (r1+r2)/30);
+        all.push({label:pairLabelByRank(r1,r2), score});
       }
     }
-    const arr = [...bestByKey.values()];
-    arr.sort((x, y) => -cmpEval(x.ev, y.ev));
-    return arr.slice(0, 5).map((x) => ({ label: x.label, right: (CAT_NAME[x.ev.cat] || '') }));
+    all.sort((a,b)=>b.score-a.score);
+    return all.slice(0,5).map(x=>({label:x.label, right:`Rank`}));
   }
 
-  function hideNutsOverlay() { if (nutsOverlay) { nutsOverlay.remove(); nutsOverlay = null; } if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null; } }
-  function positionOverlayNear(anchor, el) {
-    const r = anchor.getBoundingClientRect();
-    const top = r.bottom + window.scrollY + 6;
-    let left = r.left + window.scrollX;
+  // ===== NOVO: Top 5 REAL pós-flop =====
+  function computeTop5PostflopLeaderboard(){
+    const data = computePostflopLeaderboard();
+    if(!data) return null;
+
+    const rows = data.top5.map((it, idx)=>({
+      left: `${idx+1}) ${it.detail}`, // ex.: "1) Quadra de 4 (kicker K)"
+      right: `(${it.count} combos)`,
+      examples: it.examples // array de "AhKh","7d2c",...
+    }));
+
+    const hero = data.hero;
+    return { rows, hero };
+  }
+
+  function hideNutsOverlay(){ if(nutsOverlay){ nutsOverlay.remove(); nutsOverlay=null; } if(overlayTimer){ clearTimeout(overlayTimer); overlayTimer=null; } }
+  function positionOverlayNear(anchor, el){
+    const r=anchor.getBoundingClientRect();
+    const top=r.bottom + window.scrollY + 6;
+    let left=r.left + window.scrollX;
     document.body.appendChild(el);
-    const w = el.getBoundingClientRect().width;
-    const maxLeft = window.scrollX + window.innerWidth - w - 8;
-    if (left > maxLeft) left = Math.max(8, maxLeft);
-    el.style.position = 'absolute';
-    el.style.top = `${top}px`;
-    el.style.left = `${left}px`;
-    el.style.zIndex = '9999';
+    const w=el.getBoundingClientRect().width;
+    const maxLeft=window.scrollX + window.innerWidth - w - 8;
+    if(left>maxLeft) left = Math.max(8, maxLeft);
+    el.style.position='absolute';
+    el.style.top=`${top}px`;
+    el.style.left=`${left}px`;
+    el.style.zIndex='9999';
   }
-
-  function showNutsOverlay() {
-    const { board } = PC.getKnown();
-    const anchor = document.querySelector('.nutsline');
-    if (!anchor) return;
+  function showNutsOverlay(){
+    const {board, hand}=PC.getKnown();
+    const anchor=document.querySelector('.nutsline');
+    if(!anchor) return;
     hideNutsOverlay();
 
-    const isPreflop = board.length < 3;
-    const titleText = isPreflop ? 'Top 5 mãos (pré-flop • JSON)' : 'Top 5 mãos (ranks)';
-    const rows = isPreflop ? computeTop5PreflopFromJSON() : computeTop5Postflop();
+    const wrap=document.createElement('div');
+    wrap.id='nutsOverlay';
+    wrap.style.cssText='background:#0b1324;border:1px solid #334155;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.35);padding:8px 10px;min-width:280px;color:#e5e7eb;font-size:14px';
 
-    const wrap = document.createElement('div');
-    wrap.id = 'nutsOverlay';
-    wrap.style.cssText = 'background:#0b1324;border:1px solid #334155;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.35);padding:8px 10px;min-width:200px;';
-    const title = document.createElement('div');
-    title.className = 'mut';
-    title.style.cssText = 'margin-bottom:6px;font-weight:600';
-    title.textContent = titleText;
+    // Título
+    const title=document.createElement('div');
+    title.className='mut';
+    title.style.cssText='margin-bottom:6px;font-weight:600';
+    const isPreflop = board.length<3;
+    title.textContent = isPreflop ? 'Top 5 mãos (pré-flop, informativo)' : 'Top 5 mãos possíveis (board atual)';
     wrap.appendChild(title);
 
-    const list = document.createElement('div');
-    if (rows.length) {
-      rows.forEach((it, idx) => {
-        const row = document.createElement('div');
-        row.style.cssText = 'display:flex;justify-content:space-between;gap:10px;padding:4px 0';
-        const left = document.createElement('div'); left.textContent = `${idx + 1}) ${it.label}`;
-        const right = document.createElement('div'); right.className = 'mut'; right.textContent = it.right;
-        row.appendChild(left); row.appendChild(right);
+    const list=document.createElement('div');
+
+    if(isPreflop){
+      const rows = computeTop5PreflopChen();
+      if(rows.length){
+        rows.forEach((it,idx)=>{
+          const row=document.createElement('div');
+          row.style.cssText='display:flex;justify-content:space-between;gap:10px;padding:4px 0';
+          const left=document.createElement('div'); left.textContent=`${idx+1}) ${it.label}`;
+          const right=document.createElement('div'); right.className='mut'; right.textContent=it.right;
+          row.appendChild(left); row.appendChild(right);
+          list.appendChild(row);
+        });
+      }else{
+        const row=document.createElement('div'); row.className='mut'; row.textContent='—';
         list.appendChild(row);
-      });
-      // Se herói tiver mão, mostra posição dele
-      const heroTxt = heroPreflopRankText();
-      if (isPreflop && heroTxt) {
-        const hr = document.createElement('div');
-        hr.style.cssText = 'margin-top:6px;border-top:1px dashed #334155;padding-top:6px;font-size:12px;color:#9ca3af';
-        hr.textContent = `Sua mão: ${heroTxt}`;
-        list.appendChild(hr);
       }
-    } else {
-      const row = document.createElement('div'); row.className = 'mut'; row.textContent = PREFLOP.error ? 'Erro ao carregar JSON' : 'Carregando...';
-      list.appendChild(row);
+    }else{
+      const data = computeTop5PostflopLeaderboard();
+      if(data && data.rows.length){
+        data.rows.forEach((it)=>{
+          const row=document.createElement('div');
+          row.style.cssText='display:flex;flex-direction:column;gap:2px;padding:6px 0;border-bottom:1px dashed #22304b';
+          const head=document.createElement('div');
+          head.style.cssText='display:flex;justify-content:space-between;gap:10px';
+          const left=document.createElement('div'); left.textContent=it.left;
+          const right=document.createElement('div'); right.className='mut'; right.textContent=it.right;
+          head.appendChild(left); head.appendChild(right);
+          row.appendChild(head);
+
+          if(it.examples?.length){
+            const ex=document.createElement('div');
+            ex.className='mut';
+            ex.style.cssText='font-size:12px';
+            ex.textContent = `Exemplos: ${it.examples.slice(0,5).join('  |  ')}`;
+            row.appendChild(ex);
+          }
+          list.appendChild(row);
+        });
+
+        // Bloco “Sua mão agora”
+        const heroBlock=document.createElement('div');
+        heroBlock.style.cssText='margin-top:8px;padding-top:6px;border-top:1px solid #22304b';
+        const heroTitle=document.createElement('div');
+        heroTitle.style.cssText='font-weight:600;margin-bottom:4px';
+        heroTitle.textContent='Sua mão (neste board):';
+        heroBlock.appendChild(heroTitle);
+
+        const heroLine=document.createElement('div');
+        const d = data.hero.desc;
+        heroLine.innerHTML = `${d.name} — ${d.detail}`;
+        heroBlock.appendChild(heroLine);
+
+        const heroPos=document.createElement('div');
+        heroPos.className='mut';
+        heroPos.style.cssText='margin-top:4px';
+        heroPos.textContent = `Posição: ${data.hero.classPosition} de ${data.hero.classTotal} classes • Combos que vencem/empatam/perdem: ${data.hero.betterCombos}/${data.hero.tieCombos}/${data.hero.worseCombos}`;
+        heroBlock.appendChild(heroPos);
+
+        list.appendChild(heroBlock);
+      }else{
+        const row=document.createElement('div'); row.className='mut'; row.textContent='—';
+        list.appendChild(row);
+      }
     }
+
     wrap.appendChild(list);
 
-    wrap.addEventListener('mouseenter', () => { nutsHover = true; if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null; } });
-    wrap.addEventListener('mouseleave', () => { nutsHover = false; overlayTimer = setTimeout(() => { if (!nutsHover) hideNutsOverlay(); }, 180); });
+    wrap.addEventListener('mouseenter', ()=>{ nutsHover=true; if(overlayTimer){clearTimeout(overlayTimer); overlayTimer=null;} });
+    wrap.addEventListener('mouseleave', ()=>{ nutsHover=false; overlayTimer=setTimeout(()=>{ if(!nutsHover) hideNutsOverlay(); }, 180); });
 
     positionOverlayNear(anchor, wrap);
-    nutsOverlay = wrap;
+    nutsOverlay=wrap;
+  }
+  function wireNutsOverlayOnce(){
+    if(wiredNuts) return;
+    const anchor=document.querySelector('.nutsline');
+    if(!anchor) return;
+    wiredNuts=true;
+    anchor.addEventListener('click', (e)=>{ e.stopPropagation(); if(nutsOverlay) hideNutsOverlay(); else showNutsOverlay(); });
+    anchor.addEventListener('mouseenter', ()=>{ showNutsOverlay(); });
+    anchor.addEventListener('mouseleave', ()=>{ overlayTimer=setTimeout(()=>{ if(!nutsHover) hideNutsOverlay(); }, 180); });
+    document.addEventListener('click', (e)=>{ if(nutsOverlay && !nutsOverlay.contains(e.target) && !anchor.contains(e.target)) hideNutsOverlay(); });
   }
 
-  function wireNutsOverlayOnce() {
-    if (wiredNuts) return;
-    const anchor = document.querySelector('.nutsline');
-    if (!anchor) return;
-    wiredNuts = true;
-    anchor.addEventListener('click', (e) => { e.stopPropagation(); if (nutsOverlay) hideNutsOverlay(); else showNutsOverlay(); });
-    anchor.addEventListener('mouseenter', () => { showNutsOverlay(); });
-    anchor.addEventListener('mouseleave', () => { overlayTimer = setTimeout(() => { if (!nutsHover) hideNutsOverlay(); }, 180); });
-    document.addEventListener('click', (e) => { if (nutsOverlay && !nutsOverlay.contains(e.target) && !anchor.contains(e.target)) hideNutsOverlay(); });
-  }
-
-  // Início da app (integra pré-flop JSON)
-  async function __pcalc_start_app__() {
-    PC.state.prevBoardLen = Math.max(0, PC.state.selected.length - 2);
-    await loadPreflopTableOnce().catch(()=>{});
+  // ===== bootstrap (seu original) =====
+  function __pcalc_start_app__(){
+    PC.state.prevBoardLen = Math.max(0, PC.state.selected.length-2);
     renderDeck();
   }
   g.__pcalc_start_app__ = __pcalc_start_app__;
 
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', ()=>{
     // aguardando start via __pcalc_start_app__ (login-guard)
   });
 })(window);
