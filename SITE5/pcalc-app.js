@@ -1,4 +1,4 @@
-// pcalc-app.js — PF (JSON) no pré-flop (linha e hover), pós-flop Top5, watchdog e sem "kicker undefined"
+// pcalc-app.js — PF(JSON) no pré-flop (linha e hover c/ posição da sua mão), pós-flop Top5, watchdog e sem "kicker undefined"
 (function(g){
   const PC = g.PCALC;
   const { RANKS, SUITS, SUIT_CLASS, SUIT_GLYPH, fmtRank, cardId, makeDeck, evalBest, cmpEval, CAT, CAT_NAME } = PC;
@@ -34,8 +34,7 @@
     const s1 = String(hand[0].s || '').toLowerCase();
     const s2 = String(hand[1].s || '').toLowerCase();
     try{
-      const tag = g.PF.normalize2(r1, s1, r2, s2); // "AKs","QJo","77"
-      return tag;
+      return g.PF.normalize2(r1, s1, r2, s2); // "AKs","QJo","77"
     }catch(e){
       console.warn('[PF] normalize2 falhou:', e);
       return null;
@@ -60,12 +59,11 @@
     return tags; // 169
   }
 
-  // Top 5 do PRÉ-FLOP baseado no JSON (PF). Fallback para Chen se PF indisponível.
-  function computeTop5PreflopPF(){
+  // Lista PF inteira (ordenada por rank) e devolve também top5 já preparado para overlay
+  function rankAllPF(){
     if(!hasPF()) return null;
-    const tags = all169Tags();
     const rows = [];
-    for(const t of tags){
+    for(const t of all169Tags()){
       try{
         const info = g.PF.describe(t); // {hand, rank, tier}
         if(info && typeof info.rank === 'number'){
@@ -75,7 +73,10 @@
     }
     if(!rows.length) return null;
     rows.sort((a,b)=>a.rank - b.rank); // 1 é melhor
-    return rows.slice(0,5).map((it)=>({ label: it.label, right: `Rank ${it.rank}` }));
+    return rows;
+  }
+  function top5FromAllPF(all){
+    return all.slice(0,5).map(it=>({ label: it.label, right: `Rank ${it.rank}` }));
   }
 
   // ========== Linha do Rank PF (só no pré-flop) ==========
@@ -90,7 +91,6 @@
       return;
     }
 
-    // PRÉ-FLOP
     let line = box.querySelector('#preflopRankLine');
     if(!line){
       line = document.createElement('div');
@@ -162,10 +162,16 @@
 
   // ========== Leaderboard pós-flop ==========
   function keyFromEval(ev){ return JSON.stringify({ c: ev.cat, k: ev.kick }); }
+  function r2cSafe(r){ // robusto contra valores falsy/undefined
+    if(r==null) return '';
+    return (r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r));
+  }
+  function listClean(arr){ // remove vazios e "undefined"
+    return (arr||[]).map(r2cSafe).filter(x=>x && x!=='undefined');
+  }
   function describeEval(ev){
     // Sem "kicker undefined": só mostra o que existir.
     const name = CAT_NAME[ev.cat] || '—';
-    const r2c = (r)=> (r==null ? '' : (r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r)));
     const k = ev.kick || [];
     let detail = '';
 
@@ -175,50 +181,50 @@
         break;
 
       case CAT.SFLUSH: {
-        const hi = r2c(k[0]);
+        const hi = r2cSafe(k[0]);
         detail = hi ? `Straight Flush (alto ${hi})` : 'Straight Flush';
         break;
       }
 
       case CAT.QUADS: {
-        const quad = r2c(k[0]);
-        const kick = r2c(k[1]);
+        const quad = r2cSafe(k[0]);
+        const kick = r2cSafe(k[1]);
         detail = quad ? `Quadra de ${quad}` : 'Quadra';
         if(kick) detail += ` (kicker ${kick})`;
         break;
       }
 
       case CAT.FULL: {
-        const t = r2c(k[0]);
-        const p = r2c(k[1]);
+        const t = r2cSafe(k[0]);
+        const p = r2cSafe(k[1]);
         if(t && p) detail = `Full House (${t} cheio de ${p})`;
         else detail = 'Full House';
         break;
       }
 
       case CAT.FLUSH: {
-        const hi = r2c(k[0]);
+        const hi = r2cSafe(k[0]);
         detail = hi ? `Flush (alto ${hi})` : 'Flush';
         break;
       }
 
       case CAT.STRAIGHT: {
-        const hi = r2c(k[0]);
+        const hi = r2cSafe(k[0]);
         detail = hi ? `Sequência (alto ${hi})` : 'Sequência';
         break;
       }
 
       case CAT.TRIPS: {
-        const t = r2c(k[0]);
-        const ks = [r2c(k[1]), r2c(k[2])].filter(Boolean);
+        const t = r2cSafe(k[0]);
+        const ks = listClean([k[1], k[2]]);
         detail = t ? `Trinca de ${t}` : 'Trinca';
         if(ks.length) detail += ` (kickers ${ks.join(', ')})`;
         break;
       }
 
       case CAT.TWO: {
-        const a = r2c(k[0]), b = r2c(k[1]);
-        const kick = r2c(k[2]);
+        const a = r2cSafe(k[0]), b = r2cSafe(k[1]);
+        const kick = r2cSafe(k[2]);
         if(a && b) detail = `Dois Pares (${a} & ${b})`;
         else detail = 'Dois Pares';
         if(kick) detail += `, kicker ${kick}`;
@@ -226,15 +232,15 @@
       }
 
       case CAT.ONE: {
-        const p = r2c(k[0]);
-        const ks = [r2c(k[1]), r2c(k[2]), r2c(k[3])].filter(Boolean);
+        const p = r2cSafe(k[0]);
+        const ks = listClean([k[1], k[2], k[3]]);
         detail = p ? `Par de ${p}` : 'Par';
         if(ks.length) detail += ` (kickers ${ks.join(', ')})`;
         break;
       }
 
       case CAT.HIGH: {
-        const hi = r2c(k[0]);
+        const hi = r2cSafe(k[0]);
         detail = hi ? `Carta Alta ${hi}` : 'Carta Alta';
         break;
       }
@@ -573,7 +579,7 @@
           g.TTS.state.enabled = true;
           enableEl.checked = true;
 
-        enableEl.onchange = (e)=>{
+          enableEl.onchange = (e)=>{
             g.TTS.state.enabled = e.target.checked;
             if(g.TTS.state.enabled) g.TTS.speak('Voz ativada');
           };
@@ -769,32 +775,59 @@
 
     const wrap=document.createElement('div');
     wrap.id='nutsOverlay';
-    wrap.style.cssText='background:#0b1324;border:1px solid #334155;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.35);padding:8px 10px;min-width:280px;color:#e5e7eb;font-size:14px';
+    wrap.style.cssText='background:#0b1324;border:1px solid #334155;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.35);padding:8px 10px;min-width:300px;color:#e5e7eb;font-size:14px';
 
     const title=document.createElement('div');
     title.className='mut';
     title.style.cssText='margin-bottom:6px;font-weight:600';
     const isPreflop = board.length<3;
-    title.textContent = isPreflop ? 'Top 5 mãos (pré-flop, JSON)' : 'Top 5 mãos possíveis (board atual)';
+    title.textContent = isPreflop ? 'Top 5 (pré-flop, JSON) + sua posição' : 'Top 5 mãos possíveis (board atual)';
     wrap.appendChild(title);
 
     const list=document.createElement('div');
 
     if(isPreflop){
-      // >>> AGORA usa o JSON (PF). Se não disponível, cai para Chen.
-      const rows = computeTop5PreflopPF() || computeTop5PreflopChen();
+      const all = rankAllPF(); // lista completa ordenada
+      const rows = all ? top5FromAllPF(all) : computeTop5PreflopChen();
       if(rows && rows.length){
         rows.forEach((it,idx)=>{
           const row=document.createElement('div');
           row.style.cssText='display:flex;justify-content:space-between;gap:10px;padding:4px 0';
-          const left=document.createElement('div'); left.textContent=`${idx+1}) ${it.label}`;
-          const right=document.createElement('div'); right.className='mut'; right.textContent=it.right;
+          const left=document.createElement('div'); 
+          left.textContent=`${idx+1}) ${it.label}`;
+          const right=document.createElement('div'); 
+          right.className='mut'; 
+          right.textContent=it.right;
           row.appendChild(left); row.appendChild(right);
           list.appendChild(row);
         });
       }else{
         const row=document.createElement('div'); row.className='mut'; row.textContent='—';
         list.appendChild(row);
+      }
+
+      // Sua mão e posição
+      if(all && hasPF()){
+        const tag = getPreflopTagFromHand();
+        if(tag){
+          // acha a posição na lista completa
+          const pos = all.findIndex(x=>x.label.toUpperCase()===tag.toUpperCase());
+          if(pos>=0){
+            const rankN = all[pos].rank; // já é 1..169
+            const tier  = all[pos].tier || '';
+            const yourRow=document.createElement('div');
+            yourRow.style.cssText='margin-top:8px;padding-top:6px;border-top:1px solid #22304b';
+
+            if(rankN <= 5){
+              // Já está no Top 5: destaque
+              yourRow.innerHTML = `<div><b>⭐ Sua mão:</b> ${tag} — #${rankN}/169 ${tier ? `(${tier})` : ''} <span class="mut">(no Top 5)</span></div>`;
+            }else{
+              // Fora do Top 5: mostrar abaixo do Top 5
+              yourRow.innerHTML = `<div><b>Sua mão:</b> ${tag} — <b>#${rankN}/169</b> ${tier ? `(${tier})` : ''}</div>`;
+            }
+            list.appendChild(yourRow);
+          }
+        }
       }
     }else{
       const data = computeTop5PostflopLeaderboard();
