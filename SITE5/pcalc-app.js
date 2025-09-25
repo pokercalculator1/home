@@ -1,7 +1,87 @@
-// pcalc-app.js
+// pcalc-app.js (SEU CÓDIGO ORIGINAL + RANK PRÉ-FLOP POR PF + FIX AKs/AKo)
 (function(g){
   const PC = g.PCALC;
   const { RANKS, SUITS, SUIT_CLASS, SUIT_GLYPH, fmtRank, cardId, makeDeck, evalBest, cmpEval, CAT, CAT_NAME } = PC;
+
+  // ===== NOVO: helpers PF (preflop_rank.js) =====
+  function hasPF(){
+    return typeof g.PF !== 'undefined' && g.PF && typeof g.PF.normalize2 === 'function';
+  }
+  function rankNumToChar(n){
+    // converte 14..2 -> 'A'..'2'  (ou retorna já char)
+    if(typeof n === 'string'){
+      const u = n.toUpperCase();
+      if('AKQJT98765432'.includes(u)) return u;
+      if(u === '10') return 'T';
+      return u[0] || '';
+    }
+    if(n===14) return 'A';
+    if(n===13) return 'K';
+    if(n===12) return 'Q';
+    if(n===11) return 'J';
+    if(n===10) return 'T';
+    return String(n);
+  }
+  function getPreflopTagFromHand(){
+    // Usa EXCLUSIVAMENTE a mão do herói (PC.getKnown().hand) -> evita confundir com board
+    if(!hasPF()) return null;
+    const { hand } = PC.getKnown();
+    if(!hand || hand.length < 2) return null;
+    const r1 = rankNumToChar(hand[0].r);
+    const r2 = rankNumToChar(hand[1].r);
+    const s1 = String(hand[0].s || '').toLowerCase(); // 'h','d','c','s'
+    const s2 = String(hand[1].s || '').toLowerCase();
+    try{
+      const tag = g.PF.normalize2(r1, s1, r2, s2); // "AKs","QJo","77"
+      if(tag){
+        const info = g.PF.describe(tag);
+        console.debug('[Pré-flop PF]', { tag, rank: info?.rank, tier: info?.tier });
+      }
+      return tag;
+    }catch(e){
+      console.warn('[PF] normalize2 falhou:', e);
+      return null;
+    }
+  }
+  function renderPreflopRankLineInto(box){
+    if(!box) return;
+    const { hand, board } = PC.getKnown();
+
+    // criar nó caso não exista (inserimos acima da barra)
+    let line = box.querySelector('#preflopRankLine');
+    if(!line){
+      line = document.createElement('div');
+      line.id = 'preflopRankLine';
+      line.className = 'mut';
+      line.style.marginTop = '6px';
+      // inserir antes da barra, se existir; caso contrário, no topo
+      const bar = box.querySelector('.bar');
+      if(bar) box.insertBefore(line, bar);
+      else box.insertBefore(line, box.firstChild);
+    }
+
+    // só mostra no pré-flop (0–2 cartas de mesa) e com mão completa
+    if(!(hand && hand.length===2) || (board && board.length>=3)){
+      line.remove();
+      return;
+    }
+
+    if(!hasPF()){
+      line.textContent = 'Pré-flop: ranking 1–169 indisponível (preflop_rank.js não carregado).';
+      return;
+    }
+    const tag = getPreflopTagFromHand();
+    if(!tag){
+      line.textContent = 'Pré-flop: (selecione 2 cartas para ver o rank)';
+      return;
+    }
+    const info = g.PF.describe(tag);
+    if(info?.rank){
+      line.innerHTML = `<b>Pré-flop:</b> ${info.hand} • <b>Rank</b> ${info.rank}/169 • ${info.tier}`;
+    }else{
+      line.textContent = 'Pré-flop: (ranking indisponível para esta mão)';
+    }
+  }
 
   let nutsOverlay=null, nutsHover=false, overlayTimer=null, wiredNuts=false;
   const deckEl = document.getElementById('deck');
@@ -238,6 +318,7 @@
             <button class="btn" id="btnEqCalc">↻ Recalcular</button>
           </div>
           <div id="eqStatus" class="mut" style="margin-top:8px"></div>
+          <!-- A LINHA DE RANK PRÉ-FLOP É INSERIDA DINAMICAMENTE AQUI EM CIMA DA BARRA -->
           <div class="bar" style="margin-top:8px"><i id="eqBarWin" style="width:0%"></i></div>
           <div style="display:flex;gap:8px;margin-top:6px" id="eqBreak"></div>
           <div class="hint" id="suggestOut" style="margin-top:10px"></div>
@@ -275,6 +356,10 @@
       }else{
         box.querySelector('h3').textContent=`${stage}: Equidade até o showdown`;
       }
+
+      // ===== NOVO: inserir/atualizar a linha de ranking 1–169 no pré-flop =====
+      renderPreflopRankLineInto(box);
+
       calcEquity();
     }else{
       box.style.display='none';
@@ -333,7 +418,7 @@
       return;
     }
 
-    // Equidade SEMPRE por simulação (pré e pós-flop)
+    // Equidade SEMPRE por simulação (mantido do seu original)
     const eqPct = (res.win + res.tie/2);
 
     const sugg = PC.suggestAction(eqPct, hand, board, opp);
@@ -356,6 +441,12 @@
       }else{
         g.TTS.speak(`Sugestão: ${sugg.title}`);
       }
+    }
+
+    // ===== NOVO: manter linha de rank atualizada enquanto for pré-flop =====
+    if(board.length < 3){
+      const box=document.getElementById('equityBox');
+      if(box) renderPreflopRankLineInto(box);
     }
   }
 
