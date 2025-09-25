@@ -8,10 +8,18 @@ import { renderOuts } from './pcalc-outs.js';
 import { suggestAction, decisionClass, shouldGlow, eqPctPreflop } from './pcalc-suggest.js';
 import { TTS } from './pcalc-tts.js';
 
+// ==== NOVO: checagem leve do módulo PF (preflop_rank.js) ====
+function hasPF(){
+  return typeof window !== 'undefined' && window.PF && typeof PF.normalize2 === 'function';
+}
+
 const deckEl = document.getElementById('deck');
 let stageJustSet = null;
 
-function stageFromBoardLen(n){ return n<3?'Pré-flop':(n===3?'Pós-flop':(n===4?'Pós-turn':'Pós-river')); }
+// Utilitários de estágio
+function stageFromBoardLen(n){
+  return n<3 ? 'Pré-flop' : (n===3 ? 'Pós-flop' : (n===4 ? 'Pós-turn' : 'Pós-river'));
+}
 function updateStageChange(oldLen, newLen){
   if(newLen>=3 && oldLen<3) stageJustSet='Flop definido';
   else if(newLen>=4 && oldLen<4) stageJustSet='Turn definido';
@@ -19,8 +27,10 @@ function updateStageChange(oldLen, newLen){
   PCalcState.setPrevBoardLen(newLen);
 }
 
-function renderSlots(){ /* seus slots custom se aplicam; omitido para manter simples */ }
+// Slots (mantido simples aqui)
+function renderSlots(){ /* seus slots custom se aplicam; omitido intencionalmente */ }
 
+// Deck
 function renderDeck(){
   if(!deckEl) return;
   const selected = PCalcState.getSelected();
@@ -45,6 +55,7 @@ function renderDeck(){
   renderEverything();
 }
 
+// Categoria feita do herói
 function renderHeroMade(){
   const el=document.getElementById('handCat'); if(!el) return;
   const {hand,board}=PCalcState.getKnown();
@@ -54,6 +65,7 @@ function renderHeroMade(){
   el.textContent = txt;
 }
 
+// Monte Carlo simples para pós-flop
 function simulateEquity(hand,board,nOpp=1,trials=5000){
   const missing=5-board.length;
   if(missing<0) return {win:0,tie:0,lose:100};
@@ -96,6 +108,62 @@ function compare(a,b){
   return 0;
 }
 
+// ==== NOVO: utilitário para obter a tag pré-flop ("AKs","QJo","77") via PF ====
+function getPreflopTag(){
+  if(!hasPF()) return null;
+  const sel = PCalcState.getSelected();
+  if(!sel || sel.length<2) return null;
+  const [c1,c2] = sel;
+  // ids padrão: "Ah","Kd","Tc" etc.
+  if(!c1 || !c2 || c1.length<2 || c2.length<2) return null;
+  const r1=c1[0].toUpperCase(), s1=c1[1].toLowerCase();
+  const r2=c2[0].toUpperCase(), s2=c2[1].toLowerCase();
+  try{
+    return PF.normalize2(r1,s1,r2,s2); // "AKs","QJo","77"
+  }catch(e){
+    console.warn('[PF] normalize2 falhou:', e);
+    return null;
+  }
+}
+
+// ==== NOVO: renderização do bloco de ranking pré-flop (mostra só antes do flop) ====
+function renderPreflopRankLine(container){
+  if(!container) return;
+  const {hand,board}=PCalcState.getKnown();
+  if(hand.length<2 || board.length>=3) {
+    const old = container.querySelector('#preflopRankLine');
+    if(old) old.remove();
+    return;
+  }
+
+  // cria o bloco se não existir
+  let line = container.querySelector('#preflopRankLine');
+  if(!line){
+    line = document.createElement('div');
+    line.id = 'preflopRankLine';
+    line.className = 'mut';
+    line.style.marginTop = '6px';
+    container.insertBefore(line, container.firstChild); // fica em cima da barra
+  }
+
+  if(hasPF()){
+    const tag = getPreflopTag();
+    if(tag){
+      const info = PF.describe(tag); // {hand, rank, tier}
+      if(info?.rank){
+        line.innerHTML = `<b>Pré-flop:</b> ${info.hand} • <b>Rank</b> ${info.rank}/169 • ${info.tier}`;
+      }else{
+        line.textContent = 'Pré-flop: (ranking indisponível para esta mão)';
+      }
+    }else{
+      line.textContent = 'Pré-flop: (selecione 2 cartas para ver o rank)';
+    }
+  }else{
+    line.textContent = 'Pré-flop: ranking 1–169 indisponível (arquivo preflop_rank.js não carregado).';
+  }
+}
+
+// Painel de equidade + sugestão
 function renderEquityPanel(){
   const box=document.getElementById('equityBox');
   if(!box) return;
@@ -133,6 +201,7 @@ function renderEquityPanel(){
           <button class="btn" id="btnEqCalc">↻ Recalcular</button>
         </div>
         <div id="eqStatus" class="mut" style="margin-top:8px"></div>
+        <!-- NOVO: linha de ranking pré-flop aparece aqui antes da barra -->
         <div class="bar" style="margin-top:8px"><i id="eqBarWin" style="width:0%"></i></div>
         <div style="display:flex;gap:8px;margin-top:6px" id="eqBreak"></div>
         <div class="hint" id="suggestOut" style="margin-top:10px"></div>
@@ -165,6 +234,10 @@ function renderEquityPanel(){
     }else{
       box.querySelector('h3').textContent=`${stage}: Equidade até o showdown`;
     }
+
+    // NOVO: renderizar linha de ranking pré-flop quando ainda não há 3 cartas na mesa
+    renderPreflopRankLine(box);
+
     calcEquity();
   }else{
     box.style.display='none';
@@ -173,6 +246,7 @@ function renderEquityPanel(){
   }
 }
 
+// Cálculo da equidade + sugestão (pré e pós-flop)
 function calcEquity(){
   const {hand,board}=PCalcState.getKnown();
   if(hand.length<2) return;
@@ -182,10 +256,14 @@ function calcEquity(){
   const st=document.getElementById('eqStatus');
 
   if(st) st.textContent='Calculando...';
-  const res = (board.length<3)
-    ? { win: eqPctPreflop(hand), tie:0, lose:100 - eqPctPreflop(hand) }
+
+  const isPre = board.length<3;
+  const preWin = isPre ? eqPctPreflop(hand) : null;
+  const res = isPre
+    ? { win: preWin, tie:0, lose: 100 - preWin }
     : simulateEquity(hand,board,opp,trials);
 
+  // Atualiza barra e breakdown
   const bar=document.getElementById('eqBarWin');
   if(bar) bar.style.width=`${res.win.toFixed(1)}%`;
   const br=document.getElementById('eqBreak');
@@ -193,9 +271,10 @@ function calcEquity(){
                 <small><b>Tie:</b> ${res.tie.toFixed(1)}%</small>
                 <small><b>Lose:</b> ${res.lose.toFixed(1)}%</small>`;
 
-  if(st) st.textContent=`${board.length<3?'Chen (pré-flop)':'Monte Carlo'} • ${board.length<3? 'sem simulação' : trials.toLocaleString()+' amostras'}`;
+  if(st) st.textContent=`${isPre ? 'Chen (pré-flop)' : 'Monte Carlo'} • ${isPre ? 'sem simulação' : trials.toLocaleString()+' amostras'}`;
 
-  const eqPct = (board.length<3) ? res.win : (res.win + res.tie/2);
+  // Sugestão
+  const eqPct = isPre ? res.win : (res.win + res.tie/2);
   const sugg = suggestAction(eqPct, hand, board, opp);
   const out   = document.getElementById('suggestOut');
   const cls   = decisionClass(sugg.title);
@@ -207,12 +286,18 @@ function calcEquity(){
       </div>`;
   }
 
+  // NOVO: manter a linha de ranking atualizada quando usuário mexer em cartas da mão
+  const box=document.getElementById('equityBox');
+  if(box && isPre) renderPreflopRankLine(box);
+
+  // Voz
   if(TTS.state?.enabled){
     if(stageJustSet){ TTS.speak(`${stageJustSet}. Sugestão: ${sugg.title}`); stageJustSet = null; }
     else{ TTS.speak(`Sugestão: ${sugg.title}`); }
   }
 }
 
+// utilitário para comprar cartas aleatórias sem repetir selecionadas
 function pickRandom(n, excludeIds){
   const deck = makeDeck();
   const ex = new Set(excludeIds);
@@ -226,6 +311,7 @@ function pickRandom(n, excludeIds){
   return out;
 }
 
+// Botões
 function wireButtons(){
   const btnFlop = document.getElementById('btnFlop');
   const btnTurn = document.getElementById('btnTurn');
@@ -278,14 +364,16 @@ function wireButtons(){
 }
 
 function renderEverything(){
-  renderPreflopPanel();
-  renderOuts();
-  renderHeroMade();
-  renderEquityPanel();
+  renderPreflopPanel();   // seu painel pré-flop (Chen etc.)
+  renderOuts();           // outs
+  renderHeroMade();       // categoria feita atual
+  renderEquityPanel();    // painel de equidade + (NOVO) linha de rank 1–169 no pré-flop
 }
 
+// Re-render em mudanças de estado
 PCalcState.on('pcalc:state-changed', ()=>{ renderDeck(); });
 
+// Bootstrap
 window.__pcalc_start_app__ = function(){
   renderDeck();
   wireButtons();
