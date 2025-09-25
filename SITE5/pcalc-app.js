@@ -1,4 +1,4 @@
-// pcalc-app.js (SEU CÓDIGO ORIGINAL + RANK PRÉ-FLOP POR PF + LEADERBOARD PÓS-FLOP) [corrigido]
+// pcalc-app.js (rank PF sempre visível + pós-flop Top5 + bugfix) — COMPLETO
 (function(g){
   const PC = g.PCALC;
   const { RANKS, SUITS, SUIT_CLASS, SUIT_GLYPH, fmtRank, cardId, makeDeck, evalBest, cmpEval, CAT, CAT_NAME } = PC;
@@ -39,6 +39,7 @@
       return null;
     }
   }
+  // === ALTERADO: mantém a linha do rank PF em TODAS as streets ===
   function renderPreflopRankLineInto(box){
     if(!box) return;
     const { hand, board } = PC.getKnown();
@@ -49,30 +50,32 @@
       line.id = 'preflopRankLine';
       line.className = 'mut';
       line.style.marginTop = '6px';
+      // inserir antes da barra se existir
       const bar = box.querySelector('.bar');
       if(bar) box.insertBefore(line, bar);
       else box.insertBefore(line, box.firstChild);
     }
 
-    if(!(hand && hand.length===2) || (board && board.length>=3)){
-      line.remove();
+    if(!(hand && hand.length===2)){
+      line.textContent = 'Pré-flop: (selecione 2 cartas para ver o rank)';
       return;
     }
 
+    const stageLabel = (board && board.length>=3) ? 'Pré-flop (inicial)' : 'Pré-flop';
     if(!hasPF()){
-      line.textContent = 'Pré-flop: ranking 1–169 indisponível (preflop_rank.js não carregado).';
+      line.textContent = `${stageLabel}: ranking 1–169 indisponível (preflop_rank.js não carregado).`;
       return;
     }
     const tag = getPreflopTagFromHand();
     if(!tag){
-      line.textContent = 'Pré-flop: (selecione 2 cartas para ver o rank)';
+      line.textContent = `${stageLabel}: (rank indisponível para esta mão)`;
       return;
     }
     const info = g.PF.describe(tag);
     if(info?.rank){
-      line.innerHTML = `<b>Pré-flop:</b> ${info.hand} • <b>Rank</b> ${info.rank}/169 • ${info.tier}`;
+      line.innerHTML = `<b>${stageLabel}:</b> ${info.hand} • <b>Rank</b> ${info.rank}/169 • ${info.tier}`;
     }else{
-      line.textContent = 'Pré-flop: (ranking indisponível para esta mão)';
+      line.textContent = `${stageLabel}: (ranking indisponível para esta mão)`;
     }
   }
 
@@ -331,7 +334,7 @@
         const ev=evalBest(opps[k].concat(full));
         const cmp=cmpEval(ev,bestEv);
         if(cmp>0){ best=`opp${k}`; bestEv=ev; winners=[`opp${k}`]; }
-        else if(cmp===0){ winners.push(`opp${k}`); } // <— BUG FIX: removeu colchete extra
+        else if(cmp===0){ winners.push(`opp${k}`); } // bugfix aplicado
       }
       if(best==='hero' && winners.length===1) win++;
       else if(winners.includes('hero')) tie++;
@@ -405,7 +408,7 @@
             <button class="btn" id="btnEqCalc">↻ Recalcular</button>
           </div>
           <div id="eqStatus" class="mut" style="margin-top:8px"></div>
-          <!-- A LINHA DE RANK PRÉ-FLOP É INSERIDA DINAMICAMENTE AQUI EM CIMA DA BARRA -->
+          <!-- A LINHA DE RANK PRÉ-FLOP (inicial) é inserida AQUI, antes da barra -->
           <div class="bar" style="margin-top:8px"><i id="eqBarWin" style="width:0%"></i></div>
           <div style="display:flex;gap:8px;margin-top:6px" id="eqBreak"></div>
           <div class="hint" id="suggestOut" style="margin-top:10px"></div>
@@ -444,7 +447,9 @@
         box.querySelector('h3').textContent=`${stage}: Equidade até o showdown`;
       }
 
+      // Agora SEMPRE mostramos/atualizamos a linha do rank PF
       renderPreflopRankLineInto(box);
+
       calcEquity();
     }else{
       box.style.display='none';
@@ -500,6 +505,9 @@
           </div>
         `;
       }
+      // Mesmo com flop parcial, mantemos a linha PF visível/atualizada
+      const box=document.getElementById('equityBox');
+      if(box) renderPreflopRankLineInto(box);
       return;
     }
 
@@ -526,11 +534,9 @@
       }
     }
 
-    // Atualiza linha de rank PF quando ainda for pré-flop
-    if(board.length < 3){
-      const box=document.getElementById('equityBox');
-      if(box) renderPreflopRankLineInto(box);
-    }
+    // === ALTERADO: atualizar a linha PF independentemente da street ===
+    const box=document.getElementById('equityBox');
+    if(box) renderPreflopRankLineInto(box);
   }
 
   function safeRecalc(){ try{ calcEquity(); }catch(e){} }
@@ -713,6 +719,7 @@
     document.addEventListener('click', (e)=>{ if(nutsOverlay && !nutsOverlay.contains(e.target) && !anchor.contains(e.target)) hideNutsOverlay(); });
   }
 
+  // ===== bootstrap =====
   function __pcalc_start_app__(){
     PC.state.prevBoardLen = Math.max(0, PC.state.selected.length-2);
     renderDeck();
