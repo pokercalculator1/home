@@ -874,12 +874,12 @@
     // aguardando start via __pcalc_start_app__ (login-guard)
   });
 })(window);
-// --- Addon: Sugestão de FLOP GTO-like (não intrusivo) ---
+
+// --- Flop GTO-like: render robusto (aguarda preload + normaliza cartas) ---
 (function (g) {
   const PC = g.PCALC || (g.PCALC = {});
-  const { evalBest, CAT } = PC;
+  const SEL = "#pcalc-sugestao";
 
-  // cria/pega uma linha dedicada dentro de #pcalc-sugestao
   function ensureGtoLine() {
     const box = document.getElementById("pcalc-sugestao");
     if (!box) return null;
@@ -889,89 +889,74 @@
       line.id = "gtoLine";
       line.className = "mut";
       line.style.margin = "6px 0";
-      line.style.opacity = "0.95";
-      box.prepend(line); // fica no topo da caixa
+      box.prepend(line);
     }
     return line;
   }
 
-  function rankSym(r){ return r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r); }
+  const norm = c => ({ r: c.r ?? c.rank, s: c.s ?? c.suit }); // <-- normaliza
 
-  // fallback simples caso GTO não esteja disponível
+  // fallback simples
   function fallbackSuggestFlop(hero, flop) {
-    const ev = evalBest(hero.concat(flop));
-    if (!ev) return { action: "check", reason: "sem-eval" };
-    // valor claro: 2 pares ou melhor
-    if (ev.cat >= CAT.TWO) return { action: "bet33", reason: "value_2pair+" };
-
-    // draws: flush draw (4+ do mesmo na 5 cartas) ou OESD
+    const ev = PC.evalBest(hero.concat(flop));
+    if (!ev) return { action: "check", why: "sem-eval" };
+    if (ev.cat >= PC.CAT.TWO) return { action: "bet33", why: "value_2pair+" };
     const all = hero.concat(flop);
-    const sc = all.reduce((m,c)=>(m[c.s]=(m[c.s]||0)+1, m), {});
-    const hasFD = Object.values(sc).some(v=>v>=4);
-
+    const cnt = all.reduce((m,c)=>(m[c.s]=(m[c.s]||0)+1,m),{});
+    const hasFD = Object.values(cnt).some(v=>v>=4);
     const uniq = a => [...new Set(a)];
     const rs = uniq(all.map(c=>c.r)).sort((a,b)=>a-b);
     const rsA = rs.includes(14) ? uniq(rs.concat([1])).sort((a,b)=>a-b) : rs;
-    const hasOESD = arr => {
-      for (let i=0;i<arr.length-3;i++){
-        const w = arr.slice(i,i+4);
-        if (new Set(w).size===4 && (w[3]-w[0]===3)) return true;
-      }
-      return false;
-    };
-    const oesd = hasOESD(rs) || hasOESD(rsA);
-
-    if (hasFD || oesd) return { action: "bet33", reason: "semi_bluff_draw" };
-    return { action: "check", reason: "default" };
+    const hasOESD = arr => { for (let i=0;i<arr.length-3;i++){ const w=arr.slice(i,i+4); if (new Set(w).size===4 && (w[3]-w[0]===3)) return true; } return false; };
+    if (hasFD || hasOESD(rs) || hasOESD(rsA)) return { action: "bet33", why: "semi_bluff_draw" };
+    return { action: "check", why: "default" };
   }
 
   async function renderFlopGTO() {
     const line = ensureGtoLine();
     if (!line) return;
 
-    const known = PC.getKnown ? PC.getKnown() : { hand: [], board: [] };
-    const hand  = known.hand  || [];
-    const board = known.board || [];
-    const flop  = board.slice(0,3);
+    const st = PC.getKnown ? PC.getKnown() : { hand:[], board:[] };
+    const hand = (st.hand||[]).map(norm);
+    const board = (st.board||[]).map(norm);
+    const flop = board.slice(0,3);
 
-    // só mostra com 2 cartas do herói e flop completo
-    if (hand.length < 2 || flop.length < 3) { line.style.display = "none"; return; }
+    if (hand.length < 2 || flop.length < 3) { line.style.display="none"; return; }
     line.style.display = "";
 
-    // tenta pack GTO se disponível
+    // tenta GTO
     try {
       const call = PC.GTO?.suggestFlopAuto
-                || (args => PC.GTO?.suggestFlopLikeGTO?.({ spot: "SRP_BTNvsBB_100bb", ...args }));
+        || (args => PC.GTO?.suggestFlopLikeGTO?.({ spot:"SRP_BTNvsBB_100bb", ...args }));
 
       if (call) {
         const res = await call({ hero: hand, board });
         if (res && res.ok) {
-          const pct = Math.round((res.freqs?.[res.action] || 0) * 100);
-          const bucket = res.bucketId?.replace?.("__", " · ") || "";
+          const pct = Math.round((res.freqs?.[res.action]||0)*100);
+          const bucket = res.bucketId?.replace?.("__"," · ") || "";
           const feature = res.feature || "";
-          line.textContent = `Flop (GTO-like): ${res.action?.toUpperCase?.() || "—"} • ${pct}%  ·  ${bucket}  ·  ${feature}`;
+          line.textContent = `Flop (GTO-like): ${res.action?.toUpperCase?.()||"—"} • ${pct}%  ·  ${bucket}  ·  ${feature}`;
           return;
         }
       }
-    } catch (e) { /* ignora e cai no fallback */ }
+    } catch (e) {
+      // cai no fallback
+    }
 
-    // fallback heurístico
+    // fallback
     const fb = fallbackSuggestFlop(hand, flop);
-    line.textContent = `Flop (heurístico): ${fb.action.toUpperCase()}  ·  ${fb.reason}`;
+    line.textContent = `Flop (heurístico): ${fb.action.toUpperCase()} · ${fb.why}`;
   }
 
-  // atualiza a linha sempre que você interagir (sem tocar no seu fluxo atual)
-  function schedule() {
-    clearTimeout(renderFlopGTO._t);
-    renderFlopGTO._t = setTimeout(renderFlopGTO, 40);
-  }
+  function schedule(){ clearTimeout(renderFlopGTO._t); renderFlopGTO._t = setTimeout(renderFlopGTO, 40); }
 
+  // Re-render quando você clica/digita (seleção de cartas)
   document.addEventListener("click", schedule, true);
   document.addEventListener("keyup", schedule, true);
 
-  document.addEventListener("DOMContentLoaded", () => {
-    // pré-carrega JSONs do GTO se o motor existir
-    g.PCALC?.GTO?.preload?.();
-    schedule();
+  // Aguarda preload e FORÇA re-render quando os JSONs chegarem
+  document.addEventListener("DOMContentLoaded", async () => {
+    try { await g.PCALC?.GTO?.preload?.(); } catch(_) {}
+    schedule(); // roda de novo após preload
   });
 })(window);
