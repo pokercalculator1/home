@@ -875,11 +875,12 @@
   });
 })(window);
 
-// --- Flop GTO-like: render robusto (aguarda preload + normaliza cartas) ---
+// --- Flop GTO-like: usa SEMPRE LikeGTO com spot explícito ---
 (function (g) {
   const PC = g.PCALC || (g.PCALC = {});
   const SEL = "#pcalc-sugestao";
 
+  // garante a linha no painel
   function ensureGtoLine() {
     const box = document.getElementById("pcalc-sugestao");
     if (!box) return null;
@@ -894,11 +895,12 @@
     return line;
   }
 
-  const norm = c => ({ r: c.r ?? c.rank, s: c.s ?? c.suit }); // <-- normaliza
+  // normaliza cartas para {r,s}
+  const norm = c => ({ r: c?.r ?? c?.rank, s: c?.s ?? c?.suit });
 
-  // fallback simples
+  // fallback simples se GTO indisponível
   function fallbackSuggestFlop(hero, flop) {
-    const ev = PC.evalBest(hero.concat(flop));
+    const ev = PC.evalBest?.(hero.concat(flop));
     if (!ev) return { action: "check", why: "sem-eval" };
     if (ev.cat >= PC.CAT.TWO) return { action: "bet33", why: "value_2pair+" };
     const all = hero.concat(flop);
@@ -916,47 +918,50 @@
     const line = ensureGtoLine();
     if (!line) return;
 
-    const st = PC.getKnown ? PC.getKnown() : { hand:[], board:[] };
-    const hand = (st.hand||[]).map(norm);
-    const board = (st.board||[]).map(norm);
-    const flop = board.slice(0,3);
+    const st = PC.getKnown?.() || { hand:[], board:[] };
+    const hand  = (st.hand  || []).map(norm);
+    const board = (st.board || []).map(norm);
+    const flop  = board.slice(0,3);
 
-    if (hand.length < 2 || flop.length < 3) { line.style.display="none"; return; }
+    if (hand.length < 2 || flop.length < 3) { line.style.display = "none"; return; }
     line.style.display = "";
 
-    // tenta GTO
-    try {
-      const call = PC.GTO?.suggestFlopAuto
-        || (args => PC.GTO?.suggestFlopLikeGTO?.({ spot:"SRP_BTNvsBB_100bb", ...args }));
+    // >>> NÃO usar Auto: ele pode cair em UNIVERSAL_SAFE
+    const callLike = args => PC.GTO?.suggestFlopLikeGTO?.({ spot: "SRP_BTNvsBB_100bb", ...args });
 
-      if (call) {
-        const res = await call({ hero: hand, board });
-        if (res && res.ok) {
-          const pct = Math.round((res.freqs?.[res.action]||0)*100);
-          const bucket = res.bucketId?.replace?.("__"," · ") || "";
+    try {
+      if (callLike) {
+        const res = await callLike({ hero: hand, board });
+        if (res?.ok) {
+          const pct = Math.round((res.freqs?.[res.action] || 0) * 100);
+          const bucket  = res.bucketId?.replace?.("__"," · ") || "";
           const feature = res.feature || "";
-          line.textContent = `Flop (GTO-like): ${res.action?.toUpperCase?.()||"—"} • ${pct}%  ·  ${bucket}  ·  ${feature}`;
+          line.textContent = `Flop (GTO-like): ${res.action?.toUpperCase?.() || "—"} • ${pct}%  ·  ${bucket}  ·  ${feature}`;
+          return;
+        } else if (res && res.ok === false) {
+          // mostra motivo pra ficar claro quando cair no fallback
+          line.textContent = `Flop (GTO pack) indisponível: ${res.reason || "?"} · spot=${res.spot || "?"}`;
           return;
         }
       }
     } catch (e) {
-      // cai no fallback
+      // segue para fallback
     }
 
-    // fallback
     const fb = fallbackSuggestFlop(hand, flop);
     line.textContent = `Flop (heurístico): ${fb.action.toUpperCase()} · ${fb.why}`;
   }
 
   function schedule(){ clearTimeout(renderFlopGTO._t); renderFlopGTO._t = setTimeout(renderFlopGTO, 40); }
 
-  // Re-render quando você clica/digita (seleção de cartas)
+  // re-render nas interações
   document.addEventListener("click", schedule, true);
   document.addEventListener("keyup", schedule, true);
 
-  // Aguarda preload e FORÇA re-render quando os JSONs chegarem
+  // espera o preload concluir e re-renderiza
   document.addEventListener("DOMContentLoaded", async () => {
     try { await g.PCALC?.GTO?.preload?.(); } catch(_) {}
-    schedule(); // roda de novo após preload
+    schedule();
   });
 })(window);
+
