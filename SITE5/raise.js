@@ -47,7 +47,7 @@
       + '.fld-label{color:#93c5fd;font-weight:600;white-space:nowrap}\n'
       /* inputs modernos */
       + '.input-modern{position:relative}\n'
-      + '.input-modern input{width:120px;padding:.48rem .6rem;border:1px solid #334155;'
+      + '.input-modern input{width:60px;padding:.48rem .6rem;border:1px solid #334155;'
         + 'background:#0f172a;color:#e5e7eb;border-radius:.6rem;outline:0;transition:border-color .15s, box-shadow .15s}\n'
       + '.input-modern input::placeholder{color:#64748b}\n'
       + '.input-modern input:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(96,165,250,.15)}\n'
