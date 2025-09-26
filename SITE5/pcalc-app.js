@@ -169,11 +169,7 @@
     // Tenta pack GTO-like (BTN vs BB 100bb por enquanto)
     if (PC.GTO && PC.GTO.suggestFlopLikeGTO) {
       try {
-        const res = await PC.GTO.suggestFlopLikeGTO({
-          spot: "SRP_BTNvsBB_100bb",
-          hero,
-          board
-        });
+        const res = await PC.GTO.suggestFlopAuto({ hero, board });
         if (res && res.ok) {
           const pct = Math.round((res.freqs[res.action] || 0) * 100);
           return `Flop: ${res.action.toUpperCase()} • ${pct}%  ·  Bucket: ${res.bucketId.replace("__", " · ")}  ·  Perfil: ${res.feature}`;
