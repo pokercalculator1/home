@@ -1,7 +1,4 @@
-// raise.js — "Tomei Raise" com layout reorganizado e callers inline
-// API: window.RAISE.init({ mountSelector, suggestSelector, onUpdateText, readState })
-//      window.RAISE.setState({ tomeiRaise, pos, raiseBB, callers, stackBB })
-//      window.RAISE.getRecommendation()
+// raise.js — "Tomei Raise" com layout reorganizado, inputs 60px e callers só número
 (function (g) {
   // ================== Config ==================
   var DEFAULTS = {
@@ -25,7 +22,7 @@
     mounted: false,
     elements: {},
     tomeiRaise: false,
-    pos: 'IP',        // 'IP' | 'OOP' | null (quando desmarcado)
+    pos: 'IP',        // 'IP' | 'OOP' | null
     raiseBB: null,    // tamanho do raise do vilão (BB)
     callers: 0,       // nº de callers entre agressor e você
     stackBB: 100,     // stack efetivo (BB)
@@ -47,8 +44,8 @@
       + '.fld-label{color:#93c5fd;font-weight:600;white-space:nowrap}\n'
       /* inputs modernos */
       + '.input-modern{position:relative}\n'
-      + '.input-modern input{width:120px;padding:.48rem .6rem;border:1px solid #334155;'
-        + 'background:#0f172a;color:#e5e7eb;border-radius:.6rem;outline:0;transition:border-color .15s, box-shadow .15s}\n'
+      + '.input-modern input{width:60px;padding:.38rem .5rem;border:1px solid #334155;'
+        + 'background:#0f172a;color:#e5e7eb;border-radius:.5rem;outline:0;transition:border-color .15s, box-shadow .15s}\n'
       + '.input-modern input::placeholder{color:#64748b}\n'
       + '.input-modern input:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(96,165,250,.15)}\n'
       /* switch */
@@ -63,10 +60,11 @@
       /* callers inline (menu) */
       + '.callers-inline{display:flex;align-items:center;gap:.5rem}\n'
       + '.menu-btn{display:inline-flex;align-items:center;gap:.5rem;padding:.45rem .6rem;'
-        + 'background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:.6rem;cursor:pointer;user-select:none}\n'
+        + 'min-width:60px;justify-content:center;'
+        + 'background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:.5rem;cursor:pointer;user-select:none}\n'
       + '.menu-btn:hover{border-color:#60a5fa}\n'
       + '.menu-btn:focus{outline:0;box-shadow:0 0 0 3px rgba(96,165,250,.15)}\n'
-      + '.menu-panel{position:absolute;margin-top:.35rem;min-width:140px;'
+      + '.menu-panel{position:absolute;margin-top:.35rem;min-width:120px;'
         + 'background:#0b1324;border:1px solid #334155;border-radius:.6rem;box-shadow:0 18px 45px rgba(0,0,0,.35);'
         + 'padding:.35rem;display:none;z-index:9999}\n'
       + '.menu-panel.open{display:block}\n'
@@ -75,8 +73,8 @@
       + '.menu-item .dot{width:10px;height:10px;border-radius:50%;background:#475569}\n'
       + '.menu-item.active .dot{background:#38bdf8}\n'
       /* posição (IP/OOP) */
-      + '.pos-wrap{display:flex;align-items:center;gap:.6rem}\n'
-      + '.pos-legend{color:#e5e7eb;font-weight:700}\n'
+      + '.pos-wrap{display:flex;align-items:center;gap:.6rem}\n"
+      + ".pos-legend{color:#e5e7eb;font-weight:700}\n'
       + '.raise-checks{display:flex;align-items:center;gap:1rem}\n'
       + '.rc-item{display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.9rem;color:#e5e7eb}\n'
       + '.rc-item input{width:16px;height:16px;cursor:pointer}\n'
@@ -148,10 +146,9 @@
 
   // ================== UI helpers ==================
   function buildCallersInline(current){
-    // container inline: label + botão
     var wrap = el('div','field callers-inline');
     var lbl  = el('span','fld-label'); lbl.textContent = 'Nº de callers:';
-    var btn  = el('button','menu-btn'); btn.type='button'; btn.textContent = (current||0) + ' selecionado';
+    var btn  = el('button','menu-btn'); btn.type='button'; btn.textContent = String(current || 0);
 
     // painel flutuante ancorado ao botão
     var holder = el('div'); holder.style.position = 'relative';
@@ -160,12 +157,12 @@
     for (var i=0;i<=8;i++){
       var it = el('div','menu-item' + (i===current ? ' active' : ''));
       var dot = el('span','dot'); it.appendChild(dot);
-      var tx  = document.createTextNode(i===0 ? '0 (nenhum)' : String(i));
+      var tx  = document.createTextNode(String(i));
       it.appendChild(tx);
       (function(v,item){
         item.addEventListener('click', function(){
           state.callers = v;
-          btn.textContent = v + ' selecionado';
+          btn.textContent = String(v);            // só número no botão
           var act = panel.querySelector('.menu-item.active');
           if (act) act.classList.remove('active');
           item.classList.add('active');
@@ -179,7 +176,6 @@
     btn.addEventListener('click', function(e){
       e.stopPropagation();
       panel.classList.toggle('open');
-      // posiciona o painel logo abaixo do botão
       if (panel.classList.contains('open')) {
         panel.style.left = '0';
         panel.style.top  = '100%';
@@ -213,22 +209,22 @@
     rsw.appendChild(chk); rsw.appendChild(slider);
     switchWrap.appendChild(labelTxt); switchWrap.appendChild(rsw);
 
-    // (2) Raise (BB)
+    // (2) Raise (BB) — input 60px
     var raiseField = el('div','field');
     var rLabel  = el('span','fld-label'); rLabel.textContent='Raise (BB):';
     var rWrap   = el('div','input-modern'); rWrap.innerHTML='<input id="inp-raise-bb" type="number" step="0.5" min="1" placeholder="ex: 3">';
     raiseField.appendChild(rLabel); raiseField.appendChild(rWrap);
 
-    // (3) Stack (BB)
+    // (3) Stack (BB) — input 60px
     var stackField = el('div','field');
     var sLabel  = el('span','fld-label'); sLabel.textContent='Stack (BB):';
     var sWrap   = el('div','input-modern'); sWrap.innerHTML='<input id="inp-stack" type="number" step="1" min="1" placeholder="ex: 100">';
     stackField.appendChild(sLabel); stackField.appendChild(sWrap);
 
-    // (4) Nº de callers (inline)
+    // (4) Nº de callers (inline, botão mostra só número)
     var callers = buildCallersInline(state.callers);
 
-    // (5) Posição com legenda clara
+    // (5) Posição
     var posWrap = el('div','pos-wrap');
     var posLegend = el('span','pos-legend');
     posLegend.textContent = 'Você está antes ou depois do agressor?';
@@ -248,7 +244,7 @@
     posWrap.appendChild(posLegend);
     posWrap.appendChild(grpPos);
 
-    // Montagem na ordem solicitada: switch | raise | stack | callers | posição
+    // Montagem na ordem: switch | raise | stack | callers | posição
     bar.appendChild(switchWrap);
     bar.appendChild(el('div','raise-sep'));
     bar.appendChild(raiseField);
@@ -304,16 +300,15 @@
       updateSuggestion(cfg);
     });
 
-    // Prefill inicial a partir do app (se houver)
+    // Prefill inicial do app (se houver)
     var st = cfg.readState();
     if (st.stackBB) { state.stackBB = st.stackBB; if (stackInput && !stackInput.value) stackInput.value = st.stackBB; }
     if (typeof st.callers === 'number') {
       state.callers = clamp(st.callers, 0, 8);
-      callers.btn.textContent = state.callers + ' selecionado';
-      // marcar ativo no menu
+      callers.btn.textContent = String(state.callers); // só número
       var act = callers.panel.querySelector('.menu-item.active'); if (act) act.classList.remove('active');
       var items = callers.panel.querySelectorAll('.menu-item');
-      if (items[state.callers]) items[state.callers].classList.add('active'); // índice 0..8
+      if (items[state.callers]) items[state.callers].classList.add('active');
     }
 
     return {
@@ -374,7 +369,6 @@
       if ('callers' in patch)   state.callers = clamp(parseInt(patch.callers || 0, 10), 0, 8);
       if ('stackBB' in patch)   state.stackBB = clamp(parseInt(patch.stackBB || 100, 10), 1, 1000);
 
-      // sync visual básicos
       var els = state.elements || {};
       if (els.chk) els.chk.checked = !!state.tomeiRaise;
 
@@ -386,7 +380,7 @@
       }
 
       if (els.callersBtn && els.callersPanel){
-        els.callersBtn.textContent = state.callers + ' selecionado';
+        els.callersBtn.textContent = String(state.callers);
         var act = els.callersPanel.querySelector('.menu-item.active'); if (act) act.classList.remove('active');
         var items = els.callersPanel.querySelectorAll('.menu-item');
         if (items[state.callers]) items[state.callers].classList.add('active');
