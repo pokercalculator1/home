@@ -150,7 +150,7 @@
     // container inline: label + botão
     var wrap = el('div','field callers-inline');
     var lbl  = el('span','fld-label'); lbl.textContent = 'Nº de callers:';
-    var btn  = el('button','menu-btn'); btn.type='button'; btn.textContent = (current||0) + ' selecionado';
+    var btn  = el('button','menu-btn'); btn.type='button'; btn.textContent = (current||0);
 
     // painel flutuante ancorado ao botão
     var holder = el('div'); holder.style.position = 'relative';
@@ -164,7 +164,7 @@
       (function(v,item){
         item.addEventListener('click', function(){
           state.callers = v;
-          btn.textContent = v + ' selecionado';
+          btn.textContent = v;
           var act = panel.querySelector('.menu-item.active');
           if (act) act.classList.remove('active');
           item.classList.add('active');
