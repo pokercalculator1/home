@@ -1,8 +1,7 @@
-// raise.js — módulo "Tomei Raise" (versão limpa, sem template literals)
-//
-// Define window.RAISE com: init({ mountSelector, suggestSelector, onUpdateText, readState })
-// setState({ tomeiRaise, pos, raiseBB, callers, stackBB })
-// getRecommendation()
+// raise.js — módulo "Tomei Raise" com switch liga/desliga
+// API: window.RAISE.init({ mountSelector, suggestSelector, onUpdateText, readState })
+//      window.RAISE.setState({ tomeiRaise, pos, raiseBB, callers, stackBB })
+//      window.RAISE.getRecommendation()
 (function (g) {
   // ================== Config ==================
   var DEFAULTS = {
@@ -43,14 +42,21 @@
     if ($('#raise-css-hook')) return;
     var css = ''
       + '.raise-bar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:.5rem 0}\n'
-      + '.raise-btn{border:1px solid #aaa;background:#fff;padding:.45rem .7rem;border-radius:.5rem;cursor:pointer}\n'
-      + '.raise-btn.active{border-color:#222;background:#f3f3f3;box-shadow:inset 0 0 0 2px #222}\n'
       + '.raise-sep{width:1px;height:26px;background:#ddd;margin:0 .25rem}\n'
       + '.raise-group{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}\n'
       + '.raise-chip{border:1px solid #bbb;border-radius:.5rem;padding:.3rem .55rem;cursor:pointer;background:#fff}\n'
       + '.raise-chip.active{background:#e9eefc;border-color:#5b76f7}\n'
       + '.raise-input{display:flex;gap:.35rem;align-items:center;font-size:.92rem}\n'
-      + '.raise-input input{width:80px;padding:.35rem .4rem;border:1px solid #bbb;border-radius:.4rem}\n';
+      + '.raise-input input{width:80px;padding:.35rem .4rem;border:1px solid #bbb;border-radius:.4rem}\n'
+      /* switch styles */
+      + '.raise-switch{display:inline-flex;align-items:center;gap:.45rem}\n'
+      + '.raise-switch .label{font-weight:600}\n'
+      + '.rsw{position:relative;display:inline-block;width:48px;height:24px}\n'
+      + '.rsw input{opacity:0;width:0;height:0}\n'
+      + '.rsw .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#cbd5e1;transition:.25s;border-radius:24px}\n'
+      + '.rsw .slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#fff;transition:.25s;border-radius:50%}\n'
+      + '.rsw input:checked + .slider{background:#22c55e}\n'
+      + '.rsw input:checked + .slider:before{transform:translateX(24px)}\n';
     var style = el('style'); style.id='raise-css-hook';
     style.appendChild(document.createTextNode(css));
     document.head.appendChild(style);
@@ -148,11 +154,14 @@
 
     var bar = el('div', 'raise-bar');
 
-    // Botao principal
-    var btn = el('button', 'raise-btn');
-    btn.type = 'button';
-    btn.id   = 'btn-tomei-raise';
-    btn.appendChild(document.createTextNode('Tomei Raise'));
+    // Switch Tomei Raise
+    var switchWrap = el('div', 'raise-switch');
+    var labelTxt = el('span', 'label'); labelTxt.appendChild(document.createTextNode('Tomei Raise'));
+    var rsw = el('label', 'rsw');
+    var chk = document.createElement('input'); chk.type = 'checkbox'; chk.id = 'chk-tomei-raise';
+    var slider = el('span', 'slider');
+    rsw.appendChild(chk); rsw.appendChild(slider);
+    switchWrap.appendChild(labelTxt); switchWrap.appendChild(rsw);
 
     // IP / OOP
     var grpPos = el('div', 'raise-group');
@@ -171,7 +180,7 @@
     inStack.innerHTML = 'Stack (BB): <input id="inp-stack" type="number" step="1" min="1" placeholder="ex: 100">';
 
     // Monta
-    bar.appendChild(btn);
+    bar.appendChild(switchWrap);
     bar.appendChild(grpPos);
     bar.appendChild(el('div', 'raise-sep'));
     bar.appendChild(inRaise);
@@ -180,14 +189,13 @@
     mount.appendChild(bar);
 
     // Estado visual inicial
-    btn.classList.toggle('active', state.tomeiRaise);
+    chk.checked = state.tomeiRaise;
     chipIP.classList.toggle('active', state.pos === 'IP');
     chipOOP.classList.toggle('active', state.pos === 'OOP');
 
     // Eventos
-    btn.addEventListener('click', function(){
-      state.tomeiRaise = !state.tomeiRaise;
-      btn.classList.toggle('active', state.tomeiRaise);
+    chk.addEventListener('change', function(){
+      state.tomeiRaise = chk.checked;
       updateSuggestion(cfg);
     });
     chipIP.addEventListener('click', function(){
@@ -202,7 +210,8 @@
     });
 
     var raiseInput   = $('#inp-raise-bb', bar);
-    var callersInput = $('#inp-callers', bar);
+    var callersInput = '#inp-callers';
+    var callersEl    = $('#inp-callers', bar);
     var stackInput   = $('#inp-stack', bar);
 
     if (raiseInput) raiseInput.addEventListener('input', function(){
@@ -210,8 +219,8 @@
       state.raiseBB = (isFinite(v) && v > 0) ? v : null;
       updateSuggestion(cfg);
     });
-    if (callersInput) callersInput.addEventListener('input', function(){
-      var v = parseInt(callersInput.value, 10);
+    if (callersEl) callersEl.addEventListener('input', function(){
+      var v = parseInt(callersEl.value, 10);
       state.callers = (isFinite(v) && v >= 0) ? v : 0;
       updateSuggestion(cfg);
     });
@@ -223,10 +232,10 @@
 
     // Prefill inicial a partir do seu app (se houver)
     var st = cfg.readState();
-    if (st.stackBB) { state.stackBB = st.stackBB; if (!stackInput.value) stackInput.value = st.stackBB; }
-    if (typeof st.callers === 'number') { state.callers = st.callers; callersInput.value = st.callers; }
+    if (st.stackBB) { state.stackBB = st.stackBB; if (stackInput && !stackInput.value) stackInput.value = st.stackBB; }
+    if (typeof st.callers === 'number' && callersEl) { state.callers = st.callers; callersEl.value = st.callers; }
 
-    return { bar: bar, btn: btn, chipIP: chipIP, chipOOP: chipOOP, raiseInput: raiseInput, callersInput: callersInput, stackInput: stackInput };
+    return { bar: bar, chk: chk, chipIP: chipIP, chipOOP: chipOOP, raiseInput: raiseInput, callersInput: callersEl, stackInput: stackInput };
   }
 
   function updateSuggestion(cfg){
@@ -256,7 +265,6 @@
       ensureCSS();
       var cfg = {};
       userCfg = userCfg || {};
-      // merge defaults
       var k;
       for (k in DEFAULTS) cfg[k] = DEFAULTS[k];
       for (k in userCfg)   cfg[k] = userCfg[k];
@@ -282,7 +290,7 @@
 
       // sync visual
       var els = state.elements || {};
-      if (els.btn) els.btn.classList.toggle('active', state.tomeiRaise);
+      if (els.chk) els.chk.checked = !!state.tomeiRaise;
       if (els.chipIP && els.chipOOP){
         els.chipIP.classList.toggle('active', state.pos === 'IP');
         els.chipOOP.classList.toggle('active', state.pos === 'OOP');
