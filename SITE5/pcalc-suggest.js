@@ -1,15 +1,21 @@
-// pcalc-suggest.js
+// pcalc-suggest.js (integrado ao modo "Tomei Raise")
 (function(g){
   const PCALC = g.PCALC;
   const { CAT } = PCALC;
 
-  // Mapeia título -> classe (cores/estilos na UI)
+  // =========================================================
+  // Classes de decisão (cores/estilos na UI)
+  // =========================================================
   PCALC.decisionClass = function(title){
     const t = (title || '').toUpperCase();
-    if (t.includes('APOSTE') || t.includes('VALOR') || t.includes('AUMENTE')) return 'ok';
-    if (t.includes('SEMI-BLEFE')) return 'warn';
-    if (t.includes('CHECK OU DESISTA') || t.includes('DESISTA') || t.includes('FOLD')) return 'danger';
-    if (t.includes('CONTROLE') || t.includes('CHECK') || t.includes('POT CONTROL') || t.includes('PAGUE')) return 'info';
+    if (t.includes('APOSTE') || t.includes('VALOR') || t.includes('AUMENTE') || t.includes('3-BET') || t.includes('SQUEEZE'))
+      return 'ok';
+    if (t.includes('SEMI-BLEFE'))
+      return 'warn';
+    if (t.includes('CHECK OU DESISTA') || t.includes('DESISTA') || t.includes('FOLD'))
+      return 'danger';
+    if (t.includes('CONTROLE') || t.includes('CHECK') || t.includes('POT CONTROL') || t.includes('PAGUE') || t.includes('CALL'))
+      return 'info';
     return 'info';
   };
 
@@ -21,7 +27,9 @@
     return glow;
   };
 
-  // === Util: normaliza mão para notação tipo "AKs", "AQo", "TT" ===
+  // =========================================================
+  // Utils
+  // =========================================================
   function normalizeHand(hand){
     if (!hand || hand.length < 2) return "";
     const ranks = hand.map(c=>c.r).sort((a,b)=>b-a);
@@ -29,18 +37,40 @@
     const map = {14:"A", 13:"K", 12:"Q", 11:"J", 10:"T", 9:"9", 8:"8", 7:"7", 6:"6", 5:"5", 4:"4", 3:"3", 2:"2"};
     const toStr = r => map[r] || r;
     const a = toStr(ranks[0]), b = toStr(ranks[1]);
-    if (a === b) return a+a; // pares: "AA", "TT"...
+    if (a === b) return a+a; // pares
     return a + b + (suited ? "s" : "o");
   }
 
-  // Top 20 mãos iniciais (tratadas como premium)
+  // Top 20 mãos iniciais (tratadas como premium para open-raise)
   const top20 = new Set([
     "AA","KK","QQ","JJ","TT","99","88","77",
     "AKs","AQs","AJs","ATs","KQs",
     "AKo","AQo","KJs","QJs","JTs","KTs","QTs"
   ]);
 
-  // ===== SUGESTÃO 100% POR EQUIDADE (com exceções de pré-flop premium) =====
+  // Parsing do texto vindo do raise.js
+  function parseRaiseText(txt){
+    if (!txt) return null;
+    const lines = String(txt).split('\n').map(s=>s.trim()).filter(Boolean);
+    const title = lines[0] || 'Houve raise antes';
+    const detail = lines.slice(1).join('\n') || '';
+    const isSqueeze = /squeeze/i.test(txt);
+    const isOOP = /OOP/i.test(txt) || /Antes \(/i.test(txt);
+    const isIP  = /IP/i.test(txt)  || /Depois \(/i.test(txt);
+    return { title, detail, isSqueeze, isOOP, isIP };
+  }
+
+  function isRaiseModeOn(){
+    try{
+      if (!g.RAISE || typeof g.RAISE.getRecommendation !== 'function') return false;
+      const rec = g.RAISE.getRecommendation();
+      return /Houve raise/i.test(String(rec||''));
+    }catch(_){ return false; }
+  }
+
+  // =========================================================
+  // SUGESTÃO por Equidade (+ integração com Tomei Raise pré-flop)
+  // =========================================================
   PCALC.suggestAction = function(eqPct, hand, board, opp){
     const st = (board.length < 3) ? 'pre' : (board.length === 3 ? 'flop' : (board.length === 4 ? 'turn' : 'river'));
 
@@ -48,8 +78,28 @@
     const adj = Math.max(0, (opp - 1) * 2);
     const ge  = (x) => eqPct >= (x + adj);
 
-    // ---------- PRÉ-FLOP ----------
+    // -------------------- PRÉ-FLOP --------------------
     if (st === 'pre') {
+      // Se o modo Tomei Raise está ativo → usar a recomendação do raise.js
+      if (isRaiseModeOn()){
+        try{
+          const txt = g.RAISE.getRecommendation();
+          const pr  = parseRaiseText(txt);
+          if (pr){
+            // Normaliza um título curto e claro para a nossa UI
+            // Ex.: "Houve raise antes (IP)" → mantemos; classe OK/WARN/DANGER vem de decisionClass
+            return {
+              title: pr.title,
+              detail: pr.detail
+            };
+          }
+        }catch(e){
+          // se falhar, cai para lógica normal de pré-flop
+          console.warn('[pcalc-suggest] Falha ao ler raise.js:', e);
+        }
+      }
+
+      // Sem raise (ou raise off) → sua lógica original
       const norm = normalizeHand(hand);
 
       // Exceções premium (top 20): sempre valor com sizing recomendado
@@ -57,14 +107,14 @@
         return { title: 'APOSTE POR VALOR', detail: 'Mão inicial premium (top 20) — Abra raise de 2–3 BB' };
       }
 
-      // Demais mãos: thresholds por equidade simulada
+      // Demais mãos por equidade simulada
       if (ge(60)) return { title: 'APOSTE POR VALOR', detail: 'Aumento 2–3 BB (pré-flop forte)' };
       if (ge(45)) return { title: 'CONTROLE O POTE', detail: 'Call/Aumento pequeno (posição ajuda)' };
       if (ge(35)) return { title: 'PAGUE BARATO / VEJA O FLOP', detail: 'Evite pot grande fora de posição' };
       return { title: 'CHECK OU DESISTA', detail: 'Sem equidade suficiente pré-flop' };
     }
 
-    // ---------- PÓS-FLOP ----------
+    // -------------------- PÓS-FLOP --------------------
     const outsRes      = PCALC.computeOuts?.();
     const outsStraight = outsRes?.outsExact?.[CAT.STRAIGHT]?.size || 0;
     const outsFlush    = outsRes?.outsExact?.[CAT.FLUSH]?.size    || 0;
@@ -82,4 +132,5 @@
 
     return { title: 'CHECK OU DESISTA', detail: 'Blefe puro só com muito fold equity (~75% pot)' };
   };
+
 })(window);
