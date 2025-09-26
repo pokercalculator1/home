@@ -42,7 +42,6 @@
     if ($('#raise-css-hook')) return;
     var css = ''
       + '.raise-bar{display:flex;gap:.9rem;align-items:center;flex-wrap:wrap;margin:.5rem 0}\n'
-      + '.raise-sep{width:1px;height:28px;background:#334155;margin:0 .4rem}\n'
       + '.field{display:flex;align-items:center;gap:.5rem}\n'
       + '.fld-label{color:#93c5fd;font-weight:600;white-space:nowrap}\n'
       /* inputs modernos */
