@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Poker Calculator — Outs, Equidade e Sugestão de Aposta</title>
   <link rel="stylesheet" href="style.css" />
+  <!-- Dica: se quiser, pode definir .out { white-space: pre-line; } no style.css -->
 </head>
 <body>
   <div class="wrap">
@@ -76,11 +77,15 @@
             </div>
           </div>
 
+          <!-- Botões e PONTO DE MONTAGEM do módulo Tomei Raise -->
           <div class="btns">
             <button class="btn" id="btnFlop">Sortear flop</button>
             <button class="btn" id="btnTurn">Sortear turn</button>
             <button class="btn" id="btnRiver">Sortear river</button>
+
+            <!-- PONTO DE MONTAGEM: o raise.js injeta aqui o menu Tomei Raise/IP/OOP/inputs -->
             <div id="pcalc-toolbar"></div>
+
             <button class="btn warn" id="btnClear">Limpar tudo</button>
           </div>
 
@@ -93,6 +98,9 @@
       <div class="card">
         <h2>2) Painel de análise</h2>
         <div class="body">
+          <!-- Caixa para texto de recomendação do módulo Tomei Raise -->
+          <div id="pcalc-sugestao" class="out" style="white-space:pre-line"></div>
+
           <!-- Pré-flop (Chen) -->
           <div id="preflopBox" class="out" style="display:none"></div>
 
@@ -121,26 +129,31 @@
     </div>
   </div>
 
-<script src="login-guard.js"></script>
-<script src="pcalc-core.js"></script>
-<script src="pcalc-chen.js"></script>
-<script src="pcalc-outs.js"></script>
-<script src="pcalc-suggest.js"></script>
-<script src="pcalc-tts.js"></script>
-<script src="preflop_rank.js"></script>
-<script src="pcalc-app.js"></script>
-<script src="raise.js"></script>
-<script>
-  // Inicializa apontando para seus elementos
-  RAISE.init({
-    mountSelector: '#pcalc-toolbar',     // ajuste para o container onde ficam seus botões
-    suggestSelector: '#pcalc-sugestao',  // ajuste para onde você mostra a dica
-    // Se quiser render próprio:
-    // onUpdateText: (texto)=>{ document.querySelector('#minha-saida').innerText = texto; }
-  });
-</script>
+  <!-- Seus scripts -->
+  <script src="login-guard.js"></script>
+  <script src="pcalc-core.js"></script>
+  <script src="pcalc-chen.js"></script>
+  <script src="pcalc-outs.js"></script>
+  <script src="pcalc-suggest.js"></script>
+  <script src="pcalc-tts.js"></script>
+  <script src="preflop_rank.js"></script>
+  <script src="pcalc-app.js"></script>
 
+  <!-- Módulo Tomei Raise -->
+  <script src="raise.js"></script>
+  <script>
+    // Garante que os elementos #pcalc-toolbar e #pcalc-sugestao existam antes de iniciar
+    document.addEventListener('DOMContentLoaded', function () {
+      if (window.RAISE && typeof window.RAISE.init === 'function') {
+        window.RAISE.init({
+          mountSelector: '#pcalc-toolbar',    // onde os controles serão injetados
+          suggestSelector: '#pcalc-sugestao', // onde o texto da recomendação será exibido
+          // onUpdateText: (texto)=>{ /* opcional: render custom */ }
+        });
+      } else {
+        console.warn('[index] raise.js não carregado? Verifique o caminho do arquivo.');
+      }
+    });
+  </script>
 </body>
 </html>
-
-
