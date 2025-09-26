@@ -1,7 +1,4 @@
-// raise.js — "Tomei Raise" com layout reorganizado e callers inline
-// API: window.RAISE.init({ mountSelector, suggestSelector, onUpdateText, readState })
-//      window.RAISE.setState({ tomeiRaise, pos, raiseBB, callers, stackBB })
-//      window.RAISE.getRecommendation()
+// raise.js — "Tomei Raise" com layout reorganizado e callers inline (sem separadores, pos-wrap centralizado, borda no toolbar)
 (function (g) {
   // ================== Config ==================
   var DEFAULTS = {
@@ -41,6 +38,8 @@
   function ensureCSS(){
     if ($('#raise-css-hook')) return;
     var css = ''
+      /* borda no toolbar */
+      + '#pcalc-toolbar{border:1px dashed #334155;border-radius:5px;padding:8px}\n'
       + '.raise-bar{display:flex;gap:.9rem;align-items:center;flex-wrap:wrap;margin:.5rem 0}\n'
       + '.field{display:flex;align-items:center;gap:.5rem}\n'
       + '.fld-label{color:#93c5fd;font-weight:600;white-space:nowrap}\n'
@@ -62,7 +61,7 @@
       /* callers inline (menu) */
       + '.callers-inline{display:flex;align-items:center;gap:.5rem}\n'
       + '.menu-btn{display:inline-flex;align-items:center;gap:.5rem;padding:.45rem .6rem;'
-        + 'background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:.6rem;cursor:pointer;user-select:none}\n'
+        + 'background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:.6rem;cursor:pointer;user-select:none;min-width:60px;justify-content:center}\n'
       + '.menu-btn:hover{border-color:#60a5fa}\n'
       + '.menu-btn:focus{outline:0;box-shadow:0 0 0 3px rgba(96,165,250,.15)}\n'
       + '.menu-panel{position:absolute;margin-top:.35rem;min-width:140px;'
@@ -73,8 +72,8 @@
       + '.menu-item:hover{background:#1e293b}\n'
       + '.menu-item .dot{width:10px;height:10px;border-radius:50%;background:#475569}\n'
       + '.menu-item.active .dot{background:#38bdf8}\n'
-      /* posição (IP/OOP) */
-      + '.pos-wrap{display:flex;align-items:center;gap:.6rem}\n'
+      /* posição (IP/OOP) — em linha própria, centralizado */
+      + '.pos-wrap{display:flex;align-items:center;gap:.6rem;flex-basis:100%;justify-content:center}\n'
       + '.pos-legend{color:#e5e7eb;font-weight:700}\n'
       + '.raise-checks{display:flex;align-items:center;gap:1rem}\n'
       + '.rc-item{display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.9rem;color:#e5e7eb}\n'
@@ -227,7 +226,7 @@
     // (4) Nº de callers (inline)
     var callers = buildCallersInline(state.callers);
 
-    // (5) Posição com legenda clara
+    // (5) Posição com legenda clara (centralizada em linha própria)
     var posWrap = el('div','pos-wrap');
     var posLegend = el('span','pos-legend');
     posLegend.textContent = 'Você está antes ou depois do agressor?';
@@ -247,16 +246,12 @@
     posWrap.appendChild(posLegend);
     posWrap.appendChild(grpPos);
 
-    // Montagem na ordem solicitada: switch | raise | stack | callers | posição
+    // Montagem na ordem: switch | raise | stack | callers | (linha) posição
     bar.appendChild(switchWrap);
-    bar.appendChild(el('div','raise-sep'));
     bar.appendChild(raiseField);
-    bar.appendChild(el('div','raise-sep'));
     bar.appendChild(stackField);
-    bar.appendChild(el('div','raise-sep'));
     bar.appendChild(callers.wrap);
-    bar.appendChild(el('div','raise-sep'));
-    bar.appendChild(posWrap);
+    bar.appendChild(posWrap); // entra em nova linha por causa de flex-basis:100% no CSS
     mount.appendChild(bar);
 
     // Estado inicial
@@ -303,13 +298,12 @@
       updateSuggestion(cfg);
     });
 
-    // Prefill inicial a partir do app (se houver)
+    // Prefill inicial
     var st = cfg.readState();
     if (st.stackBB) { state.stackBB = st.stackBB; if (stackInput && !stackInput.value) stackInput.value = st.stackBB; }
     if (typeof st.callers === 'number') {
       state.callers = clamp(st.callers, 0, 8);
       callers.btn.textContent = state.callers;
-      // marcar ativo no menu
       var act = callers.panel.querySelector('.menu-item.active'); if (act) act.classList.remove('active');
       var items = callers.panel.querySelectorAll('.menu-item');
       if (items[state.callers]) items[state.callers].classList.add('active'); // índice 0..8
@@ -373,7 +367,7 @@
       if ('callers' in patch)   state.callers = clamp(parseInt(patch.callers || 0, 10), 0, 8);
       if ('stackBB' in patch)   state.stackBB = clamp(parseInt(patch.stackBB || 100, 10), 1, 1000);
 
-      // sync visual básicos
+      // sync visual
       var els = state.elements || {};
       if (els.chk) els.chk.checked = !!state.tomeiRaise;
 
