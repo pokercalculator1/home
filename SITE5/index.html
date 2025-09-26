@@ -5,7 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Poker Calculator — Outs, Equidade e Sugestão de Aposta</title>
   <link rel="stylesheet" href="style.css" />
-  <!-- Dica: se quiser, pode definir .out { white-space: pre-line; } no style.css -->
+  <!-- Configura o caminho base para os JSONs do GTO -->
+  <script>
+    window.PCALC = window.PCALC || {};
+    window.PCALC.GTO_CONFIG = { basePath: "/home/SITE5/" };
+  </script>
 </head>
 <body>
   <div class="wrap">
@@ -41,7 +45,7 @@
               </div>
             </div>
 
-            <!-- Linha de baixo: flop / turn / river / nuts (no HTML aqui, mas sobe via CSS) -->
+            <!-- Linha de baixo: flop / turn / river / nuts -->
             <div class="row">
               <div class="group">
                 <div class="mut">Flop</div>
@@ -77,15 +81,13 @@
             </div>
           </div>
 
-          <!-- Botões e PONTO DE MONTAGEM do módulo Tomei Raise -->
+          <!-- Botões e ponto de montagem do Tomei Raise -->
           <div class="btns">
             <button class="btn" id="btnFlop">Sortear flop</button>
             <button class="btn" id="btnTurn">Sortear turn</button>
             <button class="btn" id="btnRiver">Sortear river</button>
             <button class="btn warn" id="btnClear">Limpar tudo</button>
-            <!-- PONTO DE MONTAGEM: o raise.js injeta aqui o menu Tomei Raise/IP/OOP/inputs -->
             <div id="pcalc-toolbar"></div>
-
           </div>
 
           <div style="margin-top:12px" class="mut">Deck (clique para selecionar):</div>
@@ -97,29 +99,17 @@
       <div class="card">
         <h2>2) Painel de análise</h2>
         <div class="body">
-          <!-- Caixa para texto de recomendação do módulo Tomei Raise -->
           <div id="pcalc-sugestao" class="out" style="white-space:pre-line"></div>
-
-          <!-- Pré-flop (Chen) -->
           <div id="preflopBox" class="out" style="display:none"></div>
-
-          <!-- Equidade por simulação -->
           <div id="equityBox" class="out" style="display:none"></div>
-
-          <!-- Pot Odds & EV (com Oferta do vilão, “P inclui a oferta?”, Auto e “Pode pagar até”) -->
           <div id="evBox" class="out" style="display:none"></div>
-
-          <!-- Estado/Contexto para outs -->
           <div id="stateHint" class="hint">Pré-flop: adicione o <b>flop</b> para ver outs do <b>turn</b>. Com flop+turn, veja outs do <b>river</b>.</div>
           <div id="ctxInfo" style="margin:8px 0 12px;color:#93c5fd"></div>
-
-          <!-- Outs -->
           <div class="outs" id="outs"></div>
-
           <div class="foot">
             Observações:
             <ul>
-              <li>“Outs” são cartas do <b>próximo street</b> que fazem você atingir <u>pelo menos</u> a categoria indicada (ex.: outs de Flush incluem Straight Flush/Royal).</li>
+              <li>“Outs” são cartas do <b>próximo street</b> que fazem você atingir <u>pelo menos</u> a categoria indicada.</li>
               <li>Com apenas pré-flop selecionado, outs <i>não são definidos</i> (o próximo street é um <b>flop de 3 cartas</b>).</li>
             </ul>
           </div>
@@ -136,6 +126,8 @@
   <script src="pcalc-suggest.js"></script>
   <script src="pcalc-tts.js"></script>
   <script src="preflop_rank.js"></script>
+
+  <!-- ORDEM IMPORTA: core -> gto -> app -->
   <script src="pcore.js"></script>
   <script src="pcalc-gto.js"></script>
   <script src="pcalc-app.js"></script>
@@ -143,13 +135,13 @@
   <!-- Módulo Tomei Raise -->
   <script src="raise.js"></script>
   <script>
-    // Garante que os elementos #pcalc-toolbar e #pcalc-sugestao existam antes de iniciar
-    document.addEventListener('DOMContentLoaded', function () {
-      if (window.RAISE && typeof window.RAISE.init === 'function') {
+    // Preload do pack GTO para evitar lag na primeira sugestão
+    document.addEventListener('DOMContentLoaded', () => {
+      window.PCALC?.GTO?.preload?.();
+      if (window.RAISE?.init) {
         window.RAISE.init({
-          mountSelector: '#pcalc-toolbar',    // onde os controles serão injetados
-          suggestSelector: '#pcalc-sugestao', // onde o texto da recomendação será exibido
-          // onUpdateText: (texto)=>{ /* opcional: render custom */ }
+          mountSelector: '#pcalc-toolbar',
+          suggestSelector: '#pcalc-sugestao',
         });
       } else {
         console.warn('[index] raise.js não carregado? Verifique o caminho do arquivo.');
@@ -158,6 +150,3 @@
   </script>
 </body>
 </html>
-
-
-
