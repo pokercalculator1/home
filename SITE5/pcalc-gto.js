@@ -5,8 +5,10 @@
   const GTO = PC.GTO || (PC.GTO = {});
 
   // === caminhos dos JSONs (ajuste se necessário) ===
-  const MAP_URL  = "/data/flop_to_class_map_22100.json";
-  const PACK_URL = "/packs/pack_SRP_BTNvsBB_100bb_rules.json";
+  
+const MAP_URL  = "https://pokercalculator1.github.io/home/SITE5/data/flop_to_class_map_22100.json";
+const PACK_URL = "https://pokercalculator1.github.io/home/SITE5/packs/pack_SRP_BTNvsBB_100bb_rules.json";
+
 
   // === estado ===
   let _ready = false;
