@@ -136,6 +136,14 @@
   <script src="pcalc-suggest.js"></script>
   <script src="pcalc-tts.js"></script>
   <script src="preflop_rank.js"></script>
+  <script>
+  window.PCALC = window.PCALC || {};
+  // ajuste o caminho se seus JSONs estiverem em outra pasta
+  window.PCALC.GTO_CONFIG = { basePath: "https://pokercalculator1.github.io/home/SITE5/" };
+</script>
+
+<!-- Motor GTO (precisa estar ANTES do seu app.js) -->
+<script src="https://pokercalculator1.github.io/home/SITE5/pcalc-gto.js"></script>
   <script src="pcalc-app.js"></script>
 
   <!-- Módulo Tomei Raise -->
@@ -156,3 +164,4 @@
   </script>
 </body>
 </html>
+
