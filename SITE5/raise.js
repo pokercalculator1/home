@@ -149,7 +149,7 @@
   function buildCallersInline(current){
     // container inline: label + botão
     var wrap = el('div','field callers-inline');
-    var lbl  = el('span','fld-label'); lbl.textContent = 'Nº de callers:';
+    var lbl  = el('span','fld-label'); lbl.textContent = 'Nº callers:';
     var btn  = el('button','menu-btn'); btn.type='button'; btn.textContent = (current||0);
 
     // painel flutuante ancorado ao botão
@@ -308,7 +308,7 @@
     if (st.stackBB) { state.stackBB = st.stackBB; if (stackInput && !stackInput.value) stackInput.value = st.stackBB; }
     if (typeof st.callers === 'number') {
       state.callers = clamp(st.callers, 0, 8);
-      callers.btn.textContent = state.callers + ' selecionado';
+      callers.btn.textContent = state.callers;
       // marcar ativo no menu
       var act = callers.panel.querySelector('.menu-item.active'); if (act) act.classList.remove('active');
       var items = callers.panel.querySelectorAll('.menu-item');
@@ -385,7 +385,7 @@
       }
 
       if (els.callersBtn && els.callersPanel){
-        els.callersBtn.textContent = state.callers + ' selecionado';
+        els.callersBtn.textContent = state.callers;
         var act = els.callersPanel.querySelector('.menu-item.active'); if (act) act.classList.remove('active');
         var items = els.callersPanel.querySelectorAll('.menu-item');
         if (items[state.callers]) items[state.callers].classList.add('active');
