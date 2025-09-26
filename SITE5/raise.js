@@ -1,4 +1,4 @@
-// raise.js — módulo "Tomei Raise" com switch liga/desliga
+// raise.js — "Tomei Raise" com switch e posição via checkboxes
 // API: window.RAISE.init({ mountSelector, suggestSelector, onUpdateText, readState })
 //      window.RAISE.setState({ tomeiRaise, pos, raiseBB, callers, stackBB })
 //      window.RAISE.getRecommendation()
@@ -25,7 +25,7 @@
     mounted: false,
     elements: {},
     tomeiRaise: false,
-    pos: 'IP',        // 'IP' ou 'OOP'
+    pos: 'IP',        // 'IP' | 'OOP' | null (quando ambas checkboxes desmarcadas)
     raiseBB: null,    // tamanho do raise do vilão (em BB)
     callers: 0,       // numero de callers entre agressor e você
     stackBB: 100,     // stack efetivo em BB
@@ -44,8 +44,6 @@
       + '.raise-bar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:.5rem 0}\n'
       + '.raise-sep{width:1px;height:26px;background:#ddd;margin:0 .25rem}\n'
       + '.raise-group{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}\n'
-      + '.raise-chip{border:1px solid #bbb;border-radius:.5rem;padding:.3rem .55rem;cursor:pointer;background:#fff}\n'
-      + '.raise-chip.active{background:#e9eefc;border-color:#5b76f7}\n'
       + '.raise-input{display:flex;gap:.35rem;align-items:center;font-size:.92rem}\n'
       + '.raise-input input{width:80px;padding:.35rem .4rem;border:1px solid #bbb;border-radius:.4rem}\n'
       /* switch styles */
@@ -56,7 +54,12 @@
       + '.rsw .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#cbd5e1;transition:.25s;border-radius:24px}\n'
       + '.rsw .slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#fff;transition:.25s;border-radius:50%}\n'
       + '.rsw input:checked + .slider{background:#22c55e}\n'
-      + '.rsw input:checked + .slider:before{transform:translateX(24px)}\n';
+      + '.rsw input:checked + .slider:before{transform:translateX(24px)}\n'
+      /* checkbox estilo chip */
+      + '.raise-checks{display:flex;align-items:center;gap:.75rem}\n'
+      + '.rc-item{display:flex;align-items:center;gap:.35rem;padding:.25rem .45rem;border:1px solid #bbb;border-radius:.5rem;background:#fff;cursor:pointer}\n'
+      + '.rc-item input{width:16px;height:16px}\n'
+      + '.rc-item.active{background:#e9eefc;border-color:#5b76f7}\n';
     var style = el('style'); style.id='raise-css-hook';
     style.appendChild(document.createTextNode(css));
     document.head.appendChild(style);
@@ -68,8 +71,9 @@
     var stackBB  = Number(ctx.stackBB || 100);
     var callers  = Number(ctx.callers || 0);
     var R        = Number(ctx.raiseBB || 0);
-    var pos      = ctx.pos || 'IP';
-    var tomei    = !!ctx.tomeiRaise;
+    var posIn    = ctx.pos;                    // pode ser null
+    var pos      = posIn || 'IP';              // default para cálculo
+    var posIndef = (posIn == null);            // aviso suave
 
     // tamanhos base
     var threeBetMulti = (pos === 'IP') ? 3.0 : 3.8;
@@ -88,6 +92,7 @@
       squeezeBase   = squeezeBase - 0.2;
     }
 
+    var tomei = !!ctx.tomeiRaise;
     var isSqueeze = tomei && callers > 0;
 
     // Sizing recomendado
@@ -144,7 +149,8 @@
 
     var stackNote = 'Stack efetivo: ~' + stackBB + ' BB.';
     var shoveNote = shoveHint ? '\n' + shoveHint : '';
-    return actionText + '\n' + stackNote + shoveNote;
+    var posNote   = posIndef ? '\n(Obs.: posição não marcada — usando IP como padrão para sizings.)' : '';
+    return actionText + '\n' + stackNote + shoveNote + posNote;
   }
 
   // ================== UI / Montagem ==================
@@ -163,11 +169,20 @@
     rsw.appendChild(chk); rsw.appendChild(slider);
     switchWrap.appendChild(labelTxt); switchWrap.appendChild(rsw);
 
-    // IP / OOP
-    var grpPos = el('div', 'raise-group');
-    var chipIP  = el('div', 'raise-chip'); chipIP.appendChild(document.createTextNode('Depois (IP)'));
-    var chipOOP = el('div', 'raise-chip'); chipOOP.appendChild(document.createTextNode('Antes (OOP)'));
-    grpPos.appendChild(chipIP); grpPos.appendChild(chipOOP);
+    // POSIÇÃO: checkboxes
+    var grpPos = el('div', 'raise-checks');
+
+    var ipWrap  = el('label', 'rc-item');
+    var ipCb    = document.createElement('input'); ipCb.type='checkbox'; ipCb.id='pos-ip';
+    var ipTxt   = document.createElement('span'); ipTxt.textContent='Depois (IP)';
+    ipWrap.appendChild(ipCb); ipWrap.appendChild(ipTxt);
+
+    var oopWrap = el('label', 'rc-item');
+    var oopCb   = document.createElement('input'); oopCb.type='checkbox'; oopCb.id='pos-oop';
+    var oopTxt  = document.createElement('span'); oopTxt.textContent='Antes (OOP)';
+    oopWrap.appendChild(oopCb); oopWrap.appendChild(oopTxt);
+
+    grpPos.appendChild(ipWrap); grpPos.appendChild(oopWrap);
 
     // Inputs
     var inRaise = el('div', 'raise-input');
@@ -190,28 +205,45 @@
 
     // Estado visual inicial
     chk.checked = state.tomeiRaise;
-    chipIP.classList.toggle('active', state.pos === 'IP');
-    chipOOP.classList.toggle('active', state.pos === 'OOP');
+
+    ipCb.checked  = (state.pos === 'IP');
+    oopCb.checked = (state.pos === 'OOP');
+    ipWrap.classList.toggle('active', ipCb.checked);
+    oopWrap.classList.toggle('active', oopCb.checked);
 
     // Eventos
     chk.addEventListener('change', function(){
       state.tomeiRaise = chk.checked;
       updateSuggestion(cfg);
     });
-    chipIP.addEventListener('click', function(){
-      state.pos = 'IP';
-      chipIP.classList.add('active'); chipOOP.classList.remove('active');
+
+    function syncPosVisual(){
+      ipWrap.classList.toggle('active', ipCb.checked);
+      oopWrap.classList.toggle('active', oopCb.checked);
+    }
+    ipCb.addEventListener('change', function(){
+      if (ipCb.checked){
+        oopCb.checked = false;
+        state.pos = 'IP';
+      } else {
+        state.pos = null; // sem posição definida
+      }
+      syncPosVisual();
       updateSuggestion(cfg);
     });
-    chipOOP.addEventListener('click', function(){
-      state.pos = 'OOP';
-      chipIP.classList.remove('active'); chipOOP.classList.add('active');
+    oopCb.addEventListener('change', function(){
+      if (oopCb.checked){
+        ipCb.checked = false;
+        state.pos = 'OOP';
+      } else {
+        state.pos = null;
+      }
+      syncPosVisual();
       updateSuggestion(cfg);
     });
 
     var raiseInput   = $('#inp-raise-bb', bar);
-    var callersInput = '#inp-callers';
-    var callersEl    = $('#inp-callers', bar);
+    var callersInput = $('#inp-callers', bar);
     var stackInput   = $('#inp-stack', bar);
 
     if (raiseInput) raiseInput.addEventListener('input', function(){
@@ -219,8 +251,8 @@
       state.raiseBB = (isFinite(v) && v > 0) ? v : null;
       updateSuggestion(cfg);
     });
-    if (callersEl) callersEl.addEventListener('input', function(){
-      var v = parseInt(callersEl.value, 10);
+    if (callersInput) callersInput.addEventListener('input', function(){
+      var v = parseInt(callersInput.value, 10);
       state.callers = (isFinite(v) && v >= 0) ? v : 0;
       updateSuggestion(cfg);
     });
@@ -233,9 +265,13 @@
     // Prefill inicial a partir do seu app (se houver)
     var st = cfg.readState();
     if (st.stackBB) { state.stackBB = st.stackBB; if (stackInput && !stackInput.value) stackInput.value = st.stackBB; }
-    if (typeof st.callers === 'number' && callersEl) { state.callers = st.callers; callersEl.value = st.callers; }
+    if (typeof st.callers === 'number' && callersInput) { state.callers = st.callers; callersInput.value = st.callers; }
 
-    return { bar: bar, chk: chk, chipIP: chipIP, chipOOP: chipOOP, raiseInput: raiseInput, callersInput: callersEl, stackInput: stackInput };
+    return {
+      bar: bar, chk: chk,
+      ipWrap: ipWrap, oopWrap: oopWrap, ipCb: ipCb, oopCb: oopCb,
+      raiseInput: raiseInput, callersInput: callersInput, stackInput: stackInput
+    };
   }
 
   function updateSuggestion(cfg){
@@ -283,7 +319,7 @@
     setState: function(patch){
       patch = patch || {};
       if ('tomeiRaise' in patch) state.tomeiRaise = !!patch.tomeiRaise;
-      if ('pos' in patch)       state.pos = (patch.pos === 'OOP' ? 'OOP' : 'IP');
+      if ('pos' in patch)       state.pos = (patch.pos === 'OOP' ? 'OOP' : (patch.pos === 'IP' ? 'IP' : null));
       if ('raiseBB' in patch)   state.raiseBB = (patch.raiseBB > 0 ? Number(patch.raiseBB) : null);
       if ('callers' in patch)   state.callers = clamp(parseInt(patch.callers || 0, 10), 0, 9);
       if ('stackBB' in patch)   state.stackBB = clamp(parseInt(patch.stackBB || 100, 10), 1, 1000);
@@ -291,9 +327,11 @@
       // sync visual
       var els = state.elements || {};
       if (els.chk) els.chk.checked = !!state.tomeiRaise;
-      if (els.chipIP && els.chipOOP){
-        els.chipIP.classList.toggle('active', state.pos === 'IP');
-        els.chipOOP.classList.toggle('active', state.pos === 'OOP');
+      if (els.ipCb && els.oopCb && els.ipWrap && els.oopWrap){
+        els.ipCb.checked  = (state.pos === 'IP');
+        els.oopCb.checked = (state.pos === 'OOP');
+        els.ipWrap.classList.toggle('active', els.ipCb.checked);
+        els.oopWrap.classList.toggle('active', els.oopCb.checked);
       }
       if (els.callersInput && isFinite(state.callers)) els.callersInput.value = state.callers;
 
