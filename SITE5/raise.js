@@ -1,5 +1,7 @@
-// raise.js — "Tomei Raise" com switch, posição via checkboxes,
-// menu vertical (1–8) para #Callers e inputs modernos para Raise/Stack.
+// raise.js — "Tomei Raise" com layout reorganizado e callers inline
+// API: window.RAISE.init({ mountSelector, suggestSelector, onUpdateText, readState })
+//      window.RAISE.setState({ tomeiRaise, pos, raiseBB, callers, stackBB })
+//      window.RAISE.getRecommendation()
 (function (g) {
   // ================== Config ==================
   var DEFAULTS = {
@@ -23,10 +25,10 @@
     mounted: false,
     elements: {},
     tomeiRaise: false,
-    pos: 'IP',        // 'IP' | 'OOP' | null
-    raiseBB: null,    // tamanho do raise do vilão (em BB)
-    callers: 0,       // numero de callers entre agressor e você
-    stackBB: 100,     // stack efetivo em BB
+    pos: 'IP',        // 'IP' | 'OOP' | null (quando desmarcado)
+    raiseBB: null,    // tamanho do raise do vilão (BB)
+    callers: 0,       // nº de callers entre agressor e você
+    stackBB: 100,     // stack efetivo (BB)
     _cfg: null
   };
 
@@ -39,13 +41,13 @@
   function ensureCSS(){
     if ($('#raise-css-hook')) return;
     var css = ''
-      + '.raise-bar{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin:.5rem 0}\n'
-      + '.raise-sep{width:1px;height:26px;background:#334155;margin:0 .5rem}\n'
-      + '.raise-input{display:flex;gap:.35rem;align-items:center;font-size:.92rem}\n'
-      + '.fld-label{color:#93c5fd;font-weight:600}\n'
+      + '.raise-bar{display:flex;gap:.9rem;align-items:center;flex-wrap:wrap;margin:.5rem 0}\n'
+      + '.raise-sep{width:1px;height:28px;background:#334155;margin:0 .4rem}\n'
+      + '.field{display:flex;align-items:center;gap:.5rem}\n'
+      + '.fld-label{color:#93c5fd;font-weight:600;white-space:nowrap}\n'
       /* inputs modernos */
       + '.input-modern{position:relative}\n'
-      + '.input-modern input{width:110px;padding:.45rem .55rem;border:1px solid #334155;'
+      + '.input-modern input{width:120px;padding:.48rem .6rem;border:1px solid #334155;'
         + 'background:#0f172a;color:#e5e7eb;border-radius:.6rem;outline:0;transition:border-color .15s, box-shadow .15s}\n'
       + '.input-modern input::placeholder{color:#64748b}\n'
       + '.input-modern input:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(96,165,250,.15)}\n'
@@ -58,26 +60,27 @@
       + '.rsw .slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#0b1324;transition:.25s;border-radius:50%}\n'
       + '.rsw input:checked + .slider{background:#22c55e}\n'
       + '.rsw input:checked + .slider:before{transform:translateX(24px)}\n'
-      /* checkboxes simples */
-      + '.raise-checks{display:flex;align-items:center;gap:1rem}\n'
-      + '.rc-item{display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.9rem;color:#e5e7eb}\n'
-      + '.rc-item input{width:16px;height:16px;cursor:pointer}\n'
-      + '.rc-item.active span{font-weight:700;color:#38bdf8}\n'
-      /* callers menu (dropdown vertical) */
-      + '.callers-wrap{position:relative;display:inline-flex;flex-direction:column;gap:.25rem}\n'
-      + '.menu-label{color:#93c5fd;font-weight:600}\n'
+      /* callers inline (menu) */
+      + '.callers-inline{display:flex;align-items:center;gap:.5rem}\n'
       + '.menu-btn{display:inline-flex;align-items:center;gap:.5rem;padding:.45rem .6rem;'
         + 'background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:.6rem;cursor:pointer;user-select:none}\n'
       + '.menu-btn:hover{border-color:#60a5fa}\n'
       + '.menu-btn:focus{outline:0;box-shadow:0 0 0 3px rgba(96,165,250,.15)}\n'
-      + '.menu-panel{position:absolute;top:100%;left:0;margin-top:.35rem;min-width:120px;'
+      + '.menu-panel{position:absolute;margin-top:.35rem;min-width:140px;'
         + 'background:#0b1324;border:1px solid #334155;border-radius:.6rem;box-shadow:0 18px 45px rgba(0,0,0,.35);'
         + 'padding:.35rem;display:none;z-index:9999}\n'
       + '.menu-panel.open{display:block}\n'
       + '.menu-item{padding:.4rem .55rem;border-radius:.5rem;color:#e5e7eb;cursor:pointer;display:flex;align-items:center;gap:.5rem}\n'
       + '.menu-item:hover{background:#1e293b}\n'
       + '.menu-item .dot{width:10px;height:10px;border-radius:50%;background:#475569}\n'
-      + '.menu-item.active .dot{background:#38bdf8}\n';
+      + '.menu-item.active .dot{background:#38bdf8}\n'
+      /* posição (IP/OOP) */
+      + '.pos-wrap{display:flex;align-items:center;gap:.6rem}\n'
+      + '.pos-legend{color:#e5e7eb;font-weight:700}\n'
+      + '.raise-checks{display:flex;align-items:center;gap:1rem}\n'
+      + '.rc-item{display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.9rem;color:#e5e7eb}\n'
+      + '.rc-item input{width:16px;height:16px;cursor:pointer}\n'
+      + '.rc-item.active span{font-weight:700;color:#38bdf8}\n';
     var style = el('style'); style.id='raise-css-hook';
     style.appendChild(document.createTextNode(css));
     document.head.appendChild(style);
@@ -137,15 +140,22 @@
       }
     }
 
-    return actionText + '\nStack efetivo: ~' + stackBB + ' BB.' + (shoveHint ? '\n' + shoveHint : '') + (posIndef ? '\n(Obs.: posição não marcada — usando IP padrão)' : '');
+    return actionText
+      + '\nStack efetivo: ~' + stackBB + ' BB.'
+      + (shoveHint ? '\n' + shoveHint : '')
+      + (posIndef ? '\n(Obs.: posição não marcada — usando IP padrão)' : '');
   }
 
   // ================== UI helpers ==================
-  function buildCallersMenu(current){
-    var wrap = el('div','callers-wrap');
-    var lbl  = el('div','menu-label'); lbl.textContent = '#Callers';
+  function buildCallersInline(current){
+    // container inline: label + botão
+    var wrap = el('div','field callers-inline');
+    var lbl  = el('span','fld-label'); lbl.textContent = 'Nº de callers:';
     var btn  = el('button','menu-btn'); btn.type='button'; btn.textContent = (current||0) + ' selecionado';
-    var panel= el('div','menu-panel');
+
+    // painel flutuante ancorado ao botão
+    var holder = el('div'); holder.style.position = 'relative';
+    var panel  = el('div','menu-panel');
 
     for (var i=0;i<=8;i++){
       var it = el('div','menu-item' + (i===current ? ' active' : ''));
@@ -156,12 +166,10 @@
         item.addEventListener('click', function(){
           state.callers = v;
           btn.textContent = v + ' selecionado';
-          // marcar ativo
           var act = panel.querySelector('.menu-item.active');
           if (act) act.classList.remove('active');
           item.classList.add('active');
           panel.classList.remove('open');
-          // atualiza sugestão
           if (state._cfg) updateSuggestion(state._cfg);
         });
       })(i,it);
@@ -171,14 +179,21 @@
     btn.addEventListener('click', function(e){
       e.stopPropagation();
       panel.classList.toggle('open');
+      // posiciona o painel logo abaixo do botão
+      if (panel.classList.contains('open')) {
+        panel.style.left = '0';
+        panel.style.top  = '100%';
+      }
     });
     document.addEventListener('click', function(){
       panel.classList.remove('open');
     });
 
+    holder.appendChild(btn);
+    holder.appendChild(panel);
     wrap.appendChild(lbl);
-    wrap.appendChild(btn);
-    wrap.appendChild(panel);
+    wrap.appendChild(holder);
+
     return { wrap:wrap, btn:btn, panel:panel };
   }
 
@@ -189,7 +204,7 @@
 
     var bar = el('div', 'raise-bar');
 
-    // Switch Tomei Raise
+    // (1) Switch Tomei Raise
     var switchWrap = el('div', 'raise-switch');
     var labelTxt = el('span', 'label'); labelTxt.textContent = 'Tomei Raise';
     var rsw = el('label', 'rsw');
@@ -198,44 +213,54 @@
     rsw.appendChild(chk); rsw.appendChild(slider);
     switchWrap.appendChild(labelTxt); switchWrap.appendChild(rsw);
 
-    // separador
-    var sep = el('div','raise-sep');
-
-    // Posição: checkboxes
-    var grpPos = el('div', 'raise-checks');
-    var ipWrap  = el('label', 'rc-item'); var ipCb=document.createElement('input'); ipCb.type='checkbox'; var ipTxt=document.createElement('span'); ipTxt.textContent='Depois (IP)'; ipWrap.appendChild(ipCb); ipWrap.appendChild(ipTxt);
-    var oopWrap = el('label', 'rc-item'); var oopCb=document.createElement('input'); oopCb.type='checkbox'; var oopTxt=document.createElement('span'); oopTxt.textContent='Antes (OOP)'; oopWrap.appendChild(oopCb); oopWrap.appendChild(oopTxt);
-    grpPos.appendChild(ipWrap); grpPos.appendChild(oopWrap);
-
-    // separador
-    var sep2 = el('div','raise-sep');
-
-    // Raise moderno
-    var inRaise = el('div','raise-input');
+    // (2) Raise (BB)
+    var raiseField = el('div','field');
     var rLabel  = el('span','fld-label'); rLabel.textContent='Raise (BB):';
     var rWrap   = el('div','input-modern'); rWrap.innerHTML='<input id="inp-raise-bb" type="number" step="0.5" min="1" placeholder="ex: 3">';
-    inRaise.appendChild(rLabel); inRaise.appendChild(rWrap);
+    raiseField.appendChild(rLabel); raiseField.appendChild(rWrap);
 
-    // Stack moderno
-    var inStack = el('div','raise-input');
+    // (3) Stack (BB)
+    var stackField = el('div','field');
     var sLabel  = el('span','fld-label'); sLabel.textContent='Stack (BB):';
     var sWrap   = el('div','input-modern'); sWrap.innerHTML='<input id="inp-stack" type="number" step="1" min="1" placeholder="ex: 100">';
-    inStack.appendChild(sLabel); inStack.appendChild(sWrap);
+    stackField.appendChild(sLabel); stackField.appendChild(sWrap);
 
-    // Callers menu (vertical)
-    var callers = buildCallersMenu(state.callers);
+    // (4) Nº de callers (inline)
+    var callers = buildCallersInline(state.callers);
 
-    // Monta
+    // (5) Posição com legenda clara
+    var posWrap = el('div','pos-wrap');
+    var posLegend = el('span','pos-legend');
+    posLegend.textContent = 'Você está antes ou depois do agressor?';
+    var grpPos = el('div','raise-checks');
+
+    var ipWrap  = el('label', 'rc-item');
+    var ipCb    = document.createElement('input'); ipCb.type='checkbox';
+    var ipTxt   = document.createElement('span'); ipTxt.textContent='Depois (IP)';
+    ipWrap.appendChild(ipCb); ipWrap.appendChild(ipTxt);
+
+    var oopWrap = el('label', 'rc-item');
+    var oopCb   = document.createElement('input'); oopCb.type='checkbox';
+    var oopTxt  = document.createElement('span'); oopTxt.textContent='Antes (OOP)';
+    oopWrap.appendChild(oopCb); oopWrap.appendChild(oopTxt);
+
+    grpPos.appendChild(ipWrap); grpPos.appendChild(oopWrap);
+    posWrap.appendChild(posLegend);
+    posWrap.appendChild(grpPos);
+
+    // Montagem na ordem solicitada: switch | raise | stack | callers | posição
     bar.appendChild(switchWrap);
-    bar.appendChild(sep);
-    bar.appendChild(grpPos);
-    bar.appendChild(sep2);
-    bar.appendChild(inRaise);
-    bar.appendChild(inStack);
+    bar.appendChild(el('div','raise-sep'));
+    bar.appendChild(raiseField);
+    bar.appendChild(el('div','raise-sep'));
+    bar.appendChild(stackField);
+    bar.appendChild(el('div','raise-sep'));
     bar.appendChild(callers.wrap);
+    bar.appendChild(el('div','raise-sep'));
+    bar.appendChild(posWrap);
     mount.appendChild(bar);
 
-    // Estado visual inicial
+    // Estado inicial
     chk.checked = state.tomeiRaise;
 
     ipCb.checked  = (state.pos==='IP');
@@ -265,7 +290,6 @@
       updateSuggestion(cfg);
     });
 
-    // inputs
     var raiseInput = $('#inp-raise-bb', bar);
     var stackInput = $('#inp-stack', bar);
 
