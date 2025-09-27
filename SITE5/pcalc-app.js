@@ -1084,4 +1084,116 @@
   setInterval(tick, 400); // polling leve
   console.info('[HERO-GTO] ativo: reconhecimento da mão do herói (inclui TRINCA).');
 })(window);
-      
+
+
+/* ============================================================
+   VOZ-GTO ADDON — prioriza leitura da sugestão "por mão"
+   (usa .hero-gto-line; fallback para BET33/BET66/etc.)
+   Cole no final do seu script. Não quebra nada existente.
+============================================================ */
+(function (g) {
+  const S = {};
+  let lastUtter = '', lastSpoken = '';
+
+  // ----- Helpers -----
+  function pctToWords(p){
+    if(!p) return '';
+    const n = Number(String(p).replace('%',''))||0;
+    // leitura curta e clara
+    return n ? `${n} por cento` : '';
+  }
+  function normalizeAction(a){
+    a = String(a||'').toUpperCase();
+    if(/CHECK/.test(a)) return 'check';
+    if(/CALL/.test(a))  return 'call';
+    if(/FOLD/.test(a))  return 'fold';
+    if(/OVERBET/.test(a)) return 'overbet';
+    if(/SHOVE|ALL[- ]?IN/.test(a)) return 'all-in';
+    if(/BET/.test(a))   return 'bet';
+    return a.toLowerCase();
+  }
+
+  // Monta a fala priorizando a sugestão “por mão”
+  function buildSpeechFromDom(){
+    const host = document.querySelector('#pcalc-sugestao') || document.querySelector('[data-sugestao]');
+    if(!host) return '';
+
+    // 1) Prioridade: nossa linha "por mão"
+    const hero = host.querySelector('.hero-gto-line');
+    if(hero && hero.textContent.trim()){
+      // Exemplo do texto: "🧠 Reconhecido: Trinca · Sugerido (por mão): BET 66% — board molhado ..."
+      const t = hero.textContent;
+      const m = t.match(/Sugerido \(por mão\):\s*([A-Z\- ]+)\s*(\d+%)?/i);
+      const cat = (t.match(/Reconhecido:\s*([^\·]+)/i)||[])[1]?.trim() || '';
+      if(m){
+        const action = normalizeAction(m[1]||'');
+        const size   = pctToWords(m[2]||'');
+        const sizePart = size ? ` ${size}` : '';
+        const catPart  = cat ? ` (${cat})` : '';
+        return `Sugestão por mão${catPart}: ${action}${sizePart}.`;
+      }
+    }
+
+    // 2) Fallback: cartão antigo (ex.: "BET33")
+    const box = host.querySelector('.card, .suggestion, .gto, [data-gto]') || host;
+    const txt = (box.textContent || '').trim();
+    // Procura padrões BET33, BET66, BET75, OVERBET, CHECK, etc.
+    const m2 = txt.match(/\b(BET|CHECK|CALL|FOLD|OVERBET|SHOVE|ALL[- ]?IN)\s*([0-9]{2,3})?%?/i);
+    if(m2){
+      const action = normalizeAction(m2[1]);
+      const sizeNum = m2[2] ? `${m2[2]}%` : '';
+      const sizePart = sizeNum ? ` ${pctToWords(sizeNum)}` : '';
+      return `Sugestão: ${action}${sizePart}.`;
+    }
+
+    return '';
+  }
+
+  // ----- Falar (usa seu motor se existir) -----
+  function speak(text){
+    if(!text || text===lastSpoken) return; // evita fala duplicada
+    lastSpoken = text;
+
+    // Se você já tiver um motor de voz global, usamos ele
+    if(g.PCVOICE && typeof g.PCVOICE.speak === 'function'){
+      try { g.PCVOICE.speak(text); return; } catch(e){}
+    }
+
+    // Fallback simples com Web Speech API
+    try{
+      const u = new SpeechSynthesisUtterance(text);
+      // tenta respeitar seleção de voz do seu UI, se existir
+      const sel = document.querySelector('[data-voz], [name="voz"]');
+      if(sel && sel.value){
+        const want = String(sel.value).toLowerCase();
+        const v = speechSynthesis.getVoices().find(v=> 
+          (v.name||'').toLowerCase().includes(want) || (v.lang||'').toLowerCase().includes(want)
+        );
+        if(v) u.voice = v;
+      }
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    }catch(e){
+      console.warn('[VOZ-GTO] Fallback de voz falhou:', e);
+    }
+  }
+
+  // ----- Observa mudanças no bloco de sugestão -----
+  function attachObserver(){
+    const host = document.querySelector('#pcalc-sugestao') || document.querySelector('[data-sugestao]');
+    if(!host) return;
+    const mo = new MutationObserver(()=>{
+      const text = buildSpeechFromDom();
+      // respeita o toggle de voz se existir
+      const on = document.querySelector('[data-voz-toggle], #voz, [name="voz-enabled"]');
+      const enabled = on ? !!(on.checked || /ativo|on|true/i.test(on.value||'')) : true;
+      if(enabled) speak(text);
+    });
+    mo.observe(host, { childList:true, subtree:true, characterData:true });
+  }
+
+  // Inicializa levemente depois para garantir que o DOM já existe
+  setTimeout(attachObserver, 600);
+  console.info('[VOZ-GTO] ativo: leitura prioriza sugestão por mão (.hero-gto-line).');
+})(window);
+
