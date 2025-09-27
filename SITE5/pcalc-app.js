@@ -573,7 +573,7 @@
           g.TTS.state.enabled = true;
           enableEl.checked = true;
 
-        enableEl.onchange = (e)=>{
+          enableEl.onchange = (e)=>{
             g.TTS.state.enabled = e.target.checked;
             if(g.TTS.state.enabled) g.TTS.speak('Voz ativada');
           };
@@ -603,7 +603,8 @@
     }
   }
 
-  function calcEquity(){
+  // ==========> calcEquity AGORA usa GTO no FLOP (sempre). Turn/River continuam heurísticos.
+  async function calcEquity(){
     const {hand,board}=PC.getKnown();
     if(hand.length<2){ return; }
 
@@ -618,6 +619,7 @@
     const useExactTurn = (board.length===4 && opp===1);
     if(st) st.textContent= useExactTurn ? 'Calculando (exato no turn)...' : 'Calculando...';
 
+    // Equidade (mantida)
     const res = (function(){
       if(board.length===4 && opp===1) return exactTurnEquity(hand,board);
       const mc = simulateEquity(hand,board,opp,trials); mc._method='mc'; return mc;
@@ -638,8 +640,9 @@
       }
     }
 
-    // Não sugerir com flop parcial (1–2 cartas)
     const out   = document.getElementById('suggestOut');
+
+    // Não sugerir com flop parcial (1–2 cartas)
     const partialFlop = (board.length === 1 || board.length === 2);
     if (partialFlop) {
       if (out) {
@@ -655,6 +658,47 @@
       return;
     }
 
+    // ----------------- OVERRIDE GTO NO FLOP (sempre que houver pack) -----------------
+    if (board.length >= 3 && g.PCALC?.GTO?.suggestFlopLikeGTO) {
+      try {
+        const norm = c => ({ r: c.r || c.rank, s: c.s || c.suit });
+        await g.PCALC?.GTO?.preload?.();
+        const gr = await g.PCALC.GTO.suggestFlopLikeGTO({
+          spot: "SRP_BTNvsBB_100bb",
+          hero: hand.map(norm),
+          board: board.map(norm),
+        });
+        if (gr?.ok && out) {
+          const freqs = Object.entries(gr.freqs || {})
+            .sort((a,b)=>b[1]-a[1])
+            .map(([k,v]) => `${k.toUpperCase()} ${Math.round(v*100)}%`)
+            .join(" · ");
+          out.innerHTML = `
+            <div class="decision glow">
+              <div class="decision-title good">${(gr.action||"").toUpperCase()}</div>
+              <div class="decision-detail">GTO-Like (BTN vs BB, 100bb): ${freqs}</div>
+            </div>
+          `;
+          if(g.TTS?.state?.enabled){
+            if(PC.state.stageJustSet){
+              g.TTS.speak(`${PC.state.stageJustSet}. Sugestão: ${gr.action.toUpperCase()}`);
+              PC.state.stageJustSet = null;
+            }else{
+              g.TTS.speak(`Sugestão: ${gr.action.toUpperCase()}`);
+            }
+          }
+          const box=document.getElementById('equityBox');
+          if(box) renderPreflopRankLineInto(box);
+          return; // não deixa o heurístico sobrescrever
+        }
+      } catch (e) {
+        // Se falhar, segue heurístico
+        console.warn('[GTO override] fallback heurístico:', e);
+      }
+    }
+    // ---------------------------------------------------------------------
+
+    // TURN / RIVER (ou sem pack) → heurístico original
     const eqPct = (res.win + res.tie/2);
     const sugg = PC.suggestAction(eqPct, hand, board, opp);
     const cls   = PC.decisionClass(sugg.title);
@@ -678,7 +722,6 @@
       }
     }
 
-    // Atualiza/Remove a linha PF conforme a street
     const box=document.getElementById('equityBox');
     if(box) renderPreflopRankLineInto(box);
   }
@@ -875,12 +918,11 @@
   });
 })(window);
 
-// --- Flop GTO-like: usa SEMPRE LikeGTO com spot explícito ---
+// --- Flop GTO-like: usa SEMPRE LikeGTO com spot explícito (linha informativa no topo) ---
 (function (g) {
   const PC = g.PCALC || (g.PCALC = {});
   const SEL = "#pcalc-sugestao";
 
-  // garante a linha no painel
   function ensureGtoLine() {
     const box = document.getElementById("pcalc-sugestao");
     if (!box) return null;
@@ -895,10 +937,8 @@
     return line;
   }
 
-  // normaliza cartas para {r,s}
   const norm = c => ({ r: c?.r ?? c?.rank, s: c?.s ?? c?.suit });
 
-  // fallback simples se GTO indisponível
   function fallbackSuggestFlop(hero, flop) {
     const ev = PC.evalBest?.(hero.concat(flop));
     if (!ev) return { action: "check", why: "sem-eval" };
@@ -926,7 +966,6 @@
     if (hand.length < 2 || flop.length < 3) { line.style.display = "none"; return; }
     line.style.display = "";
 
-    // >>> NÃO usar Auto: ele pode cair em UNIVERSAL_SAFE
     const callLike = args => PC.GTO?.suggestFlopLikeGTO?.({ spot: "SRP_BTNvsBB_100bb", ...args });
 
     try {
@@ -939,7 +978,6 @@
           line.textContent = `Flop (GTO-like): ${res.action?.toUpperCase?.() || "—"} • ${pct}%  ·  ${bucket}  ·  ${feature}`;
           return;
         } else if (res && res.ok === false) {
-          // mostra motivo pra ficar claro quando cair no fallback
           line.textContent = `Flop (GTO pack) indisponível: ${res.reason || "?"} · spot=${res.spot || "?"}`;
           return;
         }
@@ -954,14 +992,11 @@
 
   function schedule(){ clearTimeout(renderFlopGTO._t); renderFlopGTO._t = setTimeout(renderFlopGTO, 40); }
 
-  // re-render nas interações
   document.addEventListener("click", schedule, true);
   document.addEventListener("keyup", schedule, true);
 
-  // espera o preload concluir e re-renderiza
   document.addEventListener("DOMContentLoaded", async () => {
     try { await g.PCALC?.GTO?.preload?.(); } catch(_) {}
     schedule();
   });
 })(window);
-
