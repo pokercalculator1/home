@@ -1,6 +1,4 @@
-// raise.js — Pot Odds sempre visível + switch para injetar decisão (Call/Fold/Indiferente) no bloco principal
-// TTS: ON fala apenas a decisão com frases personalizadas; OFF restaura e fala a sugestão do Monte Carlo.
-// Não mexe no app.js; usa DOM, PC.state e g.TTS se disponível.
+
 (function (g) {
   var DEFAULTS = {
     mountSelector: '#pcalc-toolbar',
@@ -152,8 +150,14 @@
     try{ speechSynthesis.cancel(); }catch(_){}
     try{ g.TTS.speak(text); }catch(_){}
   }
-  // ON: fala somente a decisão
-  function ttsRaise(result){
+  // Valida se inputs essenciais estão preenchidos (>0)
+  function inputsReady(ctx){
+    var p = Number(ctx.potAtual||0), c = Number(ctx.toCall||0);
+    return isFinite(p) && p > 0 && isFinite(c) && c > 0;
+  }
+  // ON: fala somente a decisão, mas só se Pot e A pagar estiverem preenchidos
+  function ttsRaise(result, ctx){
+    if(!inputsReady(ctx)) return; // <<< bloqueio pedido
     var phrase;
     switch (result.rec) {
       case 'Call':
@@ -261,7 +265,7 @@
         state.ttsPendingMC = true;
         triggerAppRecalc();
       } else {
-        // ON → recalcula já e fala Raise
+        // ON → recalcula já (fala apenas se inputs prontos)
         updateSuggestion(cfg);
       }
       updateSuggestion(cfg);
@@ -351,13 +355,13 @@
       pill.style.color = '#e5e7eb';
     }
 
-    // ON → injeta + fala Raise
+    // ON → injeta; fala SOMENTE se inputs prontos
     if (state.injectDecision) {
       injectDecisionIntoMain(result, ctx);
       // reforços para competir com re-renders do app
       setTimeout(function(){ injectDecisionIntoMain(result, ctx); }, 0);
       setTimeout(function(){ injectDecisionIntoMain(result, ctx); }, 60);
-      ttsRaise(result);
+      ttsRaise(result, ctx); // <<< fala condicionada a Pot/A pagar preenchidos
       if (typeof DEFAULTS.onUpdateText === 'function'){
         DEFAULTS.onUpdateText(`Raise Equity: ${result.rec} (BE ${result.bePct}% | EQ ${result.equityPct}%)`);
       }
@@ -409,7 +413,7 @@
       mo2.observe(bar, { attributes:true, attributeFilter:['style'] });
       state.observers.push(mo2);
     }
-    // #suggestOut reescrito → ON reinjeta e fala; OFF fala MC uma única vez
+    // #suggestOut reescrito → ON reinjeta e fala (condicional); OFF fala MC uma única vez
     var so = document.getElementById('suggestOut');
     if (so && g.MutationObserver){
       var mo3 = new MutationObserver(function(){
@@ -418,7 +422,7 @@
           var ctx = buildCtxFromCurrent(state._cfg);
           var res = computeDecision(ctx);
           injectDecisionIntoMain(res, ctx);
-          ttsRaise(res);
+          ttsRaise(res, ctx); // <<< fala condicionada aqui também
         } else if (state.ttsPendingMC) {
           ttsMonteCarloOnce();
           state.ttsPendingMC = false;
