@@ -1,10 +1,10 @@
-// raise.js — Pot Odds sempre visível + switch para injetar decisão (Call/Fold/Indiferente) no texto padrão
-// Lê equity (Win + Tie/2) de PC.state ou da UI sem alterar o app.js.
+// raise.js — Pot Odds sempre visível + switch para injetar decisão (Call/Fold/Indiferente) no bloco principal
+// Lê equity (Win + Tie/2) de PC.state ou da UI, sem alterar o app.js.
 // API pública:
 //   RAISE.init({ mountSelector, suggestSelector, onUpdateText, ...opts })
 //   RAISE.setState({ potAtual, toCall, equityPct, rakePct, rakeCap, useDecisionInjection })
-//   RAISE.getRecommendation()   // { bePct, equityPct, rec } do último cálculo
-//   RAISE.setUsePotOdds(bool)   // mantém compat — não oculta o card
+//   RAISE.getRecommendation()   // { bePct, equityPct, rec, ... } do último cálculo
+//   RAISE.setUsePotOdds(bool)   // compat (não oculta o card)
 (function (g) {
   var DEFAULTS = {
     mountSelector: '#pcalc-toolbar',
@@ -56,7 +56,7 @@
     mounted: false,
     elements: {},
     usePotOdds: true,          // compat; não oculta o card
-    injectDecision: false,     // <<< switch (cinza/verde): se true injeta a decisão no texto padrão
+    injectDecision: false,     // <<< switch (cinza/verde): se true, injeta a decisão no bloco principal
     lastPotOdds: null,
     _cfg: null,
     overrides: { potAtual: undefined, toCall: undefined, equityPct: undefined, rakePct: undefined, rakeCap: undefined },
@@ -142,7 +142,7 @@
     };
   }
 
-  // ===== Estilos (inclui a “chavinha” cinza/verde)
+  // ===== Estilos (inclui switch cinza/verde)
   function ensureCSS(){
     if ($('#raise-css-hook')) return;
     var css = ''
@@ -191,7 +191,7 @@
 
     var bar = el('div', 'raise-bar');
 
-    // (1) Switch: injetar decisão no texto padrão (cinza → verde)
+    // (1) Switch: injetar decisão no texto principal (cinza → verde)
     var injWrap = el('div','field');
     var injLbl  = el('span','fld-label'); injLbl.textContent = 'Decisão do Raise:';
     var injRsw  = el('label','rsw');
@@ -231,12 +231,34 @@
     return { injCb: injCb, potInput: pots.potInput, callInput: pots.callInput };
   }
 
+  // ===== Patch: injetar decisão no bloco principal (“APOSTE POR VALOR”)
+  function injectDecisionIntoMain(result, ctx){
+    var host = document.getElementById('suggestOut');
+    if (!host) return;
+
+    var cls = (result.rec === 'Call') ? 'good' : (result.rec === 'Fold' ? 'bad' : 'warn');
+    var glow = (result.rec === 'Call');
+
+    host.innerHTML = `
+      <div class="decision ${glow ? 'glow' : ''}">
+        <div class="decision-title ${cls}">RAISE EQUITY: ${result.rec}</div>
+        <div class="decision-detail">
+          BE ${result.bePct}% | EQ ${result.equityPct}% &nbsp;•&nbsp;
+          Pot ${Number(ctx.potAtual||0).toFixed(0)} | A pagar ${Number(ctx.toCall||0).toFixed(0)}
+        </div>
+      </div>
+    `;
+  }
+
+  // ===== Render
   function renderPotOddsUI(ctx, cfg){
     var out = $(cfg.suggestSelector);
     if(!out) return;
+
     var result = computeDecision(ctx);
     state.lastPotOdds = result;
 
+    // Card compacto (sempre visível)
     out.innerHTML = `
       <div class="raise-potodds card">
         <div style="font-weight:700;margin-bottom:6px">Pot Odds (vs Raise) — Compacto</div>
@@ -257,7 +279,14 @@
       pill.style.color = '#e5e7eb';
     }
 
-    // Se a chavinha estiver ligada, injeta no texto padrão do app
+    // Se a chavinha estiver ligada, injeta no bloco principal (substitui “Aposte por valor”)
+    if (state.injectDecision) {
+      injectDecisionIntoMain(result, ctx);
+      // Reforço pós-repaint do app, se houver:
+      setTimeout(function(){ injectDecisionIntoMain(result, ctx); }, 0);
+    }
+
+    // Opcional: também avisa quem estiver ouvindo o texto padrão
     if (state.injectDecision && typeof DEFAULTS.onUpdateText === 'function'){
       DEFAULTS.onUpdateText(`Raise Equity: ${result.rec} (BE ${result.bePct}% | EQ ${result.equityPct}%)`);
     }
