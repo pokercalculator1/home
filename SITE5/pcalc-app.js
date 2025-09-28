@@ -1,4 +1,4 @@
-// pcalc-app.js — PF (JSON) no pré-flop (linha e hover), pós-flop Top5, watchdog e sem "kicker undefined"
+// pcalc-app.js — PF(JSON) no pré-flop (linha e hover c/ posição da sua mão), pós-flop Top5, watchdog e sem "kicker undefined"
 (function(g){
   const PC = g.PCALC;
   const { RANKS, SUITS, SUIT_CLASS, SUIT_GLYPH, fmtRank, cardId, makeDeck, evalBest, cmpEval, CAT, CAT_NAME } = PC;
@@ -34,8 +34,7 @@
     const s1 = String(hand[0].s || '').toLowerCase();
     const s2 = String(hand[1].s || '').toLowerCase();
     try{
-      const tag = g.PF.normalize2(r1, s1, r2, s2); // "AKs","QJo","77"
-      return tag;
+      return g.PF.normalize2(r1, s1, r2, s2); // "AKs","QJo","77"
     }catch(e){
       console.warn('[PF] normalize2 falhou:', e);
       return null;
@@ -60,12 +59,11 @@
     return tags; // 169
   }
 
-  // Top 5 do PRÉ-FLOP baseado no JSON (PF). Fallback para Chen se PF indisponível.
-  function computeTop5PreflopPF(){
+  // Lista PF inteira (ordenada por rank) e devolve também top5 já preparado para overlay
+  function rankAllPF(){
     if(!hasPF()) return null;
-    const tags = all169Tags();
     const rows = [];
-    for(const t of tags){
+    for(const t of all169Tags()){
       try{
         const info = g.PF.describe(t); // {hand, rank, tier}
         if(info && typeof info.rank === 'number'){
@@ -75,7 +73,10 @@
     }
     if(!rows.length) return null;
     rows.sort((a,b)=>a.rank - b.rank); // 1 é melhor
-    return rows.slice(0,5).map((it)=>({ label: it.label, right: `Rank ${it.rank}` }));
+    return rows;
+  }
+  function top5FromAllPF(all){
+    return all.slice(0,5).map(it=>({ label: it.label, right: `Rank ${it.rank}` }));
   }
 
   // ========== Linha do Rank PF (só no pré-flop) ==========
@@ -90,7 +91,6 @@
       return;
     }
 
-    // PRÉ-FLOP
     let line = box.querySelector('#preflopRankLine');
     if(!line){
       line = document.createElement('div');
@@ -162,42 +162,91 @@
 
   // ========== Leaderboard pós-flop ==========
   function keyFromEval(ev){ return JSON.stringify({ c: ev.cat, k: ev.kick }); }
+  function r2cSafe(r){ // robusto contra valores falsy/undefined
+    if(r==null) return '';
+    return (r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r));
+  }
+  function listClean(arr){ // remove vazios e "undefined"
+    return (arr||[]).map(r2cSafe).filter(x=>x && x!=='undefined');
+  }
   function describeEval(ev){
     // Sem "kicker undefined": só mostra o que existir.
     const name = CAT_NAME[ev.cat] || '—';
-    const r2c = (r)=> (r==null ? '' : (r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r)));
     const k = ev.kick || [];
     let detail = '';
 
     switch(ev.cat){
-      case CAT.ROYAL: detail = 'Royal Flush'; break;
+      case CAT.ROYAL:
+        detail = 'Royal Flush';
+        break;
+
       case CAT.SFLUSH: {
-        const hi = r2c(k[0]); detail = hi ? `Straight Flush (alto ${hi})` : 'Straight Flush'; break;
+        const hi = r2cSafe(k[0]);
+        detail = hi ? `Straight Flush (alto ${hi})` : 'Straight Flush';
+        break;
       }
+
       case CAT.QUADS: {
-        const quad = r2c(k[0]); const kick = r2c(k[1]);
-        detail = quad ? `Quadra de ${quad}` : 'Quadra'; if(kick) detail += ` (kicker ${kick})`; break;
+        const quad = r2cSafe(k[0]);
+        const kick = r2cSafe(k[1]);
+        detail = quad ? `Quadra de ${quad}` : 'Quadra';
+        if(kick) detail += ` (kicker ${kick})`;
+        break;
       }
+
       case CAT.FULL: {
-        const t = r2c(k[0]); const p = r2c(k[1]);
-        detail = (t && p) ? `Full House (${t} cheio de ${p})` : 'Full House'; break;
+        const t = r2cSafe(k[0]);
+        const p = r2cSafe(k[1]);
+        if(t && p) detail = `Full House (${t} cheio de ${p})`;
+        else detail = 'Full House';
+        break;
       }
-      case CAT.FLUSH: { const hi = r2c(k[0]); detail = hi ? `Flush (alto ${hi})` : 'Flush'; break; }
-      case CAT.STRAIGHT: { const hi = r2c(k[0]); detail = hi ? `Sequência (alto ${hi})` : 'Sequência'; break; }
+
+      case CAT.FLUSH: {
+        const hi = r2cSafe(k[0]);
+        detail = hi ? `Flush (alto ${hi})` : 'Flush';
+        break;
+      }
+
+      case CAT.STRAIGHT: {
+        const hi = r2cSafe(k[0]);
+        detail = hi ? `Sequência (alto ${hi})` : 'Sequência';
+        break;
+      }
+
       case CAT.TRIPS: {
-        const t = r2c(k[0]); const ks = [r2c(k[1]), r2c(k[2])].filter(Boolean);
-        detail = t ? `Trinca de ${t}` : 'Trinca'; if(ks.length) detail += ` (kickers ${ks.join(', ')})`; break;
+        const t = r2cSafe(k[0]);
+        const ks = listClean([k[1], k[2]]);
+        detail = t ? `Trinca de ${t}` : 'Trinca';
+        if(ks.length) detail += ` (kickers ${ks.join(', ')})`;
+        break;
       }
+
       case CAT.TWO: {
-        const a = r2c(k[0]), b = r2c(k[1]); const kick = r2c(k[2]);
-        detail = (a && b) ? `Dois Pares (${a} & ${b})` : 'Dois Pares'; if(kick) detail += `, kicker ${kick}`; break;
+        const a = r2cSafe(k[0]), b = r2cSafe(k[1]);
+        const kick = r2cSafe(k[2]);
+        if(a && b) detail = `Dois Pares (${a} & ${b})`;
+        else detail = 'Dois Pares';
+        if(kick) detail += `, kicker ${kick}`;
+        break;
       }
+
       case CAT.ONE: {
-        const p = r2c(k[0]); const ks = [r2c(k[1]), r2c(k[2]), r2c(k[3])].filter(Boolean);
-        detail = p ? `Par de ${p}` : 'Par'; if(ks.length) detail += ` (kickers ${ks.join(', ')})`; break;
+        const p = r2cSafe(k[0]);
+        const ks = listClean([k[1], k[2], k[3]]);
+        detail = p ? `Par de ${p}` : 'Par';
+        if(ks.length) detail += ` (kickers ${ks.join(', ')})`;
+        break;
       }
-      case CAT.HIGH: { const hi = r2c(k[0]); detail = hi ? `Carta Alta ${hi}` : 'Carta Alta'; break; }
-      default: detail = name || '—';
+
+      case CAT.HIGH: {
+        const hi = r2cSafe(k[0]);
+        detail = hi ? `Carta Alta ${hi}` : 'Carta Alta';
+        break;
+      }
+
+      default:
+        detail = name || '—';
     }
     return { name, detail };
   }
@@ -471,110 +520,6 @@
     return {win:win/tot*100, tie:tie/tot*100, lose:lose/tot*100, _method:'exact-turn'};
   }
 
-  // >>> calcEquity SINCRONA: pinta heurístico já, e no flop faz override GTO quando chegar <<<
-  function calcEquity(){
-    const {hand,board}=PC.getKnown();
-    if(hand.length<2){ return; }
-
-    // se ainda não montou o painel, força montar
-    const box=document.getElementById('equityBox');
-    if(!box || !box.dataset.wired){ renderEquityPanel(); }
-
-    const oppSel=document.getElementById('eqOpp');
-    const trialsSel=document.getElementById('eqTrials');
-    if(!oppSel || !trialsSel) return;
-
-    const opp=parseInt(oppSel.value,10);
-    const trials=parseInt(trialsSel.value,10);
-    const st=document.getElementById('eqStatus');
-
-    const useExactTurn = (board.length===4 && opp===1);
-    if(st) st.textContent= useExactTurn ? 'Calculando (exato no turn)...' : 'Calculando...';
-
-    const res = (function(){
-      if(board.length===4 && opp===1) return exactTurnEquity(hand,board);
-      const mc = simulateEquity(hand,board,opp,trials); mc._method='mc'; return mc;
-    })();
-
-    const bar=document.getElementById('eqBarWin');
-    if(bar) bar.style.width=`${res.win.toFixed(1)}%`;
-    const br=document.getElementById('eqBreak');
-    if(br) br.innerHTML=`<small><b>Win:</b> ${res.win.toFixed(1)}%</small>
-                  <small><b>Tie:</b> ${res.tie.toFixed(1)}%</small>
-                  <small><b>Lose:</b> ${res.lose.toFixed(1)}%</small>`;
-
-    if(st){
-      if(res._method==='exact-turn'){
-        st.textContent=`Exato (turn) vs ${opp} oponente`;
-      }else{
-        st.textContent=`Monte Carlo vs ${opp} oponente(s) • ${trials.toLocaleString()} amostras`;
-      }
-    }
-
-    const out = document.getElementById('suggestOut');
-    const partialFlop = (board.length === 1 || board.length === 2);
-    if (partialFlop) {
-      if (out) {
-        out.innerHTML = `
-          <div class="decision">
-            <div class="decision-title info">Aguarde o flop completo</div>
-            <div class="decision-detail">Selecione as 3 cartas do flop para sugerir ação.</div>
-          </div>
-        `;
-      }
-      if(box) renderPreflopRankLineInto(box);
-      return;
-    }
-
-    const eqPct = (res.win + res.tie/2);
-    let sugg = PC.suggestAction(eqPct, hand, board, opp); // pinta imediatamente (heurístico)
-    const cls  = PC.decisionClass(sugg.title);
-    const glow = PC.shouldGlow(cls);
-
-    if(out){
-      out.innerHTML = `
-        <div class="decision ${glow ? 'glow' : ''}">
-          <div class="decision-title ${cls}">${sugg.title}</div>
-          <div class="decision-detail">${sugg.detail}</div>
-        </div>
-      `;
-    }
-
-    if(g.TTS?.state?.enabled){
-      if(PC.state.stageJustSet){
-        g.TTS.speak(`${PC.state.stageJustSet}. Sugestão: ${sugg.title}`);
-        PC.state.stageJustSet = null;
-      }else{
-        g.TTS.speak(`Sugestão: ${sugg.title}`);
-      }
-    }
-
-    // >>> OVERRIDE GTO APENAS NO FLOP: atualiza o texto quando a resposta chegar
-    if (board.length === 3 && g.PCALC?.GTO?.suggestFlopLikeGTO) {
-      g.PCALC.GTO.suggestFlopLikeGTO({
-        spot: 'SRP_BTNvsBB_100bb', hero: hand, board
-      }).then((gto)=>{
-        if(!gto?.ok) return;
-        const act = (gto.action || 'check').toUpperCase();
-        const pct = Math.round((gto.freqs?.[gto.action] || 0) * 100);
-        const bucket = (gto.bucketId||'').replace('__',' · ');
-        const feature = gto.feature || '';
-        const clsGto = PC.decisionClass(act);
-        const glowG  = PC.shouldGlow(clsGto);
-        if(document.getElementById('suggestOut')){
-          document.getElementById('suggestOut').innerHTML = `
-            <div class="decision ${glowG ? 'glow' : ''}">
-              <div class="decision-title ${clsGto}">${act}</div>
-              <div class="decision-detail">GTO-like (${pct}%) · ${bucket} · ${feature}</div>
-            </div>
-          `;
-        }
-      }).catch(()=>{ /* silencioso */});
-    }
-
-    if(box) renderPreflopRankLineInto(box);
-  }
-
   function renderEquityPanel(){
     const box=document.getElementById('equityBox');
     if(!box) return;
@@ -652,6 +597,7 @@
         box.querySelector('h3').textContent=`${stage}: Equidade até o showdown`;
       }
 
+      // Tenta renderizar a linha PF imediatamente e inicia watchdog
       renderPreflopRankLineInto(box);
       startPFWatchdog();
 
@@ -661,6 +607,86 @@
       box.innerHTML='';
       delete box.dataset.wired;
     }
+  }
+
+  function calcEquity(){
+    const {hand,board}=PC.getKnown();
+    if(hand.length<2){ return; }
+
+    const oppSel=document.getElementById('eqOpp');
+    const trialsSel=document.getElementById('eqTrials');
+    if(!oppSel || !trialsSel) return;
+
+    const opp=parseInt(oppSel.value,10);
+    const trials=parseInt(trialsSel.value,10);
+    const st=document.getElementById('eqStatus');
+
+    const useExactTurn = (board.length===4 && opp===1);
+    if(st) st.textContent= useExactTurn ? 'Calculando (exato no turn)...' : 'Calculando...';
+
+    const res = (function(){
+      if(board.length===4 && opp===1) return exactTurnEquity(hand,board);
+      const mc = simulateEquity(hand,board,opp,trials); mc._method='mc'; return mc;
+    })();
+
+    const bar=document.getElementById('eqBarWin');
+    if(bar) bar.style.width=`${res.win.toFixed(1)}%`;
+    const br=document.getElementById('eqBreak');
+    if(br) br.innerHTML=`<small><b>Win:</b> ${res.win.toFixed(1)}%</small>
+                  <small><b>Tie:</b> ${res.tie.toFixed(1)}%</small>
+                  <small><b>Lose:</b> ${res.lose.toFixed(1)}%</small>`;
+
+    if(st){
+      if(res._method==='exact-turn'){
+        st.textContent=`Exato (turn) vs ${opp} oponente`;
+      }else{
+        st.textContent=`Monte Carlo vs ${opp} oponente(s) • ${trials.toLocaleString()} amostras`;
+      }
+    }
+
+    // Não sugerir com flop parcial (1–2 cartas)
+    const out   = document.getElementById('suggestOut');
+    const partialFlop = (board.length === 1 || board.length === 2);
+    if (partialFlop) {
+      if (out) {
+        out.innerHTML = `
+          <div class="decision">
+            <div class="decision-title info">Aguarde o flop completo</div>
+            <div class="decision-detail">Selecione as 3 cartas do flop para sugerir ação.</div>
+          </div>
+        `;
+      }
+      const box=document.getElementById('equityBox');
+      if(box) renderPreflopRankLineInto(box);
+      return;
+    }
+
+    const eqPct = (res.win + res.tie/2);
+    const sugg = PC.suggestAction(eqPct, hand, board, opp);
+    const cls   = PC.decisionClass(sugg.title);
+    const glow  = PC.shouldGlow(cls);
+
+    if(out){
+      out.innerHTML = `
+        <div class="decision ${glow ? 'glow' : ''}">
+          <div class="decision-title ${cls}">${sugg.title}</div>
+          <div class="decision-detail">${sugg.detail}</div>
+        </div>
+      `;
+    }
+
+    if(g.TTS?.state?.enabled){
+      if(PC.state.stageJustSet){
+        g.TTS.speak(`${PC.state.stageJustSet}. Sugestão: ${sugg.title}`);
+        PC.state.stageJustSet = null;
+      }else{
+        g.TTS.speak(`Sugestão: ${sugg.title}`);
+      }
+    }
+
+    // Atualiza/Remove a linha PF conforme a street
+    const box=document.getElementById('equityBox');
+    if(box) renderPreflopRankLineInto(box);
   }
 
   function safeRecalc(){ try{ calcEquity(); }catch(e){} }
@@ -749,31 +775,59 @@
 
     const wrap=document.createElement('div');
     wrap.id='nutsOverlay';
-    wrap.style.cssText='background:#0b1324;border:1px solid #334155;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.35);padding:8px 10px;min-width:280px;color:#e5e7eb;font-size:14px';
+    wrap.style.cssText='background:#0b1324;border:1px solid #334155;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.35);padding:8px 10px;min-width:300px;color:#e5e7eb;font-size:14px';
 
     const title=document.createElement('div');
     title.className='mut';
     title.style.cssText='margin-bottom:6px;font-weight:600';
     const isPreflop = board.length<3;
-    title.textContent = isPreflop ? 'Top 5 mãos (pré-flop, JSON)' : 'Top 5 mãos possíveis (board atual)';
+    title.textContent = isPreflop ? 'Top 5 (pré-flop, JSON) + sua posição' : 'Top 5 mãos possíveis (board atual)';
     wrap.appendChild(title);
 
     const list=document.createElement('div');
 
     if(isPreflop){
-      const rows = computeTop5PreflopPF() || computeTop5PreflopChen();
+      const all = rankAllPF(); // lista completa ordenada
+      const rows = all ? top5FromAllPF(all) : computeTop5PreflopChen();
       if(rows && rows.length){
         rows.forEach((it,idx)=>{
           const row=document.createElement('div');
           row.style.cssText='display:flex;justify-content:space-between;gap:10px;padding:4px 0';
-          const left=document.createElement('div'); left.textContent=`${idx+1}) ${it.label}`;
-          const right=document.createElement('div'); right.className='mut'; right.textContent=it.right;
+          const left=document.createElement('div'); 
+          left.textContent=`${idx+1}) ${it.label}`;
+          const right=document.createElement('div'); 
+          right.className='mut'; 
+          right.textContent=it.right;
           row.appendChild(left); row.appendChild(right);
           list.appendChild(row);
         });
       }else{
         const row=document.createElement('div'); row.className='mut'; row.textContent='—';
         list.appendChild(row);
+      }
+
+      // Sua mão e posição
+      if(all && hasPF()){
+        const tag = getPreflopTagFromHand();
+        if(tag){
+          // acha a posição na lista completa
+          const pos = all.findIndex(x=>x.label.toUpperCase()===tag.toUpperCase());
+          if(pos>=0){
+            const rankN = all[pos].rank; // já é 1..169
+            const tier  = all[pos].tier || '';
+            const yourRow=document.createElement('div');
+            yourRow.style.cssText='margin-top:8px;padding-top:6px;border-top:1px solid #22304b';
+
+            if(rankN <= 5){
+              // Já está no Top 5: destaque
+              yourRow.innerHTML = `<div><b>⭐ Sua mão:</b> ${tag} — #${rankN}/169 ${tier ? `(${tier})` : ''} <span class="mut">(no Top 5)</span></div>`;
+            }else{
+              // Fora do Top 5: mostrar abaixo do Top 5
+              yourRow.innerHTML = `<div><b>Sua mão:</b> ${tag} — <b>#${rankN}/169</b> ${tier ? `(${tier})` : ''}</div>`;
+            }
+            list.appendChild(yourRow);
+          }
+        }
       }
     }else{
       const data = computeTop5PostflopLeaderboard();
@@ -852,347 +906,4 @@
   document.addEventListener('DOMContentLoaded', ()=>{
     // aguardando start via __pcalc_start_app__ (login-guard)
   });
-})(window);
-
-// --- Flop GTO-like: usa SEMPRE LikeGTO com spot explícito (apenas no FLOP) ---
-(function (g) {
-  const PC = g.PCALC || (g.PCALC = {});
-  const SEL = "#pcalc-sugestao";
-
-  function ensureGtoLine() {
-    const box = document.getElementById("pcalc-sugestao");
-    if (!box) return null;
-    let line = box.querySelector("#gtoLine");
-    if (!line) {
-      line = document.createElement("div");
-      line.id = "gtoLine";
-      line.className = "mut";
-      line.style.margin = "6px 0";
-      box.prepend(line);
-    }
-    return line;
-  }
-
-  const norm = c => ({ r: c?.r ?? c?.rank, s: c?.s ?? c?.suit });
-
-  function fallbackSuggestFlop(hero, flop) {
-    const ev = PC.evalBest?.(hero.concat(flop));
-    if (!ev) return { action: "check", why: "sem-eval" };
-    if (ev.cat >= PC.CAT.TWO) return { action: "bet33", why: "value_2pair+" };
-    const all = hero.concat(flop);
-    const cnt = all.reduce((m,c)=>(m[c.s]=(m[c.s]||0)+1,m),{});
-    const hasFD = Object.values(cnt).some(v=>v>=4);
-    const uniq = a => [...new Set(a)];
-    const rs = uniq(all.map(c=>c.r)).sort((a,b)=>a-b);
-    const rsA = rs.includes(14) ? uniq(rs.concat([1])).sort((a,b)=>a-b) : rs;
-    const hasOESD = arr => { for (let i=0;i<arr.length-3;i++){ const w=arr.slice(i,i+4); if (new Set(w).size===4 && (w[3]-w[0]===3)) return true; } return false; };
-    if (hasFD || hasOESD(rs) || hasOESD(rsA)) return { action: "bet33", why: "semi_bluff_draw" };
-    return { action: "check", why: "default" };
-  }
-
-  async function renderFlopGTO() {
-    const line = ensureGtoLine();
-    if (!line) return;
-
-    const st = PC.getKnown?.() || { hand:[], board:[] };
-    const hand  = (st.hand  || []).map(norm);
-    const board = (st.board || []).map(norm);
-    const flop  = board.slice(0,3);
-
-    // mostrar a faixa SÓ no flop
-    if (hand.length < 2 || board.length !== 3) { line.style.display = "none"; return; }
-    line.style.display = "";
-
-    const callLike = args => PC.GTO?.suggestFlopLikeGTO?.({ spot: "SRP_BTNvsBB_100bb", ...args });
-
-    try {
-      if (callLike) {
-        const res = await callLike({ hero: hand, board });
-        if (res?.ok) {
-          const pct = Math.round((res.freqs?.[res.action] || 0) * 100);
-          const bucket  = res.bucketId?.replace?.("__"," · ") || "";
-          const feature = res.feature || "";
-          line.textContent = `Flop (GTO-like): ${res.action?.toUpperCase?.() || "—"} • ${pct}%  ·  ${bucket}  ·  ${feature}`;
-          return;
-        } else if (res && res.ok === false) {
-          line.textContent = `Flop (GTO pack) indisponível: ${res.reason || "?"} · spot=${res.spot || "?"}`;
-          return;
-        }
-      }
-    } catch (e) { /* fallback abaixo */ }
-
-    const fb = fallbackSuggestFlop(hand, flop);
-    line.textContent = `Flop (heurístico): ${fb.action.toUpperCase()} · ${fb.why}`;
-  }
-
-  function schedule(){ clearTimeout(renderFlopGTO._t); renderFlopGTO._t = setTimeout(renderFlopGTO, 40); }
-
-  document.addEventListener("click", schedule, true);
-  document.addEventListener("keyup", schedule, true);
-
-  document.addEventListener("DOMContentLoaded", async () => {
-    try { await g.PCALC?.GTO?.preload?.(); } catch(_) {}
-    schedule();
-  });
-})(window);
-
-
-/* ============================================================
-   HERO-GTO ADDON — reconhecimento da mão do Herói (trinca, etc)
-   Colar no final dos seus scripts. Não altera nada existente.
-   Requisitos: window.PCALC com { makeDeck, cardId, evalBest, CAT, CAT_NAME, state.selected }
-============================================================ */
-(function (g) {
-  const PC = g.PCALC || g.PC;
-  if (!PC || !PC.makeDeck || !PC.evalBest) { console.warn('[HERO-GTO] PCALC não disponível.'); return; }
-
-  // ---------- Utils básicos ----------
-  const byId = Object.fromEntries(PC.makeDeck().map(c => [PC.cardId(c), c]));
-  const readSelected = () => {
-    const sel = (PC.state && PC.state.selected) ? [...PC.state.selected] : [];
-    const cards = sel.map(id => byId[id]).filter(Boolean);
-    const hero = cards.slice(0, 2);
-    const board = cards.slice(2, 7);
-    return { hero, board };
-  };
-
-  function suitCounts(cs){ const m={}; cs.forEach(c=>m[c.s]=(m[c.s]||0)+1); return m; }
-  function ranks(cs){ return cs.map(c=>c.r).sort((a,b)=>b-a); }
-  function isMonotone(board){ const s=suitCounts(board); return Math.max(...Object.values(s||{X:0}))>=3 && new Set(board.map(c=>c.s)).size===1; }
-  function isTwoTone(board){ const s=new Set(board.map(c=>c.s)); return s.size===2; }
-  function isConnectedish(board){
-    const rs = [...new Set(ranks(board))].sort((a,b)=>a-b);
-    let gaps=0; for(let i=1;i<rs.length;i++) gaps += (rs[i]-rs[i-1]-1);
-    return gaps<=3; // bem “straighty”
-  }
-
-  // ---------- Classificação da melhor mão do herói ----------
-  function classifyHero(hero, board){
-    if(hero.length<2 || board.length<3) return null;
-    const all = [...hero, ...board];
-    const best = PC.evalBest(all); // retorna { cat, five } etc. (conforme sua lib)
-    // Mapa de categorias
-    const CAT = PC.CAT || {};
-    const CAT_NAME = PC.CAT_NAME || (x=>String(x));
-
-    let label = CAT_NAME[best.cat] || String(best.cat);
-    // Normaliza rótulos comuns
-    const mapPretty = {
-      [CAT.HIGH      ]: 'Carta alta',
-      [CAT.PAIR      ]: 'Par',
-      [CAT.TWO_PAIR  ]: 'Dois pares',
-      [CAT.TRIPS     ]: 'Trinca',
-      [CAT.STRAIGHT  ]: 'Sequência',
-      [CAT.FLUSH     ]: 'Flush',
-      [CAT.FULL      ]: 'Full house',
-      [CAT.QUADS     ]: 'Quadra',
-      [CAT.STRAIGHT_FLUSH]: 'Straight flush'
-    };
-    if (mapPretty[best.cat]) label = mapPretty[best.cat];
-
-    return { best, cat: best.cat, catLabel: label };
-  }
-
-  // ---------- Política simples “GTO-aware por categoria” ----------
-  function heroPolicy(cat, board, nOpponents){
-    const multi = (nOpponents||1) >= 2;
-    const wet = isMonotone(board) || isTwoTone(board) || isConnectedish(board);
-
-    // Retorna objeto { action, size, note }
-    // size em % do pote (string)
-    switch(cat){
-      case (PC.CAT && PC.CAT.TRIPS):
-        if (!wet && !multi) return { action:'BET', size:'33%', note:'trinca em board seco (HU)' };
-        if (!wet &&  multi) return { action:'BET', size:'50%', note:'trinca multiway em board seco' };
-        if ( wet && !multi) return { action:'BET', size:'66%', note:'board molhado (proteger vs draws)' };
-        return                           { action:'BET', size:'75%', note:'trinca multiway em board molhado' };
-
-      case (PC.CAT && PC.CAT.QUADS):
-      case (PC.CAT && PC.CAT.FULL):
-        return { action:'BET', size: wet ? '66%' : (multi ? '50%' : '33%'), note:'topo do range; balancear frequência' };
-
-      case (PC.CAT && PC.CAT.FLUSH):
-      case (PC.CAT && PC.CAT.STRAIGHT):
-        return { action:'BET', size: wet ? '66%' : '50%', note:'mão feita forte' };
-
-      case (PC.CAT && PC.CAT.TWO_PAIR):
-        return { action:'BET', size: wet ? (multi ? '66%' : '50%') : (multi ? '50%' : '33%'), note:'value vs ranges' };
-
-      case (PC.CAT && PC.CAT.PAIR):
-        return { action: wet ? 'CHECK' : 'BET', size: wet ? '-' : '33%', note:'par único: controlar pote' };
-
-      default:
-        return { action:'CHECK', size:'-', note:'sem valor claro de aposta' };
-    }
-  }
-
-  // ---------- UI: injeta linha abaixo do seu bloco de sugestão ----------
-  function renderSuggestion(catLabel, policy, board){
-    const host = document.querySelector('#pcalc-sugestao') || document.querySelector('[data-sugestao]') || null;
-    const text = `🧠 Reconhecido: ${catLabel} · Sugerido (por mão): ${policy.action}${policy.size==='-'?'':(' '+policy.size)} — ${policy.note}`;
-    if (host){
-      let box = host.querySelector('.hero-gto-line');
-      if (!box){
-        box = document.createElement('div');
-        box.className = 'hero-gto-line';
-        box.style.marginTop = '6px';
-        box.style.padding = '10px';
-        box.style.border = '1px solid rgba(80,140,255,.25)';
-        box.style.borderRadius = '8px';
-        box.style.fontSize = '0.95rem';
-        box.style.lineHeight = '1.2';
-        host.appendChild(box);
-      }
-      box.textContent = text;
-    } else {
-      console.log('[HERO-GTO]', text);
-    }
-  }
-
-  // ---------- Leitor de # oponentes (se existir no seu painel) ----------
-  function readOpponents(){
-    // tenta achar um seletor comum no seu UI; se não achar, assume 1
-    const sel = document.querySelector('[name="oponentes"], #oponentes, [data-oponentes]');
-    if (!sel) return 1;
-    const v = Number(sel.value || sel.textContent || 1);
-    return Number.isFinite(v) && v>0 ? v : 1;
-  }
-
-  // ---------- Loop de atualização suave ----------
-  let lastKey = '';
-  function tick(){
-    try{
-      const { hero, board } = readSelected();
-      if (hero.length<2 || board.length<3){ lastKey=''; return; }
-
-      const key = hero.map(c=>PC.cardId(c)).join('-')+'|'+board.map(c=>PC.cardId(c)).join('-')+'|'+readOpponents();
-      if (key===lastKey) return;
-      lastKey = key;
-
-      const cls = classifyHero(hero, board);
-      if (!cls) return;
-
-      const nOpp = readOpponents();
-      const pol = heroPolicy(cls.cat, board, nOpp);
-      renderSuggestion(cls.catLabel, pol, board);
-    }catch(e){
-      console.warn('[HERO-GTO] erro:', e);
-    }
-  }
-
-  // inicia
-  setInterval(tick, 400); // polling leve
-  console.info('[HERO-GTO] ativo: reconhecimento da mão do herói (inclui TRINCA).');
-})(window);
-
-
-/* ============================================================
-   VOZ-GTO ADDON — prioriza leitura da sugestão "por mão"
-   (usa .hero-gto-line; fallback para BET33/BET66/etc.)
-   Cole no final do seu script. Não quebra nada existente.
-============================================================ */
-(function (g) {
-  const S = {};
-  let lastUtter = '', lastSpoken = '';
-
-  // ----- Helpers -----
-  function pctToWords(p){
-    if(!p) return '';
-    const n = Number(String(p).replace('%',''))||0;
-    // leitura curta e clara
-    return n ? `${n} por cento` : '';
-  }
-  function normalizeAction(a){
-    a = String(a||'').toUpperCase();
-    if(/CHECK/.test(a)) return 'check';
-    if(/CALL/.test(a))  return 'call';
-    if(/FOLD/.test(a))  return 'fold';
-    if(/OVERBET/.test(a)) return 'overbet';
-    if(/SHOVE|ALL[- ]?IN/.test(a)) return 'all-in';
-    if(/BET/.test(a))   return 'bet';
-    return a.toLowerCase();
-  }
-
-  // Monta a fala priorizando a sugestão “por mão”
-  function buildSpeechFromDom(){
-    const host = document.querySelector('#pcalc-sugestao') || document.querySelector('[data-sugestao]');
-    if(!host) return '';
-
-    // 1) Prioridade: nossa linha "por mão"
-    const hero = host.querySelector('.hero-gto-line');
-    if(hero && hero.textContent.trim()){
-      // Exemplo do texto: "🧠 Reconhecido: Trinca · Sugerido (por mão): BET 66% — board molhado ..."
-      const t = hero.textContent;
-      const m = t.match(/Sugerido \(por mão\):\s*([A-Z\- ]+)\s*(\d+%)?/i);
-      const cat = (t.match(/Reconhecido:\s*([^\·]+)/i)||[])[1]?.trim() || '';
-      if(m){
-        const action = normalizeAction(m[1]||'');
-        const size   = pctToWords(m[2]||'');
-        const sizePart = size ? ` ${size}` : '';
-        const catPart  = cat ? ` (${cat})` : '';
-        return `Sugestão por mão${catPart}: ${action}${sizePart}.`;
-      }
-    }
-
-    // 2) Fallback: cartão antigo (ex.: "BET33")
-    const box = host.querySelector('.card, .suggestion, .gto, [data-gto]') || host;
-    const txt = (box.textContent || '').trim();
-    // Procura padrões BET33, BET66, BET75, OVERBET, CHECK, etc.
-    const m2 = txt.match(/\b(BET|CHECK|CALL|FOLD|OVERBET|SHOVE|ALL[- ]?IN)\s*([0-9]{2,3})?%?/i);
-    if(m2){
-      const action = normalizeAction(m2[1]);
-      const sizeNum = m2[2] ? `${m2[2]}%` : '';
-      const sizePart = sizeNum ? ` ${pctToWords(sizeNum)}` : '';
-      return `Sugestão: ${action}${sizePart}.`;
-    }
-
-    return '';
-  }
-
-  // ----- Falar (usa seu motor se existir) -----
-  function speak(text){
-    if(!text || text===lastSpoken) return; // evita fala duplicada
-    lastSpoken = text;
-
-    // Se você já tiver um motor de voz global, usamos ele
-    if(g.PCVOICE && typeof g.PCVOICE.speak === 'function'){
-      try { g.PCVOICE.speak(text); return; } catch(e){}
-    }
-
-    // Fallback simples com Web Speech API
-    try{
-      const u = new SpeechSynthesisUtterance(text);
-      // tenta respeitar seleção de voz do seu UI, se existir
-      const sel = document.querySelector('[data-voz], [name="voz"]');
-      if(sel && sel.value){
-        const want = String(sel.value).toLowerCase();
-        const v = speechSynthesis.getVoices().find(v=> 
-          (v.name||'').toLowerCase().includes(want) || (v.lang||'').toLowerCase().includes(want)
-        );
-        if(v) u.voice = v;
-      }
-      speechSynthesis.cancel();
-      speechSynthesis.speak(u);
-    }catch(e){
-      console.warn('[VOZ-GTO] Fallback de voz falhou:', e);
-    }
-  }
-
-  // ----- Observa mudanças no bloco de sugestão -----
-  function attachObserver(){
-    const host = document.querySelector('#pcalc-sugestao') || document.querySelector('[data-sugestao]');
-    if(!host) return;
-    const mo = new MutationObserver(()=>{
-      const text = buildSpeechFromDom();
-      // respeita o toggle de voz se existir
-      const on = document.querySelector('[data-voz-toggle], #voz, [name="voz-enabled"]');
-      const enabled = on ? !!(on.checked || /ativo|on|true/i.test(on.value||'')) : true;
-      if(enabled) speak(text);
-    });
-    mo.observe(host, { childList:true, subtree:true, characterData:true });
-  }
-
-  // Inicializa levemente depois para garantir que o DOM já existe
-  setTimeout(attachObserver, 600);
-  console.info('[VOZ-GTO] ativo: leitura prioriza sugestão por mão (.hero-gto-line).');
 })(window);
