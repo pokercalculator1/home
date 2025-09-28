@@ -10,35 +10,37 @@
     mountSelector: '#pcalc-toolbar',
     suggestSelector: '#pcalc-sugestao',
 
-    // === Opções ===
-    potOddsCompact: true,   // true = só mostra BE/Equity/Decisão (sem inputs)
-    potKey: 'potAtual',     // chave em PC.state do pote (FICHAS) antes da sua ação
-    toCallKey: 'toCall',    // chave em PC.state do valor a pagar (FICHAS)
-    equityKey: 'equityPct', // se já vem em %
-    winKey: 'win',          // se vier 0..1 (Monte Carlo), equity = (win + 0.5*tie)*100
+    // === Opções/UI ===
+    potOddsCompact: true,   // true = só mostra BE/Equity/Decisão (sem inputs extras)
+    // chaves no PC.state
+    potKey: 'potAtual',     // pote atual em FICHAS (antes da sua ação)
+    toCallKey: 'toCall',    // valor a pagar em FICHAS
+    equityKey: 'equityPct', // equity pronta em % (0..100), se houver
+    winKey: 'win',          // Monte Carlo: pode vir 0..1 ou 0..100
     tieKey: 'tie',
 
     readState: function () {
       var PC = g.PC || g.PCALC || {};
       var st = PC.state || {};
 
-      // coleta chaves configuráveis
       var ek  = DEFAULTS.equityKey || 'equityPct';
       var pk  = DEFAULTS.potKey     || 'potAtual';
       var ck  = DEFAULTS.toCallKey  || 'toCall';
       var wk  = DEFAULTS.winKey     || 'win';
       var tk  = DEFAULTS.tieKey     || 'tie';
 
-      // ---------- Equity automático ----------
+      // ---------- Equity: tenta equityPct (%); senão calcula via win/tie ----------
       var eqPct = Number(st[ek]);
       if (!isFinite(eqPct)) {
-        var win = Number(st[wk]); 
+        var win = Number(st[wk]);
         var tie = Number(st[tk]);
         if (isFinite(win) && isFinite(tie)) {
+          // normaliza caso estejam em %
+          if (win > 1 || tie > 1) { win = win / 100; tie = tie / 100; }
           eqPct = (win + 0.5 * tie) * 100;
         }
       }
-      if (!isFinite(eqPct)) eqPct = 50; // fallback
+      if (!isFinite(eqPct)) eqPct = 50; // fallback seguro
 
       // ---------- Pot / To call em FICHAS ----------
       var potAtual = Number(st[pk]);   if (!isFinite(potAtual)) potAtual = 0;
@@ -47,7 +49,6 @@
       return {
         maoLabel: st.maoLabel || st.mao || '',
         categoria: st.maoCategoria || 'premium (top 20)',
-        // stackBB e raiseBB não são mais usados na calculadora de pot odds
         callers: Number(st.callers || 0),
 
         potAtual: potAtual,
@@ -68,28 +69,21 @@
     mounted: false,
     elements: {},
     tomeiRaise: false,
-    pos: 'IP',            // 'IP' | 'OOP' | null (mantido para textos de 3-bet fallback)
-    callers: 0,           // nº de callers entre agressor e você (mantido p/ fallback)
+    pos: 'IP',            // 'IP' | 'OOP' | null (usado em fallback textual)
+    callers: 0,           // nº de callers (contexto)
     usePotOdds: true,     // mostra mini calculadora quando tomeiRaise = true
     lastPotOdds: null,
     _cfg: null,
     // Overrides vindos via setState() ou inputs da calculadora
-    overrides: {
-      potAtual: undefined,
-      toCall: undefined,
-      equityPct: undefined,
-      rakePct: undefined,
-      rakeCap: undefined
-    }
+    overrides: { potAtual: undefined, toCall: undefined, equityPct: undefined, rakePct: undefined, rakeCap: undefined }
   };
 
   // ================== Utils ==================
   function $(sel, root){ return (root||document).querySelector(sel); }
   function el(tag, cls){ var x=document.createElement(tag); if(cls) x.className=cls; return x; }
-  function roundHalf(x){ return Math.round(x*2)/2; }
   function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
 
-  // Pot Odds (unidade-agnóstica; se pot/toCall estão na mesma unidade (fichas), funciona)
+  // Pot Odds (pot/toCall nas mesmas unidades → ok)
   function potOddsBE(potAtual, toCall, rakePct, rakeCap){
     potAtual = Number(potAtual||0);
     toCall   = Number(toCall||0);
@@ -98,14 +92,14 @@
     var potFinal = potAtual + toCall;
     var rake = Math.min(potFinal * rakePct, rakeCap);
     var potFinalEfetivo = Math.max(0, potFinal - rake);
-    var be = toCall / (potFinalEfetivo || 1); // break-even (0..1)
+    var be = toCall / (potFinalEfetivo || 1); // 0..1
     return { be: be, bePct: +(be*100).toFixed(1), potFinal: potFinal, potFinalEfetivo: potFinalEfetivo, rake: rake };
   }
   function decideVsRaise(potAtual, toCall, equityPct, rakePct, rakeCap){
     var r = potOddsBE(potAtual, toCall, rakePct, rakeCap);
     var bePct = r.bePct;
     var eq    = Number(equityPct||0);
-    var buffer = 3; // zona cinza +/-3pp
+    var buffer = 3; // zona cinza ±3pp
     var rec = 'Indiferente';
     if(eq >= bePct + buffer) rec = 'Call';
     else if(eq <= bePct - buffer) rec = 'Fold';
@@ -126,23 +120,19 @@
       + '.raise-bar{display:flex;gap:.9rem;align-items:center;flex-wrap:wrap;margin:.5rem 0}\n'
       + '.field{display:flex;align-items:center;gap:.5rem}\n'
       + '.fld-label{color:#93c5fd;font-weight:600;white-space:nowrap}\n'
-      + '.input-modern{position:relative}\n'
-      + '.input-modern input{width:90px;padding:.48rem .6rem;border:1px solid #334155;'
-        + 'background:#0f172a;color:#e5e7eb;border-radius:.6rem;outline:0;transition:border-color .15s, box-shadow .15s}\n'
-      + '.input-modern input::placeholder{color:#64748b}\n'
-      + '.input-modern input:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(96,165,250,.15)}\n'
+      + '.input-modern input{width:100px;padding:.48rem .6rem;border:1px solid #334155;'
+        + 'background:#0f172a;color:#e5e7eb;border-radius:.6rem;outline:0}\n'
       + '.raise-checks{display:flex;align-items:center;gap:1rem}\n'
       + '.rc-item{display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.9rem;color:#e5e7eb}\n'
       + '.rc-item input{width:16px;height:16px;cursor:pointer}\n'
       + '.rc-item.active span{font-weight:700;color:#38bdf8}\n'
-      + '.raise-potodds.card{background:#0b1324;border:1px solid #22304a;border-radius:10px;padding:10px;line-height:1.2}\n'
-    ;
+      + '.raise-potodds.card{background:#0b1324;border:1px solid #22304a;border-radius:10px;padding:10px;line-height:1.2}\n';
     var style = el('style'); style.id='raise-css-hook';
     style.appendChild(document.createTextNode(css));
     document.head.appendChild(style);
   }
 
-  // ================== Lógica da recomendação (fallback simples) ==================
+  // ================== Lógica de fallback (texto) ==================
   function buildSuggestion(ctx){
     var maoLabel = ctx.maoLabel || ctx.categoria || '';
     var posIn    = ctx.pos;
@@ -150,39 +140,31 @@
     var posIndef = (posIn == null);
     var callers  = Number(ctx.callers || 0);
 
-    // Fallback textual quando não estamos mostrando pot odds
     var actionText = 'Sem cálculo de pot odds.\n'
-      + '→ Contexto: ' + (ctx.tomeiRaise ? 'Houve raise antes' : 'Sem raise antes') + (callers>0? (' + ' + callers + ' caller(s)'):'') + ' (' + pos + ').\n'
+      + '→ Contexto: ' + (ctx.tomeiRaise ? 'Houve raise antes' : 'Sem raise antes')
+      + (callers>0? (' + ' + callers + ' caller(s)'):'') + ' (' + pos + ').\n'
       + '→ Mão: ' + (maoLabel || '—') + '.';
     return actionText + (posIndef ? '\n(Obs.: posição não marcada — usando IP padrão)' : '');
   }
 
   // ================== UI helpers ==================
   function buildPotInputs(initialPot, initialCall){
-    var wrap = el('div','field');
-    // Pot (fichas)
     var potWrap = el('div','field');
     var potLbl  = el('span','fld-label'); potLbl.textContent='Pot (fichas):';
     var potInpW = el('div','input-modern'); potInpW.innerHTML='<input id="inp-pot" type="number" step="1" min="0" placeholder="ex: 1200">';
     potWrap.appendChild(potLbl); potWrap.appendChild(potInpW);
 
-    // A pagar (fichas)
     var callWrap = el('div','field');
     var callLbl  = el('span','fld-label'); callLbl.textContent='A pagar (fichas):';
     var callInpW = el('div','input-modern'); callInpW.innerHTML='<input id="inp-call" type="number" step="1" min="0" placeholder="ex: 400">';
     callWrap.appendChild(callLbl); callWrap.appendChild(callInpW);
 
-    // Prefill
     var potInp  = potInpW.querySelector('input');
     var callInp = callInpW.querySelector('input');
     if (isFinite(initialPot) && initialPot>0) potInp.value = String(initialPot);
     if (isFinite(initialCall) && initialCall>0) callInp.value = String(initialCall);
 
-    return {
-      group: [potWrap, callWrap],
-      potInput: potInp,
-      callInput: callInp
-    };
+    return { potWrap, callWrap, potInput: potInp, callInput: callInp };
   }
 
   // ================== UI / Montagem ==================
@@ -201,7 +183,7 @@
     rsw.appendChild(chk); rsw.appendChild(chkTxt);
     switchWrap.appendChild(lblTxt); switchWrap.appendChild(rsw);
 
-    // (2) Posição (mantido) — útil para textos fallback
+    // (2) Posição (opcional p/ contexto)
     var posWrap = el('div','field');
     var posLbl  = el('span','fld-label'); posLbl.textContent = 'Posição:';
     var posGrp  = el('div','raise-checks');
@@ -219,7 +201,7 @@
     posGrp.appendChild(ipWrap); posGrp.appendChild(oopWrap);
     posWrap.appendChild(posLbl); posWrap.appendChild(posGrp);
 
-    // (3) Nº de callers (mantido para contexto)
+    // (3) Nº de callers (contexto)
     var callersWrap = el('div','field');
     var cLabel  = el('span','fld-label'); cLabel.textContent='Nº callers:';
     var cInpW   = el('div','input-modern'); cInpW.innerHTML='<input id="inp-callers" type="number" step="1" min="0" max="8" placeholder="0">';
@@ -234,7 +216,8 @@
     bar.appendChild(switchWrap);
     bar.appendChild(posWrap);
     bar.appendChild(callersWrap);
-    pots.group.forEach(function(n){ bar.appendChild(n); });
+    bar.appendChild(pots.potWrap);
+    bar.appendChild(pots.callWrap);
     mount.appendChild(bar);
 
     // Estado inicial
@@ -248,9 +231,7 @@
     if (typeof state.callers === 'number') callersInput.value = String(state.callers);
 
     // Eventos
-    chk.addEventListener('change',function(){
-      state.tomeiRaise=chk.checked; updateSuggestion(cfg);
-    });
+    chk.addEventListener('change',function(){ state.tomeiRaise=chk.checked; updateSuggestion(cfg); });
     function syncPosVisual(){
       ipWrap.classList.toggle('active', ipCb.checked);
       oopWrap.classList.toggle('active', oopCb.checked);
@@ -332,7 +313,7 @@
       return;
     }
 
-    // modo editável (opcional) — aqui manteríamos inputs extras, mas você pediu compacto
+    // (modo editável foi removido a pedido)
   }
 
   function renderDefaultRecommendation(ctx, cfg){
@@ -346,10 +327,9 @@
   }
 
   function updateSuggestion(cfg){
-    // Lê PC.state
     var st = cfg.readState();
 
-    // Aplica overrides digitados na calculadora (se houver)
+    // overrides dos inputs em fichas
     var potAtual = (state.overrides.potAtual != null ? state.overrides.potAtual : st.potAtual);
     var toCall   = (state.overrides.toCall   != null ? state.overrides.toCall   : st.toCall);
     var equity   = (state.overrides.equityPct!= null ? state.overrides.equityPct: st.equityPct);
@@ -362,7 +342,6 @@
       callers: state.callers,
       pos: state.pos,
       tomeiRaise: state.tomeiRaise,
-      // Pot Odds
       potAtual: potAtual,
       toCall: toCall,
       equityPct: equity,
@@ -415,7 +394,7 @@
       if ('rakePct'   in patch) state.overrides.rakePct   = (patch.rakePct==null?undefined:Number(patch.rakePct));
       if ('rakeCap'   in patch) state.overrides.rakeCap   = (patch.rakeCap==null?undefined:Number(patch.rakeCap));
 
-      // sync visual mínimo
+      // sync mínimo de UI (se existir)
       var els = state.elements || {};
       if (els.ipCb && els.oopCb && els.ipWrap && els.oopWrap){
         els.ipCb.checked  = (state.pos === 'IP');
