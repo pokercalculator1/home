@@ -1,21 +1,17 @@
 // raise.js — Pot Odds sempre visível + switch para injetar decisão (Call/Fold/Indiferente) no bloco principal
-// Lê equity (Win + Tie/2) de PC.state ou da UI, sem alterar o app.js.
-// API pública:
-//   RAISE.init({ mountSelector, suggestSelector, onUpdateText, ...opts })
-//   RAISE.setState({ potAtual, toCall, equityPct, rakePct, rakeCap, useDecisionInjection })
-//   RAISE.getRecommendation()   // { bePct, equityPct, rec, ... } do último cálculo
-//   RAISE.setUsePotOdds(bool)   // compat (não oculta o card)
+// Com TTS integrado:
+//   - ON: fala a decisão do Raise (BE/EQ) sempre que atualizar.
+//   - OFF: restaura UI, recalcula e fala a sugestão do Monte Carlo.
+// Não altera o app.js; usa DOM e g.TTS se disponível.
 (function (g) {
   var DEFAULTS = {
     mountSelector: '#pcalc-toolbar',
     suggestSelector: '#pcalc-sugestao',
     potOddsCompact: true,
-
-    // chaves usuais no PC.state (se existirem)
     potKey: 'potAtual',
     toCallKey: 'toCall',
-    equityKey: 'equityPct', // % pronta
-    winKey: 'win',          // 0..1 ou 0..100
+    equityKey: 'equityPct',
+    winKey: 'win',
     tieKey: 'tie',
 
     readState: function () {
@@ -55,13 +51,17 @@
   var state = {
     mounted: false,
     elements: {},
-    usePotOdds: true,          // compat; não oculta o card
-    injectDecision: false,     // <<< switch (cinza/verde): se true, injeta a decisão no bloco principal
+    usePotOdds: true,
+    injectDecision: false,     // switch ON/OFF
     lastPotOdds: null,
     _cfg: null,
     overrides: { potAtual: undefined, toCall: undefined, equityPct: undefined, rakePct: undefined, rakeCap: undefined },
     observers: [],
-    lastSuggestSnapshot: null  // <<< guarda o HTML original do #suggestOut para restaurar ao desligar
+    lastSuggestSnapshot: null,
+
+    // TTS
+    ttsLastKey: null,          // antirrep
+    ttsPendingMC: false        // OFF: falar uma vez quando o Monte Carlo reescrever #suggestOut
   };
 
   // ===== Utils
@@ -70,7 +70,7 @@
   function num(x){ var n=Number(x); return isFinite(n)?n:NaN; }
   function clamp01pct(p){ return Math.max(0, Math.min(100, +Number(p).toFixed(1))); }
 
-  // parser pt/intl: “16.1”, “16,1”, “1.234,5”, “1,234.5”
+  // parser pt/intl
   function parseFlexibleNumber(raw){
     if(raw==null) return NaN;
     var s = String(raw).trim(); if(!s) return NaN;
@@ -86,6 +86,8 @@
     if (!m) return NaN;
     return parseFlexibleNumber(m[1]);
   }
+
+  // Extrai equity (Win + Tie/2) do DOM quando necessário
   function extractEquityFromDOM(){
     var br = document.getElementById('eqBreak');
     if (br) {
@@ -143,7 +145,39 @@
     };
   }
 
-  // ===== Estilos (inclui switch cinza/verde)
+  // ===== TTS helpers
+  function ttsEnabled(){
+    return !!(g.TTS && g.TTS.state && g.TTS.state.enabled && 'speechSynthesis' in g);
+  }
+  function ttsSayOnce(text, key){
+    if(!ttsEnabled()) return;
+    if(key && state.ttsLastKey === key) return;
+    state.ttsLastKey = key || text;
+    try{ g.TTS.speak(text); }catch(_){}
+  }
+  function ttsRaise(result){
+    var text = `Raise Equity: ${result.rec}. BE ${result.bePct} por cento, equity ${result.equityPct} por cento.`;
+    var key  = `raise:${result.rec}:${result.bePct}:${result.equityPct}`;
+    ttsSayOnce(text, key);
+  }
+  function extractMainSuggestionTitle(){
+    var host = document.getElementById('suggestOut');
+    if(!host) return '';
+    var t = '';
+    var h = host.querySelector('.decision-title');
+    if(h && h.textContent) t = h.textContent.trim();
+    if(!t) t = (host.textContent||'').trim().split('\n').map(s=>s.trim()).filter(Boolean)[0] || '';
+    return t;
+  }
+  function ttsMonteCarloOnce(){
+    // fala “Sugestão: <título atual>”
+    var title = extractMainSuggestionTitle();
+    if(!title) return;
+    var key = `mc:${title}`;
+    ttsSayOnce(`Sugestão: ${title}`, key);
+  }
+
+  // ===== Estilos (switch cinza/verde)
   function ensureCSS(){
     if ($('#raise-css-hook')) return;
     var css = ''
@@ -154,7 +188,6 @@
       + '.input-modern input{width:110px;padding:.48rem .6rem;border:1px solid #334155;'
         + 'background:#0f172a;color:#e5e7eb;border-radius:.6rem;outline:0}\n'
       + '.raise-potodds.card{background:#0b1324;border:1px solid #22304a;border-radius:10px;padding:10px;line-height:1.2}\n'
-      /* switch iOS-like */
       + '.rsw{position:relative;display:inline-block;width:48px;height:26px}\n'
       + '.rsw input{opacity:0;width:0;height:0}\n'
       + '.slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#475569;border-radius:26px;transition:.25s}\n'
@@ -217,8 +250,13 @@
     injCb.addEventListener('change', function(){
       state.injectDecision = !!injCb.checked;
       if (!state.injectDecision) {
-        // desligou → restaura imediatamente e dispara recálculo do app
+        // OFF → restaura e marca para falar MC na próxima atualização
         restoreDefaultSuggestion();
+        state.ttsPendingMC = true;
+        triggerAppRecalc();
+      } else {
+        // ON → recalcula já para falar Raise
+        updateSuggestion(cfg);
       }
       updateSuggestion(cfg);
     });
@@ -236,16 +274,14 @@
     return { injCb: injCb, potInput: pots.potInput, callInput: pots.callInput };
   }
 
-  // ===== Patch: injetar e restaurar no bloco principal (“APOSTE POR VALOR”)
+  // ===== Patch: injetar e restaurar no bloco principal
   function injectDecisionIntoMain(result, ctx){
     var host = document.getElementById('suggestOut');
     if (!host) return;
 
-    // salva snapshot original apenas uma vez por sessão ON
     if (state.lastSuggestSnapshot == null) {
       state.lastSuggestSnapshot = host.innerHTML;
     }
-
     var cls = (result.rec === 'Call') ? 'good' : (result.rec === 'Fold' ? 'bad' : 'warn');
     var glow = (result.rec === 'Call');
 
@@ -259,17 +295,13 @@
       </div>
     `;
   }
-
   function restoreDefaultSuggestion(){
     var host = document.getElementById('suggestOut');
     if (host && state.lastSuggestSnapshot != null){
       host.innerHTML = state.lastSuggestSnapshot;
     }
     state.lastSuggestSnapshot = null;
-    triggerAppRecalc(); // força o app a recalcular e repintar o Monte Carlo
   }
-
-  // tenta acionar o recálculo padrão do app sem tocar no app.js
   function triggerAppRecalc(){
     try{
       var btn = document.getElementById('btnEqCalc');
@@ -310,17 +342,15 @@
       pill.style.color = '#e5e7eb';
     }
 
-    // Se a chavinha estiver ligada, injeta no bloco principal (substitui “Aposte por valor”)
+    // ON → injeta + fala Raise
     if (state.injectDecision) {
       injectDecisionIntoMain(result, ctx);
-      // Reforços para competir com re-renders do app:
       setTimeout(function(){ injectDecisionIntoMain(result, ctx); }, 0);
       setTimeout(function(){ injectDecisionIntoMain(result, ctx); }, 60);
-    }
-
-    // Opcional: também avisa quem estiver ouvindo o texto padrão
-    if (state.injectDecision && typeof DEFAULTS.onUpdateText === 'function'){
-      DEFAULTS.onUpdateText(`Raise Equity: ${result.rec} (BE ${result.bePct}% | EQ ${result.equityPct}%)`);
+      ttsRaise(result);
+      if (typeof DEFAULTS.onUpdateText === 'function'){
+        DEFAULTS.onUpdateText(`Raise Equity: ${result.rec} (BE ${result.bePct}% | EQ ${result.equityPct}%)`);
+      }
     }
   }
 
@@ -349,11 +379,11 @@
     renderPotOddsUI(ctx, cfg);
   }
 
-  // Observa UI para reagir ao Monte Carlo e ao bloco principal
+  // Observadores: Win/Tie (MC), barra de Win e bloco principal
   function attachDOMObservers(){
     detachDOMObservers();
 
-    // Win/Tie mudam → recalcula/injeta
+    // Win/Tie mudam → recalcula/injeta/fala (Raise ON)
     var br = document.getElementById('eqBreak');
     if (br && g.MutationObserver){
       var mo1 = new MutationObserver(function(){ if (state._cfg) updateSuggestion(state._cfg); });
@@ -369,21 +399,26 @@
       state.observers.push(mo2);
     }
 
-    // O app reescreveu #suggestOut? → se a chave estiver ligada, reinjeta a nossa decisão
+    // #suggestOut reescrito → ON reinjeta; OFF fala MC uma única vez se marcado
     var so = document.getElementById('suggestOut');
     if (so && g.MutationObserver){
       var mo3 = new MutationObserver(function(){
-        if (!state.injectDecision) return;
         if (!state._cfg) return;
-        var ctx = buildCtxFromCurrent(state._cfg);
-        var result = computeDecision(ctx);
-        injectDecisionIntoMain(result, ctx);
+        if (state.injectDecision) {
+          var ctx = buildCtxFromCurrent(state._cfg);
+          var res = computeDecision(ctx);
+          injectDecisionIntoMain(res, ctx);
+          ttsRaise(res);
+        } else if (state.ttsPendingMC) {
+          // fala MC e limpa o flag
+          ttsMonteCarloOnce();
+          state.ttsPendingMC = false;
+        }
       });
       mo3.observe(so, { childList:true, subtree:true, characterData:true });
       state.observers.push(mo3);
     }
 
-    // pings tardios, caso o DOM re-renderize por completo
     [50, 250, 750].forEach(function(ms){
       setTimeout(function(){ if (state._cfg) updateSuggestion(state._cfg); }, ms);
     });
@@ -422,7 +457,11 @@
       if ('useDecisionInjection' in patch) {
         state.injectDecision = !!patch.useDecisionInjection;
         if (state.elements.injCb) state.elements.injCb.checked = state.injectDecision;
-        if (!state.injectDecision) restoreDefaultSuggestion();
+        if (!state.injectDecision) {
+          restoreDefaultSuggestion();
+          state.ttsPendingMC = true;
+          triggerAppRecalc();
+        }
       }
       if ('potAtual'  in patch) state.overrides.potAtual  = (patch.potAtual==null?undefined:Number(patch.potAtual));
       if ('toCall'    in patch) state.overrides.toCall    = (patch.toCall==null?undefined:Number(patch.toCall));
