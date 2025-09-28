@@ -60,7 +60,8 @@
     lastPotOdds: null,
     _cfg: null,
     overrides: { potAtual: undefined, toCall: undefined, equityPct: undefined, rakePct: undefined, rakeCap: undefined },
-    observers: []
+    observers: [],
+    lastSuggestSnapshot: null  // <<< guarda o HTML original do #suggestOut para restaurar ao desligar
   };
 
   // ===== Utils
@@ -215,6 +216,10 @@
     // Eventos
     injCb.addEventListener('change', function(){
       state.injectDecision = !!injCb.checked;
+      if (!state.injectDecision) {
+        // desligou → restaura imediatamente e dispara recálculo do app
+        restoreDefaultSuggestion();
+      }
       updateSuggestion(cfg);
     });
     if (pots.potInput) pots.potInput.addEventListener('input', function(){
@@ -231,10 +236,15 @@
     return { injCb: injCb, potInput: pots.potInput, callInput: pots.callInput };
   }
 
-  // ===== Patch: injetar decisão no bloco principal (“APOSTE POR VALOR”)
+  // ===== Patch: injetar e restaurar no bloco principal (“APOSTE POR VALOR”)
   function injectDecisionIntoMain(result, ctx){
     var host = document.getElementById('suggestOut');
     if (!host) return;
+
+    // salva snapshot original apenas uma vez por sessão ON
+    if (state.lastSuggestSnapshot == null) {
+      state.lastSuggestSnapshot = host.innerHTML;
+    }
 
     var cls = (result.rec === 'Call') ? 'good' : (result.rec === 'Fold' ? 'bad' : 'warn');
     var glow = (result.rec === 'Call');
@@ -248,6 +258,27 @@
         </div>
       </div>
     `;
+  }
+
+  function restoreDefaultSuggestion(){
+    var host = document.getElementById('suggestOut');
+    if (host && state.lastSuggestSnapshot != null){
+      host.innerHTML = state.lastSuggestSnapshot;
+    }
+    state.lastSuggestSnapshot = null;
+    triggerAppRecalc(); // força o app a recalcular e repintar o Monte Carlo
+  }
+
+  // tenta acionar o recálculo padrão do app sem tocar no app.js
+  function triggerAppRecalc(){
+    try{
+      var btn = document.getElementById('btnEqCalc');
+      if (btn) { btn.click(); return; }
+      var selOpp = document.getElementById('eqOpp');
+      if (selOpp) { selOpp.dispatchEvent(new Event('change', {bubbles:true})); return; }
+      var selTrials = document.getElementById('eqTrials');
+      if (selTrials) { selTrials.dispatchEvent(new Event('change', {bubbles:true})); return; }
+    }catch(_){}
   }
 
   // ===== Render
@@ -282,8 +313,9 @@
     // Se a chavinha estiver ligada, injeta no bloco principal (substitui “Aposte por valor”)
     if (state.injectDecision) {
       injectDecisionIntoMain(result, ctx);
-      // Reforço pós-repaint do app, se houver:
+      // Reforços para competir com re-renders do app:
       setTimeout(function(){ injectDecisionIntoMain(result, ctx); }, 0);
+      setTimeout(function(){ injectDecisionIntoMain(result, ctx); }, 60);
     }
 
     // Opcional: também avisa quem estiver ouvindo o texto padrão
@@ -301,23 +333,27 @@
     return decideVsRaise(potAtual, toCall, equity, rakePct, rakeCap);
   }
 
-  function updateSuggestion(cfg){
+  function buildCtxFromCurrent(cfg){
     var st = cfg.readState();
+    return {
+      potAtual: (state.overrides.potAtual != null ? state.overrides.potAtual : st.potAtual),
+      toCall:   (state.overrides.toCall   != null ? state.overrides.toCall   : st.toCall),
+      equityPct:(state.overrides.equityPct!= null ? state.overrides.equityPct: st.equityPct),
+      rakePct:  (state.overrides.rakePct  != null ? state.overrides.rakePct  : st.rakePct),
+      rakeCap:  (state.overrides.rakeCap  != null ? state.overrides.rakeCap  : st.rakeCap)
+    };
+  }
 
-    // overrides dos inputs em fichas
-    var potAtual = (state.overrides.potAtual != null ? state.overrides.potAtual : st.potAtual);
-    var toCall   = (state.overrides.toCall   != null ? state.overrides.toCall   : st.toCall);
-    var equity   = (state.overrides.equityPct!= null ? state.overrides.equityPct: st.equityPct);
-    var rakePct  = (state.overrides.rakePct  != null ? state.overrides.rakePct  : st.rakePct);
-    var rakeCap  = (state.overrides.rakeCap  != null ? state.overrides.rakeCap  : st.rakeCap);
-
-    var ctx = { potAtual, toCall, equityPct: equity, rakePct, rakeCap };
+  function updateSuggestion(cfg){
+    var ctx = buildCtxFromCurrent(cfg);
     renderPotOddsUI(ctx, cfg);
   }
 
-  // Observa UI para reagir ao Monte Carlo
+  // Observa UI para reagir ao Monte Carlo e ao bloco principal
   function attachDOMObservers(){
     detachDOMObservers();
+
+    // Win/Tie mudam → recalcula/injeta
     var br = document.getElementById('eqBreak');
     if (br && g.MutationObserver){
       var mo1 = new MutationObserver(function(){ if (state._cfg) updateSuggestion(state._cfg); });
@@ -332,6 +368,22 @@
       mo2.observe(bar, { attributes:true, attributeFilter:['style'] });
       state.observers.push(mo2);
     }
+
+    // O app reescreveu #suggestOut? → se a chave estiver ligada, reinjeta a nossa decisão
+    var so = document.getElementById('suggestOut');
+    if (so && g.MutationObserver){
+      var mo3 = new MutationObserver(function(){
+        if (!state.injectDecision) return;
+        if (!state._cfg) return;
+        var ctx = buildCtxFromCurrent(state._cfg);
+        var result = computeDecision(ctx);
+        injectDecisionIntoMain(result, ctx);
+      });
+      mo3.observe(so, { childList:true, subtree:true, characterData:true });
+      state.observers.push(mo3);
+    }
+
+    // pings tardios, caso o DOM re-renderize por completo
     [50, 250, 750].forEach(function(ms){
       setTimeout(function(){ if (state._cfg) updateSuggestion(state._cfg); }, ms);
     });
@@ -370,6 +422,7 @@
       if ('useDecisionInjection' in patch) {
         state.injectDecision = !!patch.useDecisionInjection;
         if (state.elements.injCb) state.elements.injCb.checked = state.injectDecision;
+        if (!state.injectDecision) restoreDefaultSuggestion();
       }
       if ('potAtual'  in patch) state.overrides.potAtual  = (patch.potAtual==null?undefined:Number(patch.potAtual));
       if ('toCall'    in patch) state.overrides.toCall    = (patch.toCall==null?undefined:Number(patch.toCall));
