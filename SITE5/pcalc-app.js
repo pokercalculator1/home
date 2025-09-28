@@ -541,9 +541,9 @@
             </span>
             <span class="lbl">Amostras:
               <select id="eqTrials" style="background:#0b1324;color:#e5e7eb;border:none;outline:0">
-                <option value="300000">300k</option>
-                <option value="500000">500k</option>
-                <option value="1000000"selected>1M</option>
+                <option value="300000">30k</option>
+                <option value="500000">50k</option>
+                <option value="100000"selected>1M</option>
               </select>
             </span>
             <span class="lbl">
