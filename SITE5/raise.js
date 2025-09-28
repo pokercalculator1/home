@@ -1,12 +1,11 @@
-// raise.js — "Tomei Raise" com Equity automática (Win + Tie/2) e calculadora em FICHAS
-// Sem tocar no app.js: lê Win/Tie da UI ou de PC.state.
+// raise.js — Pot Odds sempre visível + switch para injetar decisão (Call/Fold/Indiferente) no texto padrão
+// Lê equity (Win + Tie/2) de PC.state ou da UI sem alterar o app.js.
 // API pública:
-//   window.RAISE.init({ mountSelector, suggestSelector, onUpdateText, readState, ...opts })
-//   window.RAISE.setState(patch)                 // { tomeiRaise, potAtual, toCall, equityPct, rakePct, rakeCap }
-//   window.RAISE.getRecommendation()             // último cálculo de Pot Odds (quando ligado) ou texto padrão
-//   window.RAISE.setUsePotOdds(bool)             // liga/desliga mini calculadora
+//   RAISE.init({ mountSelector, suggestSelector, onUpdateText, ...opts })
+//   RAISE.setState({ potAtual, toCall, equityPct, rakePct, rakeCap, useDecisionInjection })
+//   RAISE.getRecommendation()   // { bePct, equityPct, rec } do último cálculo
+//   RAISE.setUsePotOdds(bool)   // mantém compat — não oculta o card
 (function (g) {
-  // ===== Config =====
   var DEFAULTS = {
     mountSelector: '#pcalc-toolbar',
     suggestSelector: '#pcalc-sugestao',
@@ -23,132 +22,97 @@
       var PC = g.PC || g.PCALC || {};
       var st = PC.state || {};
 
-      var ek  = DEFAULTS.equityKey || 'equityPct';
-      var pk  = DEFAULTS.potKey     || 'potAtual';
-      var ck  = DEFAULTS.toCallKey  || 'toCall';
-      var wk  = DEFAULTS.winKey     || 'win';
-      var tk  = DEFAULTS.tieKey     || 'tie';
-
-      // 1) equityPct direta (0..100)
-      var eqPct = toNum(st[ek]);
-
-      // 2) senão, usa win/tie do state (aceita 0..1 ou 0..100)
+      var eqPct = num(st[DEFAULTS.equityKey]); // 0..100
       if (!isFinite(eqPct)) {
-        var winS = toNum(st[wk]);
-        var tieS = toNum(st[tk]);
+        var winS = num(st[DEFAULTS.winKey]);
+        var tieS = num(st[DEFAULTS.tieKey]);
         if (isFinite(winS)) {
           if (winS > 1) winS = winS/100;
           if (isFinite(tieS)) tieS = (tieS > 1 ? tieS/100 : tieS);
-          var eqFromState = (winS + (isFinite(tieS)? tieS/2 : 0)) * 100;
-          eqPct = clamp01pct(eqFromState);
+          eqPct = clamp01pct((winS + (isFinite(tieS)? tieS/2 : 0))*100);
         }
       }
-
-      // 3) se ainda não deu, extrai da UI (DOM) — Win + Tie/2
       if (!isFinite(eqPct)) {
-        var domEq = extractEquityFromDOM(); // % (0..100)
+        var domEq = extractEquityFromDOM(); // 0..100
         if (isFinite(domEq)) eqPct = domEq;
       }
-
-      // 4) fallback
       if (!isFinite(eqPct)) eqPct = 50;
 
-      // Pot/ToCall em fichas
-      var potAtual = toNum(st[pk]);   if (!isFinite(potAtual)) potAtual = 0;
-      var toCall   = toNum(st[ck]);   if (!isFinite(toCall))   toCall   = 0;
+      var potAtual = num(st[DEFAULTS.potKey]); if(!isFinite(potAtual)) potAtual=0;
+      var toCall   = num(st[DEFAULTS.toCallKey]); if(!isFinite(toCall)) toCall=0;
 
       return {
         potAtual: potAtual,
         toCall: toCall,
         equityPct: eqPct,
-        rakePct: toNum(st.rakePct) || 0,
+        rakePct: num(st.rakePct) || 0,
         rakeCap: (st.rakeCap != null ? Number(st.rakeCap) : Infinity)
       };
     },
     onUpdateText: null
   };
 
-  // ===== Estado =====
   var state = {
     mounted: false,
     elements: {},
-    tomeiRaise: false,   // agora controlado via botão toggle
-    usePotOdds: true,
+    usePotOdds: true,          // compat; não oculta o card
+    injectDecision: false,     // <<< switch (cinza/verde): se true injeta a decisão no texto padrão
     lastPotOdds: null,
     _cfg: null,
     overrides: { potAtual: undefined, toCall: undefined, equityPct: undefined, rakePct: undefined, rakeCap: undefined },
     observers: []
   };
 
-  // ===== Utils =====
+  // ===== Utils
   function $(sel, root){ return (root||document).querySelector(sel); }
   function el(tag, cls){ var x=document.createElement(tag); if(cls) x.className=cls; return x; }
-  function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
+  function num(x){ var n=Number(x); return isFinite(n)?n:NaN; }
   function clamp01pct(p){ return Math.max(0, Math.min(100, +Number(p).toFixed(1))); }
-  function toNum(x){ var n = Number(x); return isFinite(n) ? n : NaN; }
 
-  // Parser robusto: "16.1", "16,1", "1.234,5", "1,234.5"
+  // parser pt/intl: “16.1”, “16,1”, “1.234,5”, “1,234.5”
   function parseFlexibleNumber(raw){
     if(raw==null) return NaN;
-    var s = String(raw).trim();
-    if(!s) return NaN;
-    var hasDot = s.indexOf('.') >= 0;
-    var hasComma = s.indexOf(',') >= 0;
-
+    var s = String(raw).trim(); if(!s) return NaN;
+    var hasDot = s.includes('.'), hasComma = s.includes(',');
     if (hasDot && hasComma){
-      // último separador é o decimal
-      if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
-        s = s.replace(/\./g,'').replace(',', '.'); // 1.234,5 → 1234.5
-      } else {
-        s = s.replace(/,/g,''); // 1,234.5 → 1234.5
-      }
-    } else if (hasComma){
-      s = s.replace(',', '.');  // 16,1 → 16.1
-    }
-    var n = parseFloat(s);
-    return isFinite(n) ? n : NaN;
+      if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g,'').replace(',', '.');
+      else s = s.replace(/,/g,'');
+    } else if (hasComma){ s = s.replace(',', '.'); }
+    var n = parseFloat(s); return isFinite(n)? n : NaN;
   }
   function matchPct(text, re){
     var m = (text||'').match(re);
     if (!m) return NaN;
     return parseFlexibleNumber(m[1]);
   }
-
-  // Extrai equity da UI: Win + Tie/2
   function extractEquityFromDOM(){
-    // 1) #eqBreak: "Win: X% ... Tie: Y% ..."
     var br = document.getElementById('eqBreak');
     if (br) {
       var txt = br.textContent || '';
       var win = matchPct(txt, /Win:\s*([\d.,]+)%/i);
       var tie = matchPct(txt, /Tie:\s*([\d.,]+)%/i);
       if (isFinite(win)) {
-        var eq = win + (isFinite(tie) ? tie/2 : 0);
+        var eq = win + (isFinite(tie)? tie/2 : 0);
         return clamp01pct(eq);
       }
     }
-    // 2) barra de Win
     var bar = document.getElementById('eqBarWin');
     if (bar && bar.style && bar.style.width){
       var w = parseFlexibleNumber((bar.style.width||'').replace('%',''));
-      if (isFinite(w)) return clamp01pct(w); // se não tiver Tie na UI, melhor que nada
+      if (isFinite(w)) return clamp01pct(w);
     }
-    // 3) varredura geral (fallback)
     var nodes = Array.from(document.querySelectorAll('div,span,small,p,li,td,th'));
     var node = nodes.find(n => /Win:\s*[\d.,]+%/i.test(n.textContent||''));
     if (node){
       var t = node.textContent || '';
-      var win2 = matchPct(t, /Win:\s*([\d.,]+)%/i);
-      var tie2 = matchPct(t, /Tie:\s*([\d.,]+)%/i);
-      if (isFinite(win2)) {
-        var eq2 = win2 + (isFinite(tie2) ? tie2/2 : 0);
-        return clamp01pct(eq2);
-      }
+      var w2 = matchPct(t, /Win:\s*([\d.,]+)%/i);
+      var t2 = matchPct(t, /Tie:\s*([\d.,]+)%/i);
+      if (isFinite(w2)) return clamp01pct(w2 + (isFinite(t2)? t2/2 : 0));
     }
     return NaN;
   }
 
-  // Pot Odds
+  // ===== Pot Odds/Decisão
   function potOddsBE(potAtual, toCall, rakePct, rakeCap){
     potAtual = Number(potAtual||0);
     toCall   = Number(toCall||0);
@@ -178,6 +142,7 @@
     };
   }
 
+  // ===== Estilos (inclui a “chavinha” cinza/verde)
   function ensureCSS(){
     if ($('#raise-css-hook')) return;
     var css = ''
@@ -188,17 +153,19 @@
       + '.input-modern input{width:110px;padding:.48rem .6rem;border:1px solid #334155;'
         + 'background:#0f172a;color:#e5e7eb;border-radius:.6rem;outline:0}\n'
       + '.raise-potodds.card{background:#0b1324;border:1px solid #22304a;border-radius:10px;padding:10px;line-height:1.2}\n'
-      + '.toggle-btn{display:inline-flex;align-items:center;gap:.5rem;border:1px solid #334155;'
-        + 'background:#0f172a;color:#e5e7eb;border-radius:.7rem;padding:.5rem .75rem;cursor:pointer;user-select:none}\n'
-      + '.toggle-btn.on{background:#14532d;border-color:#166534}\n'
-      + '.toggle-dot{width:10px;height:10px;border-radius:50%;background:#475569}\n'
-      + '.toggle-btn.on .toggle-dot{background:#10b981}\n';
+      /* switch iOS-like */
+      + '.rsw{position:relative;display:inline-block;width:48px;height:26px}\n'
+      + '.rsw input{opacity:0;width:0;height:0}\n'
+      + '.slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#475569;border-radius:26px;transition:.25s}\n'
+      + '.slider:before{position:absolute;content:"";height:20px;width:20px;left:3px;top:3px;background:#0b1324;border-radius:50%;transition:.25s}\n'
+      + '.rsw input:checked + .slider{background:#22c55e}\n'
+      + '.rsw input:checked + .slider:before{transform:translateX(22px)}\n';
     var style = el('style'); style.id='raise-css-hook';
     style.appendChild(document.createTextNode(css));
     document.head.appendChild(style);
   }
 
-  // ===== UI helpers =====
+  // ===== UI
   function buildPotInputs(initialPot, initialCall){
     var potWrap = el('div','field');
     var potLbl  = el('span','fld-label'); potLbl.textContent='Pot (fichas):';
@@ -218,40 +185,38 @@
     return { potWrap, callWrap, potInput: potInp, callInput: callInp };
   }
 
-  // ===== UI / Montagem =====
   function renderControls(cfg){
     var mount = $(cfg.mountSelector);
     if (!mount) return null;
 
     var bar = el('div', 'raise-bar');
 
-    // (1) Botão Toggle: Tomei Raise
-    var raiseWrap = el('div','field');
-    var lblTxt = el('span','fld-label'); lblTxt.textContent = 'Situação:';
-    var btn = el('button','toggle-btn'); btn.type='button';
-    btn.innerHTML = '<span class="toggle-dot"></span><span id="tg-label">Sem Raise</span>';
-    raiseWrap.appendChild(lblTxt); raiseWrap.appendChild(btn);
+    // (1) Switch: injetar decisão no texto padrão (cinza → verde)
+    var injWrap = el('div','field');
+    var injLbl  = el('span','fld-label'); injLbl.textContent = 'Decisão do Raise:';
+    var injRsw  = el('label','rsw');
+    var injCb   = document.createElement('input'); injCb.type='checkbox'; injCb.id='rsw-inject';
+    var injSl   = el('span','slider');
+    injRsw.appendChild(injCb); injRsw.appendChild(injSl);
+    injWrap.appendChild(injLbl); injWrap.appendChild(injRsw);
 
-    // (2) Calculadora: Pot / A pagar (FICHAS)
-    var st0   = cfg.readState();
-    var pots  = buildPotInputs(st0.potAtual, st0.toCall);
+    // (2) Pot/A pagar (fichas)
+    var st0 = cfg.readState();
+    var pots= buildPotInputs(st0.potAtual, st0.toCall);
 
-    // Montagem
-    bar.appendChild(raiseWrap);
+    bar.appendChild(injWrap);
     bar.appendChild(pots.potWrap);
     bar.appendChild(pots.callWrap);
     mount.appendChild(bar);
 
-    // Estado inicial do botão
-    syncToggleVisual(btn, state.tomeiRaise);
+    // Estado inicial do switch
+    injCb.checked = !!state.injectDecision;
 
     // Eventos
-    btn.addEventListener('click', function(){
-      state.tomeiRaise = !state.tomeiRaise;
-      syncToggleVisual(btn, state.tomeiRaise);
+    injCb.addEventListener('change', function(){
+      state.injectDecision = !!injCb.checked;
       updateSuggestion(cfg);
     });
-
     if (pots.potInput) pots.potInput.addEventListener('input', function(){
       var v = Number(pots.potInput.value||0);
       state.overrides.potAtual = isFinite(v)?v:0;
@@ -263,75 +228,48 @@
       updateSuggestion(cfg);
     });
 
-    return {
-      bar: bar,
-      toggleBtn: btn,
-      potInput: pots.potInput,
-      callInput: pots.callInput
-    };
+    return { injCb: injCb, potInput: pots.potInput, callInput: pots.callInput };
   }
 
-  function syncToggleVisual(btn, on){
-    if(!btn) return;
-    btn.classList.toggle('on', !!on);
-    var lab = btn.querySelector('#tg-label');
-    if(lab) lab.textContent = on ? 'Tomei Raise' : 'Sem Raise';
-  }
-
-  // ===== Render =====
   function renderPotOddsUI(ctx, cfg){
     var out = $(cfg.suggestSelector);
     if(!out) return;
+    var result = computeDecision(ctx);
+    state.lastPotOdds = result;
 
+    out.innerHTML = `
+      <div class="raise-potodds card">
+        <div style="font-weight:700;margin-bottom:6px">Pot Odds (vs Raise) — Compacto</div>
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
+          <div>Pot (fichas)</div><div><b>${ctx.potAtual ? ctx.potAtual.toFixed(0) : '—'}</b></div>
+          <div>A pagar (fichas)</div><div><b>${ctx.toCall ? ctx.toCall.toFixed(0) : '—'}</b></div>
+          <div>BE (pot odds)</div><div><b>${result.bePct}%</b></div>
+          <div>Equity (MC)</div><div><b>${result.equityPct}%</b></div>
+          <div>Recomendação</div>
+          <div><span id="po-rec" style="padding:2px 8px;border-radius:999px;border:1px solid #22304a">${result.rec}</span></div>
+        </div>
+      </div>`;
+    var pill = out.querySelector('#po-rec');
+    if (pill){
+      var c = result.rec === 'Call' ? '#10b981' : (result.rec === 'Fold' ? '#ef4444' : '#f59e0b');
+      pill.style.background = c + '22';
+      pill.style.borderColor = c + '66';
+      pill.style.color = '#e5e7eb';
+    }
+
+    // Se a chavinha estiver ligada, injeta no texto padrão do app
+    if (state.injectDecision && typeof DEFAULTS.onUpdateText === 'function'){
+      DEFAULTS.onUpdateText(`Raise Equity: ${result.rec} (BE ${result.bePct}% | EQ ${result.equityPct}%)`);
+    }
+  }
+
+  function computeDecision(ctx){
     var potAtual = Number(ctx.potAtual || 0);
     var toCall   = Number(ctx.toCall   || 0);
     var equity   = Number(ctx.equityPct!= null ? ctx.equityPct : 50);
     var rakePct  = Number(ctx.rakePct  || 0);
     var rakeCap  = (ctx.rakeCap===Infinity || ctx.rakeCap==null) ? Infinity : Number(ctx.rakeCap);
-
-    var result = decideVsRaise(potAtual, toCall, equity, rakePct, rakeCap);
-    state.lastPotOdds = result;
-
-    if (DEFAULTS.potOddsCompact) {
-      out.innerHTML = `
-        <div class="raise-potodds card">
-          <div style="font-weight:700;margin-bottom:6px">Pot Odds (vs Raise) — Compacto</div>
-          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
-            <div>Pot (fichas)</div><div><b>${potAtual ? potAtual.toFixed(0) : '—'}</b></div>
-            <div>A pagar (fichas)</div><div><b>${toCall ? toCall.toFixed(0) : '—'}</b></div>
-            <div>BE (pot odds)</div><div><b>${result.bePct}%</b></div>
-            <div>Equity (MC)</div><div><b>${result.equityPct}%</b></div>
-            <div>Recomendação</div>
-            <div><span id="po-rec" style="padding:2px 8px;border-radius:999px;border:1px solid #22304a">${result.rec}</span></div>
-          </div>
-        </div>
-      `;
-      var pill = out.querySelector('#po-rec');
-      if (pill){
-        var c = result.rec === 'Call' ? '#10b981' : (result.rec === 'Fold' ? '#ef4444' : '#f59e0b');
-        pill.style.background = c + '22';
-        pill.style.borderColor = c + '66';
-        pill.style.color = '#e5e7eb';
-      }
-      if(typeof DEFAULTS.onUpdateText === 'function'){
-        DEFAULTS.onUpdateText(`PotOdds: BE ${result.bePct}% | EQ ${result.equityPct}% → ${result.rec}`);
-      }
-      return;
-    }
-  }
-
-  function renderOff(ctx, cfg){
-    var out = $(cfg.suggestSelector);
-    if(!out) return;
-    out.innerHTML = `
-      <div class="raise-potodds card">
-        <div style="font-weight:700;margin-bottom:6px">Sem raise</div>
-        <div class="mut">Ative <b>"Tomei Raise"</b> para ver Pot Odds desta mão.</div>
-      </div>
-    `;
-    if(typeof DEFAULTS.onUpdateText === 'function'){
-      DEFAULTS.onUpdateText('Sem raise — Pot Odds desligado');
-    }
+    return decideVsRaise(potAtual, toCall, equity, rakePct, rakeCap);
   }
 
   function updateSuggestion(cfg){
@@ -344,46 +282,27 @@
     var rakePct  = (state.overrides.rakePct  != null ? state.overrides.rakePct  : st.rakePct);
     var rakeCap  = (state.overrides.rakeCap  != null ? state.overrides.rakeCap  : st.rakeCap);
 
-    var ctx = {
-      tomeiRaise: state.tomeiRaise,
-      potAtual: potAtual,
-      toCall: toCall,
-      equityPct: equity,
-      rakePct: rakePct,
-      rakeCap: rakeCap
-    };
-
-    if (ctx.tomeiRaise && state.usePotOdds){
-      renderPotOddsUI(ctx, cfg);
-    } else {
-      renderOff(ctx, cfg);
-    }
+    var ctx = { potAtual, toCall, equityPct: equity, rakePct, rakeCap };
+    renderPotOddsUI(ctx, cfg);
   }
 
-  // Observa a UI do app para reagir ao término do Monte Carlo
+  // Observa UI para reagir ao Monte Carlo
   function attachDOMObservers(){
     detachDOMObservers();
-
     var br = document.getElementById('eqBreak');
     if (br && g.MutationObserver){
-      var mo1 = new MutationObserver(function(){
-        if (state._cfg) updateSuggestion(state._cfg);
-      });
+      var mo1 = new MutationObserver(function(){ if (state._cfg) updateSuggestion(state._cfg); });
       mo1.observe(br, { childList:true, subtree:true, characterData:true });
       state.observers.push(mo1);
     }
-
     var bar = document.getElementById('eqBarWin');
     if (bar && g.MutationObserver){
       var mo2 = new MutationObserver(function(muts){
-        var refresh = muts.some(m => m.attributeName === 'style');
-        if (refresh && state._cfg) updateSuggestion(state._cfg);
+        if (muts.some(m => m.attributeName === 'style') && state._cfg) updateSuggestion(state._cfg);
       });
       mo2.observe(bar, { attributes:true, attributeFilter:['style'] });
       state.observers.push(mo2);
     }
-
-    // pings tardios, caso o DOM re-renderize por completo
     [50, 250, 750].forEach(function(ms){
       setTimeout(function(){ if (state._cfg) updateSuggestion(state._cfg); }, ms);
     });
@@ -393,16 +312,15 @@
     state.observers = [];
   }
 
-  // ===== API pública =====
+  // ===== API
   var API = {
     init: function(userCfg){
       if (state.mounted) return;
       ensureCSS();
       var cfg = {};
       userCfg = userCfg || {};
-      var k;
-      for (k in DEFAULTS) cfg[k] = DEFAULTS[k];
-      for (k in userCfg)   cfg[k] = userCfg[k];
+      for (var k in DEFAULTS) cfg[k] = DEFAULTS[k];
+      for (var k2 in userCfg)   cfg[k2] = userCfg[k2];
 
       var els = renderControls(cfg);
       if (!els){
@@ -419,33 +337,26 @@
 
     setState: function(patch){
       patch = patch || {};
-      if ('tomeiRaise' in patch) state.tomeiRaise = !!patch.tomeiRaise;
 
-      // Overrides aceitos (em fichas)
+      if ('useDecisionInjection' in patch) {
+        state.injectDecision = !!patch.useDecisionInjection;
+        if (state.elements.injCb) state.elements.injCb.checked = state.injectDecision;
+      }
       if ('potAtual'  in patch) state.overrides.potAtual  = (patch.potAtual==null?undefined:Number(patch.potAtual));
       if ('toCall'    in patch) state.overrides.toCall    = (patch.toCall==null?undefined:Number(patch.toCall));
       if ('equityPct' in patch) state.overrides.equityPct = (patch.equityPct==null?undefined:Number(patch.equityPct));
       if ('rakePct'   in patch) state.overrides.rakePct   = (patch.rakePct==null?undefined:Number(patch.rakePct));
       if ('rakeCap'   in patch) state.overrides.rakeCap   = (patch.rakeCap==null?undefined:Number(patch.rakeCap));
 
-      // sync botão (se existir)
-      var els = state.elements || {};
-      if (els.toggleBtn) syncToggleVisual(els.toggleBtn, state.tomeiRaise);
-      if (els.potInput && state.overrides.potAtual!=null)  els.potInput.value  = String(state.overrides.potAtual||0);
-      if (els.callInput && state.overrides.toCall!=null)    els.callInput.value = String(state.overrides.toCall||0);
-
       if (state._cfg) updateSuggestion(state._cfg);
     },
 
     getRecommendation: function(){
-      if (state.usePotOdds && state.lastPotOdds){
-        return { type: 'potodds', data: state.lastPotOdds };
-      }
-      return 'Sem raise — Pot Odds desligado';
+      return state.lastPotOdds || null;
     },
 
     setUsePotOdds: function(flag){
-      state.usePotOdds = !!flag;
+      state.usePotOdds = !!flag; // compat
       if (state._cfg) updateSuggestion(state._cfg);
     }
   };
