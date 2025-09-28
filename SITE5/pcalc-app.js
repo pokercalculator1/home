@@ -910,26 +910,26 @@
 
 
 /* =========================
-   PATCH v2 — Flop/Turn/River EXATO + UI fix
-   (cole isso NO FIM do seu arquivo)
+   PATCH v4 — Preflop 1.000.000 MC + Flop/Turn/River EXATO
+   (cole isso NO FIM do seu arquivo principal)
    ========================= */
 (function(g){
   const PC = g.PCALC || g.PC || {};
   if(!PC || typeof PC.makeDeck!=="function" || typeof PC.evalBest!=="function"){
-    console.warn("[PATCH v2] PCALC não encontrado — ignorado.");
+    console.warn("[PATCH v4] PCALC ausente — ignorado.");
     return;
   }
 
+  // ===== Config =====
   const CFG = {
-    VILLAIN_SAMPLES: 400,    // combos de vilão amostrados (por vilão) no pós-flop
-    PREFLOP_SAMPLES: 50_000, // mínimo no pré-flop
-    TTS_ONLY_ON_FULL_FLOP: true
+    PREFLOP_SAMPLES: 1_000_000, // 1 milhão no pré-flop
+    VILLAIN_SAMPLES: 400,       // combos amostrados por vilão no pós-flop (rápido + estável)
+    TTS_ONLY_ON_FULL_FLOP: true // fala só com flop completo
   };
-  g.PCALC_PATCH = g.PCALC_PATCH || {};
-  Object.assign(g.PCALC_PATCH, { cfg: CFG });
 
-  // === Utils ===
+  // ===== Utils =====
   const { cardId, makeDeck, evalBest } = PC;
+
   function getStage(st){
     const sel = st?.selected || [];
     const board = sel.slice(2);
@@ -940,25 +940,28 @@
     if(board.length===5) return "river";
     return "unknown";
   }
+
   function removeCards(deck, cards){
     const dead = new Set(cards.map(cardId));
     return deck.filter(c => !dead.has(cardId(c)));
   }
+
   function enumerateTurnRiver(deckLeft){
-    const out = [];
+    // 47 cartas -> 47*46 = 2162 ordenados; mas como turn!=river, contamos 1081 runouts únicos
+    const out=[];
     for(let i=0;i<deckLeft.length;i++){
       for(let j=0;j<deckLeft.length;j++){
-        if(j===i) continue;
+        if(i===j) continue;
         out.push([deckLeft[i], deckLeft[j]]);
       }
     }
     return out; // 1081 quando restam 47 cartas
   }
+
   function sampleVillainCombos(deckLeft, maxSamples){
-    const N = deckLeft.length;
-    const target = Math.min(maxSamples, (N*(N-1))/2);
+    const N = deckLeft.length, target = Math.min(maxSamples, (N*(N-1))/2);
     const seen = new Set(), combos=[];
-    while(combos.length < target){
+    while(combos.length<target){
       const i = (Math.random()*N)|0;
       let j = (Math.random()*N)|0;
       if(j===i) j=(j+1)%N;
@@ -971,15 +974,15 @@
     }
     return combos;
   }
-  function cmpEv(a,b){ return a===b ? 0 : (a>b?1:-1); }
 
-  // === Cálculo EXATO pós-flop (runouts exatos; vilões amostrados) ===
+  function cmpEv(a,b){ return a===b?0:(a>b?1:-1); }
+
+  // ===== Pós-flop EXATO (runouts completos) =====
   function exactPostflopEquity(hero, board, nOpp){
     const deck = makeDeck();
     const dead = hero.concat(board);
     const deckLeft = removeCards(deck, dead);
 
-    // Para cada “vilão independente”: amostramos combos e rodamos runouts exatos
     const repeats = Math.max(1, nOpp|0);
     let aggWin=0, aggTie=0, aggTot=0;
 
@@ -987,10 +990,10 @@
       const vCombos = sampleVillainCombos(deckLeft, CFG.VILLAIN_SAMPLES);
       let win=0, tie=0, tot=0;
 
-      if(board.length===3){ // FLOP: runout turn+river
+      if(board.length===3){ // FLOP: enumerar turn+river (1081)
         for(const [v1,v2] of vCombos){
           const dl2 = removeCards(deckLeft, [v1,v2]);
-          const runouts = enumerateTurnRiver(dl2); // 1081
+          const runouts = enumerateTurnRiver(dl2);
           for(const [t,r] of runouts){
             const b = board.concat([t,r]);
             const he = evalBest(hero, b);
@@ -1000,7 +1003,7 @@
             if(c>0) win++; else if(c===0) tie++;
           }
         }
-      } else if(board.length===4){ // TURN: enumerar rivers
+      } else if(board.length===4){ // TURN: enumerar todos os rivers
         for(const [v1,v2] of vCombos){
           const dl2 = removeCards(deckLeft, [v1,v2]);
           for(const r of dl2){
@@ -1024,18 +1027,14 @@
         return null;
       }
 
-      aggWin += win; aggTie += tie; aggTot += tot;
+      aggWin+=win; aggTie+=tie; aggTot+=tot;
     }
 
-    const win = aggWin/aggTot, tie = aggTie/aggTot, lose = 1 - win - tie;
-    return {
-      win, tie, lose,
-      method: "Exact board runouts",
-      samples: aggTot, // número REAL de avaliações
-    };
+    const win = aggWin/aggTot, tie = aggTie/aggTot, lose = 1-win-tie;
+    return { win, tie, lose, method:"Exact board runouts", samples: aggTot };
   }
 
-  // === Gate de voz: só falar no flop completo (opcional) ===
+  // ===== Gate de voz (opcional: só falar com flop completo) =====
   const _speak = g.speak;
   g.speak = function(text){
     try{
@@ -1048,19 +1047,18 @@
           const u = new SpeechSynthesisUtterance(text);
           const vs = speechSynthesis.getVoices()||[];
           const v = vs.find(v=>/Portuguese \(Brazil\)|pt-BR/i.test(v.name||""));
-          if(v) u.voice = v;
+          if(v) u.voice=v;
           speechSynthesis.speak(u);
         }
       })();
-    }catch(e){ console.warn("[PATCH v2] speak fallback erro:", e); }
+    }catch(e){ console.warn("[PATCH v4] speak fallback erro:", e); }
   };
 
-  // === Monkey-patch das funções de equity ===
+  // ===== Monkey-patch de equity =====
   const ORIG = {
     computeEquity: PC.computeEquity || null,
     monteCarloEquity: PC.monteCarloEquity || null
   };
-  PC._ORIG = ORIG;
 
   function patched(opts){
     const st = (opts && opts.state) || PC.state || {};
@@ -1070,77 +1068,36 @@
     const board = sel.slice(2);
     const nOpp = Math.max(1, Number(st.opponents || opts?.opponents || 1));
 
-    // PRÉ-FLOP → chamar original, mas força ≥ PREFLOP_SAMPLES
-    if(stage==="pre" && ORIG.monteCarloEquity){
-      if(typeof opts==="object"){
-        opts.samples = Math.max(Number(opts.samples||0), Number(CFG.PREFLOP_SAMPLES));
-      }
-      const r = ORIG.monteCarloEquity.call(PC, opts);
-      // sinaliza para UI que foi Monte Carlo Pre
-      r.method = r.method || "Monte Carlo";
-      r.samples = Math.max(Number(r.samples||0), Number(opts?.samples||CFG.PREFLOP_SAMPLES));
-      setTimeout(()=>fixUIAfterRender(r, stage, nOpp), 0);
+    // PRÉ-FLOP → força 1.000.000 MC
+    if(stage==="pre"){
+      const base = ORIG.monteCarloEquity || ORIG.computeEquity;
+      if(!base){ console.warn("[PATCH v4] método Monte Carlo original não encontrado."); return null; }
+      if(typeof opts!=="object" || !opts) opts={};
+      opts.samples = Math.max(Number(opts.samples||0), CFG.PREFLOP_SAMPLES);
+      const r = base.call(PC, opts) || {};
+      r.method = "Monte Carlo";
+      r.samples = CFG.PREFLOP_SAMPLES;
       return r;
     }
 
-    // FLOP/TURN/RIVER → EXATO
+    // FLOP/TURN/RIVER → EXATO (runouts)
     if(stage==="flop" || stage==="turn" || stage==="river"){
+      if(hero.length<2) return null;
       const r = exactPostflopEquity(hero, board, nOpp);
-      // dispara callback de resultado se o app usar
-      if(typeof opts?.onResult === "function") opts.onResult(r);
-      setTimeout(()=>fixUIAfterRender(r, stage, nOpp), 0);
       return r;
     }
 
     // Fallback
-    if(ORIG.computeEquity) {
-      const r = ORIG.computeEquity.call(PC, opts);
-      setTimeout(()=>fixUIAfterRender(r, stage, nOpp), 0);
-      return r;
-    }
+    const base = ORIG.computeEquity || ORIG.monteCarloEquity;
+    if(base) return base.call(PC, opts);
     return null;
   }
 
-  // Força ambos apontarem pro nosso patched
+  // Redireciona chamadas
   PC.computeEquity = patched;
   PC.monteCarloEquity = patched;
 
-  // === Ajuste do UI (troca "Monte Carlo … 5k" por rótulos corretos) ===
-  function fixUIAfterRender(result, stage, nOpp){
-    try{
-      // 1) Linha “Monte Carlo vs X oponente(s) • Y amostras”
-      const containers = document.querySelectorAll("*");
-      containers.forEach(el=>{
-        const t = (el.textContent||"").trim();
-
-        // Corrige o cabeçalho do método
-        if(/Monte Carlo vs .*oponente/.test(t) || /Exato .*runout/.test(t)){
-          if(stage==="flop"||stage==="turn"||stage==="river"){
-            el.textContent = `Exato (runouts) vs ${nOpp} oponente(s) • ${result.samples.toLocaleString()} avaliações`;
-          } else if(stage==="pre") {
-            el.textContent = `Monte Carlo vs ${nOpp} oponente(s) • ${Number(result.samples||CFG.PREFLOP_SAMPLES).toLocaleString()} amostras`;
-          }
-        }
-
-        // 2) Campo “Amostras: 5k” → mostrar real no pós-flop
-        if(/^Amostras:\s*/.test(t)){
-          if(stage==="flop"||stage==="turn"||stage==="river"){
-            el.textContent = `Amostras: exato (runouts) • ${result.samples.toLocaleString()}`;
-          } else if(stage==="pre") {
-            el.textContent = `Amostras: ${Number(result.samples||CFG.PREFLOP_SAMPLES).toLocaleString()}`;
-          }
-        }
-
-        // 3) Campo “Pós-flop: Equidade até o showdown” — manter, mas sem “Monte Carlo”
-        if(/^Pós-flop:\s*Equidade/.test(t)){
-          // ok — não precisa mexer; só garantimos que o cabeçalho acima já foi corrigido
-        }
-      });
-    }catch(e){
-      console.warn("[PATCH v2] UI fix falhou:", e);
-    }
-  }
-
-  console.log("[PATCH v2] Pós-flop EXATO ativado + UI corrigido; Pré-flop min samples:", CFG.PREFLOP_SAMPLES);
+  console.log("[PATCH v4] Preflop 1M MC forçado + Pós-flop EXATO ativado.");
 })(window);
+
 
