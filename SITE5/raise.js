@@ -18,7 +18,7 @@
       var PC = g.PC || g.PCALC || {};
       var st = PC.state || {};
 
-      // equity: primeiro equityPct (%), senão Win+Tie/2
+      // equity: primeiro equityPct (%), senão Win+Tie/2; senão tenta DOM; senão 50
       var eqPct = num(st[DEFAULTS.equityKey]); // 0..100
       if (!isFinite(eqPct)) {
         var winS = num(st[DEFAULTS.winKey]);
@@ -58,8 +58,10 @@
     overrides: { potAtual: undefined, toCall: undefined, equityPct: undefined, rakePct: undefined, rakeCap: undefined },
     observers: [],
     lastSuggestSnapshot: null,
-    // controle para desligar automático sem restaurar
-    programmaticTurnOff: false
+    programmaticTurnOff: false, // (reserva)
+
+    // observadores dinâmicos (anexados sob demanda)
+    domObs: { eqBreak: null, eqBar: null, suggestOut: null, body: null }
   };
 
   // ===== Utils
@@ -375,41 +377,72 @@
     renderPotOddsUI(ctx, cfg);
   }
 
-  // Observadores de DOM (só atualizam o card; não falam/injetam)
-  function attachDOMObservers(){
-    detachDOMObservers();
-
+  // ===== Observadores dinâmicos: mantêm Equity (MC) sempre atualizado
+  function ensureDomObserversAttached(){
+    // Win/Tie (texto)
     var br = document.getElementById('eqBreak');
-    if (br && g.MutationObserver){
-      var mo1 = new MutationObserver(function(){ if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg); });
+    if (br && !state.domObs.eqBreak && g.MutationObserver){
+      var mo1 = new MutationObserver(function(){
+        if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
+      });
       mo1.observe(br, { childList:true, subtree:true, characterData:true });
       state.observers.push(mo1);
+      state.domObs.eqBreak = mo1;
     }
+
+    // Barra gráfica de Win
     var bar = document.getElementById('eqBarWin');
-    if (bar && g.MutationObserver){
+    if (bar && !state.domObs.eqBar && g.MutationObserver){
       var mo2 = new MutationObserver(function(muts){
         if (muts.some(m => m.attributeName === 'style') && state._cfg)
           renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
       });
       mo2.observe(bar, { attributes:true, attributeFilter:['style'] });
       state.observers.push(mo2);
+      state.domObs.eqBar = mo2;
     }
+
+    // #suggestOut (apenas sincronização do card)
     var so = document.getElementById('suggestOut');
-    if (so && g.MutationObserver){
+    if (so && !state.domObs.suggestOut && g.MutationObserver){
       var mo3 = new MutationObserver(function(){
-        // não reinjeta nem fala automaticamente — controle é via botão Enviar
+        if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
       });
       mo3.observe(so, { childList:true, subtree:true, characterData:true });
       state.observers.push(mo3);
+      state.domObs.suggestOut = mo3;
+    }
+  }
+
+  function attachDOMObservers(){
+    detachDOMObservers();
+
+    // tenta anexar imediatamente
+    ensureDomObserversAttached();
+
+    // observa o body para detectar quando #eqBreak/#eqBarWin nascem e anexar na hora
+    if (g.MutationObserver && document.body) {
+      var moBody = new MutationObserver(function(){
+        ensureDomObserversAttached();
+      });
+      moBody.observe(document.body, { childList:true, subtree:true });
+      state.observers.push(moBody);
+      state.domObs.body = moBody;
     }
 
-    [50, 250, 750].forEach(function(ms){
-      setTimeout(function(){ if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg); }, ms);
+    // pings tardios para garantir sync mesmo se algo renderizar devagar
+    [80, 300, 1200].forEach(function(ms){
+      setTimeout(function(){
+        ensureDomObserversAttached();
+        if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
+      }, ms);
     });
   }
+
   function detachDOMObservers(){
     (state.observers||[]).forEach(function(mo){ try{ mo.disconnect(); }catch(_){ } });
     state.observers = [];
+    state.domObs = { eqBreak: null, eqBar: null, suggestOut: null, body: null };
   }
 
   // ===== API
