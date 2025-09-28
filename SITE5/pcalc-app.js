@@ -77,27 +77,6 @@
     rows.sort((a,b)=>a.rank - b.rank); // 1 é melhor
     return rows.slice(0,5).map((it)=>({ label: it.label, right: `Rank ${it.rank}` }));
   }
-  // ===== Fonte única da fala: lê o que ESTÁ no #suggestOut =====
-function __updateSpeechFromSuggestOut(){
-  const host = document.getElementById('suggestOut');
-  if(!host) return '';
-  const title = host.querySelector('.decision-title')?.textContent?.trim() || '';
-  const detail = host.querySelector('.decision-detail')?.textContent?.trim() || '';
-
-  // tenta extrair um percentual do detail: "(80%)"
-  let pctWords = '';
-  const m = detail.match(/\((\d{1,3})%\)/); // captura 80 de "(80%)"
-  if(m){
-    const n = Number(m[1]);
-    if(Number.isFinite(n)) pctWords = ` ${n} por cento`;
-  }
-
-  const speech = title ? `Sugestão: ${title}.${pctWords}` : '';
-  // disponibiliza para o VOZ-GTO
-  const sugBox = document.querySelector('#pcalc-sugestao') || document.querySelector('[data-sugestao]');
-  if(sugBox) sugBox.dataset.speech = speech;
-  return speech;
-}
 
   // ========== Linha do Rank PF (só no pré-flop) ==========
   function renderPreflopRankLineInto(box){
@@ -561,13 +540,11 @@ function __updateSpeechFromSuggestOut(){
       `;
     }
 
-    if (g.TTS?.state?.enabled && g.__SPEECH_MASTER__ !== 'VOZ_GTO') {
-  const msg = PC.state.stageJustSet
-    ? `${PC.state.stageJustSet}. Sugestão: ${sugg.title}`
-    : `Sugestão: ${sugg.title}`;
-  g.TTS.speak(msg);
-  PC.state.stageJustSet = null;
-}else{
+    if(g.TTS?.state?.enabled){
+      if(PC.state.stageJustSet){
+        g.TTS.speak(`${PC.state.stageJustSet}. Sugestão: ${sugg.title}`);
+        PC.state.stageJustSet = null;
+      }else{
         g.TTS.speak(`Sugestão: ${sugg.title}`);
       }
     }
@@ -586,13 +563,11 @@ function __updateSpeechFromSuggestOut(){
         const glowG  = PC.shouldGlow(clsGto);
         if(document.getElementById('suggestOut')){
           document.getElementById('suggestOut').innerHTML = `
-        <div class="decision ${glowG ? 'glow' : ''}">
-        <div class="decision-title ${clsGto}">${act}</div>
-         <div class="decision-detail">GTO-like (${pct}%) · ${bucket} · ${feature}</div>
-         </div>
-         `;
-
-__updateSpeechFromSuggestOut();
+            <div class="decision ${glowG ? 'glow' : ''}">
+              <div class="decision-title ${clsGto}">${act}</div>
+              <div class="decision-detail">GTO-like (${pct}%) · ${bucket} · ${feature}</div>
+            </div>
+          `;
         }
       }).catch(()=>{ /* silencioso */});
     }
@@ -1140,12 +1115,8 @@ __updateSpeechFromSuggestOut();
 
   // Monta a fala priorizando a sugestão “por mão”
   function buildSpeechFromDom(){
-  const host = document.querySelector('#pcalc-sugestao') || document.querySelector('[data-sugestao]');
-  if(!host) return '';
-  // fonte única definida por __updateSpeechFromSuggestOut()
-  const ds = host.dataset?.speech;
-  return (ds && ds.trim()) ? ds.trim() : '';
-}
+    const host = document.querySelector('#pcalc-sugestao') || document.querySelector('[data-sugestao]');
+    if(!host) return '';
 
     // 1) Prioridade: nossa linha "por mão"
     const hero = host.querySelector('.hero-gto-line');
@@ -1225,4 +1196,3 @@ __updateSpeechFromSuggestOut();
   setTimeout(attachObserver, 600);
   console.info('[VOZ-GTO] ativo: leitura prioriza sugestão por mão (.hero-gto-line).');
 })(window);
-
