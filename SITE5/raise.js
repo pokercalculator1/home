@@ -1,6 +1,3 @@
-// raise.js — Pot Odds + chave de decisão com botão "Enviar"
-// Fluxo: Ligar chave → preencher Pot/A pagar → clicar "Enviar" → calcula + fala + desliga a chave.
-// Sem mexer no app.js; usa PC.state, DOM e g.TTS (se disponível).
 (function (g) {
   var DEFAULTS = {
     mountSelector: '#pcalc-toolbar',
@@ -10,38 +7,69 @@
     // chaves usuais no PC.state
     potKey: 'potAtual',
     toCallKey: 'toCall',
-    equityKey: 'equityPct', // % pronta
+    equityKey: 'equityPct', // % pronta (fallback)
     winKey: 'win',          // 0..1 ou 0..100
     tieKey: 'tie',
 
+    // ======= readState com prioridade: DOM Win/Tie > state Win/Tie > equityPct =======
     readState: function () {
       var PC = g.PC || g.PCALC || {};
       var st = PC.state || {};
 
-      // equity: primeiro equityPct (%), senão Win+Tie/2; senão tenta DOM; senão 50
-      var eqPct = num(st[DEFAULTS.equityKey]); // 0..100
-      if (!isFinite(eqPct)) {
-        var winS = num(st[DEFAULTS.winKey]);
-        var tieS = num(st[DEFAULTS.tieKey]);
-        if (isFinite(winS)) {
-          if (winS > 1) winS = winS/100;
-          if (isFinite(tieS)) tieS = (tieS > 1 ? tieS/100 : tieS);
-          eqPct = clamp01pct((winS + (isFinite(tieS)? tieS/2 : 0))*100);
+      var ek  = DEFAULTS.equityKey || 'equityPct';
+      var pk  = DEFAULTS.potKey     || 'potAtual';
+      var tk  = DEFAULTS.toCallKey  || 'toCall';
+      var wk  = DEFAULTS.winKey     || 'win';
+      var tk2 = DEFAULTS.tieKey     || 'tie';
+
+      function parseFlex(x){
+        if(x==null) return NaN;
+        var s = String(x).trim().replace('%','');
+        var hasDot = s.includes('.'), hasComma = s.includes(',');
+        if (hasDot && hasComma){
+          if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g,'').replace(',', '.');
+          else s = s.replace(/,/g,'');
+        } else if (hasComma){ s = s.replace(',', '.'); }
+        var n = parseFloat(s);
+        return isFinite(n) ? n : NaN;
+      }
+      // 1) tenta Win/Tie do state
+      var winS = parseFlex(st[wk]);
+      var tieS = parseFlex(st[tk2]);
+      if (isFinite(winS) && winS > 1) winS /= 100;
+      if (isFinite(tieS) && tieS > 1) tieS /= 100;
+      var eqFromWT = (isFinite(winS) ? winS : NaN) + (isFinite(tieS) ? tieS/2 : 0);
+      if (!isFinite(eqFromWT)) eqFromWT = NaN;
+      else eqFromWT = Math.max(0, Math.min(1, eqFromWT)) * 100;
+
+      // 2) tenta Win/Tie do DOM
+      var eqFromDOM = (function(){
+        if (typeof extractEquityFromDOM === 'function') {
+          var v = extractEquityFromDOM(); // 0..100
+          if (isFinite(v)) return v;
         }
-      }
-      if (!isFinite(eqPct)) {
-        var domEq = extractEquityFromDOM(); // 0..100
-        if (isFinite(domEq)) eqPct = domEq;
-      }
+        return NaN;
+      })();
+
+      // 3) equityPct do state (fallback)
+      var eqFromState = Number(st[ek]); if (!isFinite(eqFromState)) eqFromState = NaN;
+
+      // 4) prioridade
+      var eqPct = NaN;
+      if (isFinite(eqFromDOM))        eqPct = eqFromDOM;
+      else if (isFinite(eqFromWT))    eqPct = eqFromWT;
+      else if (isFinite(eqFromState)) eqPct = eqFromState;
       if (!isFinite(eqPct)) eqPct = 50;
 
-      var potAtual = num(st[DEFAULTS.potKey]); if(!isFinite(potAtual)) potAtual=0;
-      var toCall   = num(st[DEFAULTS.toCallKey]); if(!isFinite(toCall)) toCall=0;
+      // pot/toCall (fichas)
+      function num(x){ var n=Number(x); return isFinite(n)?n:NaN; }
+      var potAtual = num(st[pk]); if(!isFinite(potAtual)) potAtual=0;
+      var toCall   = num(st[tk]); if(!isFinite(toCall))   toCall=0;
 
       return {
         potAtual: potAtual,
         toCall: toCall,
-        equityPct: eqPct,
+        equityPct: +eqPct.toFixed(1),
         rakePct: num(st.rakePct) || 0,
         rakeCap: (st.rakeCap != null ? Number(st.rakeCap) : Infinity)
       };
@@ -58,7 +86,6 @@
     overrides: { potAtual: undefined, toCall: undefined, equityPct: undefined, rakePct: undefined, rakeCap: undefined },
     observers: [],
     lastSuggestSnapshot: null,
-    programmaticTurnOff: false, // (reserva)
 
     // observadores dinâmicos (anexados sob demanda)
     domObs: { eqBreak: null, eqBar: null, suggestOut: null, body: null }
@@ -143,7 +170,7 @@
     };
   }
 
-  // ===== TTS helpers (fala apenas a decisão com frases PT-BR)
+  // ===== TTS helpers — fala apenas no clique do Enviar
   function ttsEnabled(){
     return !!(g.TTS && g.TTS.state && g.TTS.state.enabled && 'speechSynthesis' in g);
   }
@@ -318,9 +345,7 @@
     ttsRaise(res);
 
     // desliga a chavinha automaticamente, SEM restaurar MC (decisão permanece na tela)
-    state.programmaticTurnOff = true;
     setInjectDecision(false, { source:'auto', restore:false });
-    state.programmaticTurnOff = false;
   }
 
   // ===== Render do card compacto
