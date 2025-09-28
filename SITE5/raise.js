@@ -1,4 +1,6 @@
-
+// raise.js — Pot Odds + chave de decisão com botão "Enviar"
+// Fluxo: Ligar chave → preencher Pot/A pagar → clicar "Enviar" → calcula + fala + desliga a chave.
+// Sem mexer no app.js; usa PC.state, DOM e g.TTS (se disponível).
 (function (g) {
   var DEFAULTS = {
     mountSelector: '#pcalc-toolbar',
@@ -50,16 +52,14 @@
   var state = {
     mounted: false,
     elements: {},
-    usePotOdds: true,          // compat; não oculta o card
     injectDecision: false,     // switch ON/OFF
     lastPotOdds: null,
     _cfg: null,
     overrides: { potAtual: undefined, toCall: undefined, equityPct: undefined, rakePct: undefined, rakeCap: undefined },
     observers: [],
     lastSuggestSnapshot: null,
-
-    // TTS
-    ttsPendingMC: false        // OFF: falar MC uma vez quando #suggestOut for reescrito
+    // controle para desligar automático sem restaurar
+    programmaticTurnOff: false
   };
 
   // ===== Utils
@@ -150,44 +150,21 @@
     try{ speechSynthesis.cancel(); }catch(_){}
     try{ g.TTS.speak(text); }catch(_){}
   }
-  // Valida se inputs essenciais estão preenchidos (>0)
   function inputsReady(ctx){
     var p = Number(ctx.potAtual||0), c = Number(ctx.toCall||0);
     return isFinite(p) && p > 0 && isFinite(c) && c > 0;
   }
-  // ON: fala somente a decisão, mas só se Pot e A pagar estiverem preenchidos
-  function ttsRaise(result, ctx){
-    if(!inputsReady(ctx)) return; // <<< bloqueio pedido
+  function ttsRaise(result){
     var phrase;
     switch (result.rec) {
-      case 'Call':
-        phrase = 'Sugestão: Pague o raise.';
-        break;
-      case 'Fold':
-        phrase = 'Sugestão: Desista do raise.';
-        break;
-      default: // Indiferente
-        phrase = 'Sugestão: Pague.';
-        break;
+      case 'Call': phrase = 'Sugestão: Pague o raise.'; break;
+      case 'Fold': phrase = 'Sugestão: Desista do raise.'; break;
+      default:     phrase = 'Sugestão: Pague.'; break;
     }
     ttsSayNow(phrase);
   }
-  // OFF: fala a sugestão do Monte Carlo (uma vez)
-  function extractMainSuggestionTitle(){
-    var host = document.getElementById('suggestOut');
-    if(!host) return '';
-    var h = host.querySelector('.decision-title');
-    if(h && h.textContent) return h.textContent.trim();
-    var t = (host.textContent||'').trim().split('\n').map(s=>s.trim()).filter(Boolean)[0] || '';
-    return t;
-  }
-  function ttsMonteCarloOnce(){
-    var title = extractMainSuggestionTitle();
-    if(!title) return;
-    ttsSayNow('Sugestão: ' + title);
-  }
 
-  // ===== Estilos (inclui switch cinza/verde)
+  // ===== Estilos (switch + botão Enviar)
   function ensureCSS(){
     if ($('#raise-css-hook')) return;
     var css = ''
@@ -203,7 +180,10 @@
       + '.slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#475569;border-radius:26px;transition:.25s}\n'
       + '.slider:before{position:absolute;content:"";height:20px;width:20px;left:3px;top:3px;background:#0b1324;border-radius:50%;transition:.25s}\n'
       + '.rsw input:checked + .slider{background:#22c55e}\n'
-      + '.rsw input:checked + .slider:before{transform:translateX(22px)}\n';
+      + '.rsw input:checked + .slider:before{transform:translateX(22px)}\n'
+      + '.raise-send-btn{padding:.48rem .7rem;border:1px solid #334155;background:#0f172a;color:#e5e7eb;'
+        + 'border-radius:.6rem;cursor:pointer;user-select:none}\n'
+      + '.raise-send-btn:hover{border-color:#60a5fa}\n';
     var style = el('style'); style.id='raise-css-hook';
     style.appendChild(document.createTextNode(css));
     document.head.appendChild(style);
@@ -235,7 +215,7 @@
 
     var bar = el('div', 'raise-bar');
 
-    // (1) Switch: injetar decisão no texto principal (cinza → verde)
+    // (1) Switch: Decisão do Raise
     var injWrap = el('div','field');
     var injLbl  = el('span','fld-label'); injLbl.textContent = 'Decisão do Raise:';
     var injRsw  = el('label','rsw');
@@ -248,9 +228,13 @@
     var st0 = cfg.readState();
     var pots= buildPotInputs(st0.potAtual, st0.toCall);
 
+    // (3) Botão Enviar
+    var sendBtn = el('button','raise-send-btn'); sendBtn.id='btn-raise-send'; sendBtn.type='button'; sendBtn.textContent='Enviar';
+
     bar.appendChild(injWrap);
     bar.appendChild(pots.potWrap);
     bar.appendChild(pots.callWrap);
+    bar.appendChild(sendBtn);
     mount.appendChild(bar);
 
     // Estado inicial do switch
@@ -258,33 +242,40 @@
 
     // Eventos
     injCb.addEventListener('change', function(){
-      state.injectDecision = !!injCb.checked;
-      if (!state.injectDecision) {
-        // OFF → restaura e agenda falar MC na próxima atualização visual
-        restoreDefaultSuggestion();
-        state.ttsPendingMC = true;
-        triggerAppRecalc();
-      } else {
-        // ON → recalcula já (fala apenas se inputs prontos)
-        updateSuggestion(cfg);
-      }
-      updateSuggestion(cfg);
+      setInjectDecision(!!injCb.checked, { source:'user', restore:true });
     });
     if (pots.potInput) pots.potInput.addEventListener('input', function(){
       var v = Number(pots.potInput.value||0);
       state.overrides.potAtual = isFinite(v)?v:0;
-      updateSuggestion(cfg);
+      if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg); // atualiza card, sem falar/injetar
     });
     if (pots.callInput) pots.callInput.addEventListener('input', function(){
       var v = Number(pots.callInput.value||0);
       state.overrides.toCall = isFinite(v)?v:0;
-      updateSuggestion(cfg);
+      if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
     });
+    sendBtn.addEventListener('click', onEnviar);
 
-    return { injCb: injCb, potInput: pots.potInput, callInput: pots.callInput };
+    return { injCb: injCb, potInput: pots.potInput, callInput: pots.callInput, sendBtn: sendBtn };
   }
 
-  // ===== Patch: injetar e restaurar no bloco principal (“APOSTE POR VALOR”)
+  function setInjectDecision(flag, opts){
+    opts = opts || {};
+    state.injectDecision = !!flag;
+    if (state.elements.injCb) state.elements.injCb.checked = state.injectDecision;
+
+    if (!state.injectDecision){
+      // desligando
+      if (opts.source === 'user' && opts.restore){
+        restoreDefaultSuggestion(); // usuário desligou manualmente → restaura MC
+      }
+    } else {
+      // ligando → apenas atualiza card
+      if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
+    }
+  }
+
+  // ===== Patch: injetar e restaurar no bloco principal
   function injectDecisionIntoMain(result, ctx){
     var host = document.getElementById('suggestOut');
     if (!host) return;
@@ -306,7 +297,6 @@
       </div>
     `;
   }
-
   function restoreDefaultSuggestion(){
     var host = document.getElementById('suggestOut');
     if (host && state.lastSuggestSnapshot != null){
@@ -315,18 +305,23 @@
     state.lastSuggestSnapshot = null;
   }
 
-  function triggerAppRecalc(){
-    try{
-      var btn = document.getElementById('btnEqCalc');
-      if (btn) { btn.click(); return; }
-      var selOpp = document.getElementById('eqOpp');
-      if (selOpp) { selOpp.dispatchEvent(new Event('change', {bubbles:true})); return; }
-      var selTrials = document.getElementById('eqTrials');
-      if (selTrials) { selTrials.dispatchEvent(new Event('change', {bubbles:true})); return; }
-    }catch(_){}
+  // ===== Botão Enviar
+  function onEnviar(){
+    if (!state.injectDecision || !state._cfg) return;
+    var ctx = buildCtxFromCurrent(state._cfg);
+    if (!inputsReady(ctx)) return; // só calcula/fala se campos preenchidos
+
+    var res = computeDecision(ctx);
+    injectDecisionIntoMain(res, ctx);
+    ttsRaise(res);
+
+    // desliga a chavinha automaticamente, SEM restaurar MC (decisão permanece na tela)
+    state.programmaticTurnOff = true;
+    setInjectDecision(false, { source:'auto', restore:false });
+    state.programmaticTurnOff = false;
   }
 
-  // ===== Render
+  // ===== Render do card compacto
   function renderPotOddsUI(ctx, cfg){
     var out = $(cfg.suggestSelector);
     if(!out) return;
@@ -334,7 +329,6 @@
     var result = computeDecision(ctx);
     state.lastPotOdds = result;
 
-    // Card compacto (sempre visível)
     out.innerHTML = `
       <div class="raise-potodds card">
         <div style="font-weight:700;margin-bottom:6px">Pot Odds (vs Raise) — Compacto</div>
@@ -353,18 +347,6 @@
       pill.style.background = c + '22';
       pill.style.borderColor = c + '66';
       pill.style.color = '#e5e7eb';
-    }
-
-    // ON → injeta; fala SOMENTE se inputs prontos
-    if (state.injectDecision) {
-      injectDecisionIntoMain(result, ctx);
-      // reforços para competir com re-renders do app
-      setTimeout(function(){ injectDecisionIntoMain(result, ctx); }, 0);
-      setTimeout(function(){ injectDecisionIntoMain(result, ctx); }, 60);
-      ttsRaise(result, ctx); // <<< fala condicionada a Pot/A pagar preenchidos
-      if (typeof DEFAULTS.onUpdateText === 'function'){
-        DEFAULTS.onUpdateText(`Raise Equity: ${result.rec} (BE ${result.bePct}% | EQ ${result.equityPct}%)`);
-      }
     }
   }
 
@@ -393,48 +375,36 @@
     renderPotOddsUI(ctx, cfg);
   }
 
-  // Observadores de DOM
+  // Observadores de DOM (só atualizam o card; não falam/injetam)
   function attachDOMObservers(){
     detachDOMObservers();
 
-    // Win/Tie mudam (MC) → recalcula (se ON injeta/fala)
     var br = document.getElementById('eqBreak');
     if (br && g.MutationObserver){
-      var mo1 = new MutationObserver(function(){ if (state._cfg) updateSuggestion(state._cfg); });
+      var mo1 = new MutationObserver(function(){ if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg); });
       mo1.observe(br, { childList:true, subtree:true, characterData:true });
       state.observers.push(mo1);
     }
-    // Barra gráfica de Win
     var bar = document.getElementById('eqBarWin');
     if (bar && g.MutationObserver){
       var mo2 = new MutationObserver(function(muts){
-        if (muts.some(m => m.attributeName === 'style') && state._cfg) updateSuggestion(state._cfg);
+        if (muts.some(m => m.attributeName === 'style') && state._cfg)
+          renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
       });
       mo2.observe(bar, { attributes:true, attributeFilter:['style'] });
       state.observers.push(mo2);
     }
-    // #suggestOut reescrito → ON reinjeta e fala (condicional); OFF fala MC uma única vez
     var so = document.getElementById('suggestOut');
     if (so && g.MutationObserver){
       var mo3 = new MutationObserver(function(){
-        if (!state._cfg) return;
-        if (state.injectDecision) {
-          var ctx = buildCtxFromCurrent(state._cfg);
-          var res = computeDecision(ctx);
-          injectDecisionIntoMain(res, ctx);
-          ttsRaise(res, ctx); // <<< fala condicionada aqui também
-        } else if (state.ttsPendingMC) {
-          ttsMonteCarloOnce();
-          state.ttsPendingMC = false;
-        }
+        // não reinjeta nem fala automaticamente — controle é via botão Enviar
       });
       mo3.observe(so, { childList:true, subtree:true, characterData:true });
       state.observers.push(mo3);
     }
 
-    // pings tardios
     [50, 250, 750].forEach(function(ms){
-      setTimeout(function(){ if (state._cfg) updateSuggestion(state._cfg); }, ms);
+      setTimeout(function(){ if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg); }, ms);
     });
   }
   function detachDOMObservers(){
@@ -469,13 +439,7 @@
       patch = patch || {};
 
       if ('useDecisionInjection' in patch) {
-        state.injectDecision = !!patch.useDecisionInjection;
-        if (state.elements.injCb) state.elements.injCb.checked = state.injectDecision;
-        if (!state.injectDecision) {
-          restoreDefaultSuggestion();
-          state.ttsPendingMC = true;
-          triggerAppRecalc();
-        }
+        setInjectDecision(!!patch.useDecisionInjection, { source:'code', restore:false });
       }
       if ('potAtual'  in patch) state.overrides.potAtual  = (patch.potAtual==null?undefined:Number(patch.potAtual));
       if ('toCall'    in patch) state.overrides.toCall    = (patch.toCall==null?undefined:Number(patch.toCall));
@@ -483,16 +447,11 @@
       if ('rakePct'   in patch) state.overrides.rakePct   = (patch.rakePct==null?undefined:Number(patch.rakePct));
       if ('rakeCap'   in patch) state.overrides.rakeCap   = (patch.rakeCap==null?undefined:Number(patch.rakeCap));
 
-      if (state._cfg) updateSuggestion(state._cfg);
+      if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
     },
 
     getRecommendation: function(){
       return state.lastPotOdds || null;
-    },
-
-    setUsePotOdds: function(flag){
-      state.usePotOdds = !!flag; // compat
-      if (state._cfg) updateSuggestion(state._cfg);
     }
   };
 
