@@ -1,3 +1,6 @@
+// raise.js — Pot Odds + chave de decisão com botão "Enviar"
+// Agora: Equity (MC) atualiza SEMPRE (switch ON ou OFF), com reattach dinâmico + heartbeat.
+// Fluxo do TTS: Ligar → preencher Pot/A pagar → Enviar → fala e desliga a chave.
 (function (g) {
   var DEFAULTS = {
     mountSelector: '#pcalc-toolbar',
@@ -87,8 +90,14 @@
     observers: [],
     lastSuggestSnapshot: null,
 
-    // observadores dinâmicos (anexados sob demanda)
-    domObs: { eqBreak: null, eqBar: null, suggestOut: null, body: null }
+    // reattach dinâmico + controle de nós atuais
+    domNodes: { eqBreakEl: null, eqBarEl: null, suggestOutEl: null },
+    domObs:   { eqBreak: null, eqBar: null, suggestOut: null, body: null },
+
+    // heartbeat para garantir atualização mesmo se o app trocar nós silenciosamente
+    pollTimer: null,
+    lastEqPctSeen: null,
+    lastSelSignature: null
   };
 
   // ===== Utils
@@ -97,7 +106,7 @@
   function num(x){ var n=Number(x); return isFinite(n)?n:NaN; }
   function clamp01pct(p){ return Math.max(0, Math.min(100, +Number(p).toFixed(1))); }
 
-  // parser pt/intl: “16.1”, “16,1”, “1.234,5”, “1,234.5”
+  // parser pt/intl
   function parseFlexibleNumber(raw){
     if(raw==null) return NaN;
     var s = String(raw).trim(); if(!s) return NaN;
@@ -294,12 +303,10 @@
     if (state.elements.injCb) state.elements.injCb.checked = state.injectDecision;
 
     if (!state.injectDecision){
-      // desligando
       if (opts.source === 'user' && opts.restore){
         restoreDefaultSuggestion(); // usuário desligou manualmente → restaura MC
       }
     } else {
-      // ligando → apenas atualiza card
       if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
     }
   }
@@ -338,7 +345,7 @@
   function onEnviar(){
     if (!state.injectDecision || !state._cfg) return;
     var ctx = buildCtxFromCurrent(state._cfg);
-    if (!inputsReady(ctx)) return; // só calcula/fala se campos preenchidos
+    if (!inputsReady(ctx)) return;
 
     var res = computeDecision(ctx);
     injectDecisionIntoMain(res, ctx);
@@ -402,41 +409,75 @@
     renderPotOddsUI(ctx, cfg);
   }
 
-  // ===== Observadores dinâmicos: mantêm Equity (MC) sempre atualizado
-  function ensureDomObserversAttached(){
-    // Win/Tie (texto)
-    var br = document.getElementById('eqBreak');
-    if (br && !state.domObs.eqBreak && g.MutationObserver){
+  // ===== Reattach dinâmico + Heartbeat =====
+  function attachObserverTo(targetEl, kind){
+    if (!g.MutationObserver || !targetEl) return;
+    // desconecta anterior se trocou o nó
+    if (kind==='eqBreak' && state.domNodes.eqBreakEl !== targetEl && state.domObs.eqBreak){
+      try{ state.domObs.eqBreak.disconnect(); }catch(_){}
+      state.domObs.eqBreak = null;
+    }
+    if (kind==='eqBar' && state.domNodes.eqBarEl !== targetEl && state.domObs.eqBar){
+      try{ state.domObs.eqBar.disconnect(); }catch(_){}
+      state.domObs.eqBar = null;
+    }
+    // cria/reattacha
+    if (kind==='eqBreak' && !state.domObs.eqBreak){
       var mo1 = new MutationObserver(function(){
         if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
       });
-      mo1.observe(br, { childList:true, subtree:true, characterData:true });
-      state.observers.push(mo1);
+      mo1.observe(targetEl, { childList:true, subtree:true, characterData:true });
       state.domObs.eqBreak = mo1;
+      state.domNodes.eqBreakEl = targetEl;
     }
-
-    // Barra gráfica de Win
-    var bar = document.getElementById('eqBarWin');
-    if (bar && !state.domObs.eqBar && g.MutationObserver){
+    if (kind==='eqBar' && !state.domObs.eqBar){
       var mo2 = new MutationObserver(function(muts){
         if (muts.some(m => m.attributeName === 'style') && state._cfg)
           renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
       });
-      mo2.observe(bar, { attributes:true, attributeFilter:['style'] });
-      state.observers.push(mo2);
+      mo2.observe(targetEl, { attributes:true, attributeFilter:['style'] });
       state.domObs.eqBar = mo2;
+      state.domNodes.eqBarEl = targetEl;
     }
+  }
 
-    // #suggestOut (apenas sincronização do card)
+  function ensureDomObserversAttached(){
+    attachObserverTo(document.getElementById('eqBreak'), 'eqBreak');
+    attachObserverTo(document.getElementById('eqBarWin'), 'eqBar');
+
     var so = document.getElementById('suggestOut');
     if (so && !state.domObs.suggestOut && g.MutationObserver){
       var mo3 = new MutationObserver(function(){
         if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
       });
       mo3.observe(so, { childList:true, subtree:true, characterData:true });
-      state.observers.push(mo3);
       state.domObs.suggestOut = mo3;
+      state.domNodes.suggestOutEl = so;
     }
+  }
+
+  function startHeartbeat(){
+    stopHeartbeat();
+    state.pollTimer = setInterval(function(){
+      if (!state._cfg) return;
+
+      // 1) equity mudou?
+      var eq = extractEquityFromDOM();
+      var eqKey = isFinite(eq)? eq.toFixed(2) : 'NA';
+
+      // 2) assinatura da seleção (pra reagir a trocar HH, flop/turn/river)
+      var PC = g.PC || g.PCALC || {};
+      var sel = (PC.state && Array.isArray(PC.state.selected)) ? PC.state.selected.join(',') : '';
+      var sig = eqKey + '|' + sel;
+
+      if (sig !== state.lastSelSignature){
+        state.lastSelSignature = sig;
+        renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
+      }
+    }, 300);
+  }
+  function stopHeartbeat(){
+    if (state.pollTimer){ clearInterval(state.pollTimer); state.pollTimer = null; }
   }
 
   function attachDOMObservers(){
@@ -445,7 +486,7 @@
     // tenta anexar imediatamente
     ensureDomObserversAttached();
 
-    // observa o body para detectar quando #eqBreak/#eqBarWin nascem e anexar na hora
+    // observa o body para detectar criação/substituição de nós
     if (g.MutationObserver && document.body) {
       var moBody = new MutationObserver(function(){
         ensureDomObserversAttached();
@@ -455,7 +496,10 @@
       state.domObs.body = moBody;
     }
 
-    // pings tardios para garantir sync mesmo se algo renderizar devagar
+    // heartbeat garante atualização mesmo se o app trocar nós silenciosamente
+    startHeartbeat();
+
+    // pings tardios extra
     [80, 300, 1200].forEach(function(ms){
       setTimeout(function(){
         ensureDomObserversAttached();
@@ -467,7 +511,12 @@
   function detachDOMObservers(){
     (state.observers||[]).forEach(function(mo){ try{ mo.disconnect(); }catch(_){ } });
     state.observers = [];
-    state.domObs = { eqBreak: null, eqBar: null, suggestOut: null, body: null };
+    // desconecta individuais
+    ['eqBreak','eqBar','suggestOut','body'].forEach(function(k){
+      if (state.domObs[k]) { try{ state.domObs[k].disconnect(); }catch(_){} state.domObs[k]=null; }
+    });
+    state.domNodes = { eqBreakEl: null, eqBarEl: null, suggestOutEl: null };
+    stopHeartbeat();
   }
 
   // ===== API
