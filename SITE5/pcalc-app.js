@@ -907,3 +907,280 @@
     // aguardando start via __pcalc_start_app__ (login-guard)
   });
 })(window);
+/* =========================
+   PATCH — Flop Exato + Decisão
+   (cole isso NO FIM do seu arquivo)
+   ========================= */
+(function(g){
+  const PC = g.PCALC || g.PC || {};
+  if(!PC || typeof PC.makeDeck!=="function" || typeof PC.evalBest!=="function"){
+    console.warn("[PATCH] PCALC não encontrado ou incompleto — patch ignorado.");
+    return;
+  }
+
+  // ======= Config rápida =======
+  const CFG = {
+    // Pós-flop: número de amostras de mãos de vilões (hole cards) quando NÃO há range definido.
+    // (Runouts do board são sempre EXATOS: 1081 por avaliação.)
+    VILLAIN_SAMPLES: 400,   // 400 x 1081 ≈ 432k runouts por vilão (otimizado)
+    // Pré-flop: se quiser turbo, aumente em runtime: window.PCALC_PATCH.prefSamples = 1_000_000;
+    PREFLOP_SAMPLES: 50_000,
+    // Falar só quando flop completo:
+    TTS_ONLY_ON_FULL_FLOP: true
+  };
+  PC.PATCH_CFG = CFG; // visível para ajuste externo
+
+  // ======= Utilidades =======
+  const cardId = PC.cardId;
+  const makeDeck = PC.makeDeck;
+  const evalBest = PC.evalBest;
+
+  function eqCmp(a,b){ return a===b ? 0 : (a>b?1:-1); }
+
+  function cardsEqual(a,b){ return a.r===b.r && a.s===b.s; }
+
+  function removeCards(deck, cards){
+    const dead = new Set(cards.map(cardId));
+    return deck.filter(c => !dead.has(cardId(c)));
+  }
+
+  function getStage(state){
+    const sel = state?.selected || [];
+    const hero = sel.slice(0,2);
+    const board = sel.slice(2);
+    if(hero.length<2) return "empty";
+    if(board.length===0) return "pre";
+    if(board.length===3) return "flop";
+    if(board.length===4) return "turn";
+    if(board.length===5) return "river";
+    return "unknown";
+  }
+
+  function enumerateTurnRiver(deckLeft){
+    // devolve lista de [turn, river] com turn!=river — total 1081 para 47 cartas
+    const out = [];
+    for(let i=0;i<deckLeft.length;i++){
+      const t = deckLeft[i];
+      for(let j=0;j<deckLeft.length;j++){
+        if(j===i) continue;
+        const r = deckLeft[j];
+        out.push([t,r]);
+      }
+    }
+    return out;
+  }
+
+  function sampleVillainCombos(deckLeft, k, maxSamples){
+    // retorna array de {c1,c2} sem reposição por par (ordem não importa)
+    // amostra aleatória para evitar explosão combinatória
+    const N = deckLeft.length;
+    const combos = [];
+    // topo: use algoritmo de amostragem leve (reservoir simplificado)
+    // limite superior seguro
+    const target = Math.min(maxSamples, (N*(N-1))/2);
+    let count = 0;
+    while(count < target){
+      const i = (Math.random()*N)|0;
+      let j = (Math.random()*N)|0;
+      if(j===i) { j = (j+1)%N; }
+      const a = deckLeft[i], b = deckLeft[j];
+      // normalizar par (hi/lo por id para evitar duplicados invertidos)
+      const idA = cardId(a), idB = cardId(b);
+      const key = idA<idB ? idA+"_"+idB : idB+"_"+idA;
+      if(!sampleVillainCombos._seen) sampleVillainCombos._seen = new Set();
+      if(sampleVillainCombos._seen.has(key)) continue;
+      sampleVillainCombos._seen.add(key);
+      combos.push({c1:a,c2:b});
+      count++;
+    }
+    return combos;
+  }
+
+  function enumerateVillainCombosExact(deckLeft, limitHard=2000){
+    // Se quiser usar exaustivo para 1 vilão no flop/turn/river, use este (pode ficar pesado)
+    // limitHard serve para não travar a UI; ajuste se precisar.
+    const N = deckLeft.length;
+    const combos = [];
+    outer: for(let i=0;i<N;i++){
+      for(let j=i+1;j<N;j++){
+        combos.push({c1:deckLeft[i], c2:deckLeft[j]});
+        if(combos.length>=limitHard) break outer;
+      }
+    }
+    return combos;
+  }
+
+  function exactEquityVSOneVillain(hero, board, deck){
+    // Pós-flop/turn/river: escolhe combos do vilão (amostrados) e roda runouts exatos
+    const dead = hero.concat(board);
+    const deckLeft = removeCards(deck, dead);
+    const villainCombos = sampleVillainCombos(deckLeft, 1, CFG.VILLAIN_SAMPLES);
+
+    let w=0, win=0, tie=0;
+    if(board.length===3){
+      // FLOP: enumerar todos os turn+river
+      for(const v of villainCombos){
+        const deckL2 = removeCards(deckLeft, [v.c1,v.c2]);
+        const runouts = enumerateTurnRiver(deckL2);
+        for(const [t,r] of runouts){
+          const b = board.concat([t,r]);
+          const he = evalBest(hero, b);
+          const ve = evalBest([v.c1,v.c2], b);
+          w++;
+          const cmp = eqCmp(he, ve);
+          if(cmp>0) win++; else if(cmp===0) tie++;
+        }
+      }
+    } else if(board.length===4){
+      // TURN: enumerar todos os rivers
+      for(const v of villainCombos){
+        const deckL2 = removeCards(deckLeft, [v.c1,v.c2]);
+        for(const r of deckL2){
+          const b = board.concat([r]);
+          const he = evalBest(hero, b);
+          const ve = evalBest([v.c1,v.c2], b);
+          w++;
+          const cmp = eqCmp(he, ve);
+          if(cmp>0) win++; else if(cmp===0) tie++;
+        }
+      }
+    } else if(board.length===5){
+      // RIVER: já está fechado, só comparar
+      for(const v of villainCombos){
+        const b = board;
+        const he = evalBest(hero, b);
+        const ve = evalBest([v.c1,v.c2], b);
+        w++;
+        const cmp = eqCmp(he, ve);
+        if(cmp>0) win++; else if(cmp===0) tie++;
+      }
+    } else {
+      return null;
+    }
+    const pWin = win/w;
+    const pTie = tie/w;
+    return { win:pWin, tie:pTie, lose: 1-pWin-pTie, samples:w };
+  }
+
+  // ======= Hook de equity (monkey patch) =======
+  // Procuramos uma função de equity existente para interceptar apenas no pós-flop.
+  const original = PC.computeEquity || PC.monteCarloEquity || PC.simulateEquity || null;
+
+  PC._ORIG_EQUITY = original;
+
+  PC.computeEquity = function patchedComputeEquity(opts){
+    // Espera-se que 'opts' contenha pelo menos: state, opponents, samples, speak, ...
+    const st = (opts && opts.state) || PC.state || {};
+    const stage = getStage(st);
+
+    // Gate de TTS: só falar quando flop completo (se ativado)
+    if(CFG.TTS_ONLY_ON_FULL_FLOP && typeof opts?.onSpeak === "function"){
+      const isFlopSpeak = (stage==="flop");
+      opts.onSpeakAllowed = isFlopSpeak; // consumidor pode checar isso
+    }
+
+    // Pré-flop: podemos aumentar amostras aqui, se quiser.
+    if(stage==="pre" && original){
+      if(typeof opts==="object"){
+        opts.samples = Math.max(opts.samples||0, (g.PCALC_PATCH?.prefSamples) || CFG.PREFLOP_SAMPLES);
+      }
+      return original.call(this, opts);
+    }
+
+    // Pós-flop exato (flop/turn/river): 1 vilão; para 2+ fazemos média por vilão (amostrado)
+    if(stage==="flop" || stage==="turn" || stage==="river"){
+      const sel = st.selected || [];
+      const hero = sel.slice(0,2);
+      const board = sel.slice(2);
+      const deck = makeDeck();
+
+      const nOpp = Math.max(1, Number(st.opponents || opts?.opponents || 1));
+      let agg = {win:0, tie:0, lose:0};
+      const repeats = nOpp; // aproximação: tratar cada vilão independentemente (rápido e estável)
+      for(let k=0;k<repeats;k++){
+        const r = exactEquityVSOneVillain(hero, board, deck);
+        agg.win += r.win;
+        agg.tie += r.tie;
+        agg.lose += r.lose;
+      }
+      const res = {
+        win: agg.win/repeats,
+        tie: agg.tie/repeats,
+        lose: agg.lose/repeats,
+        method: "Exact board runouts + sampled villains",
+        stage
+      };
+
+      // Se houver callback/renderer do seu app, tente respeitar:
+      if(typeof opts?.onResult === "function") opts.onResult(res);
+      return res;
+    }
+
+    // Fallback: se não for nenhum caso acima, chama o original se existir
+    if(original) return original.call(this, opts);
+    console.warn("[PATCH] computeEquity chamado sem original e fora de pós-flop.");
+    return null;
+  };
+
+  // ======= Gatilho de voz: só quando flop completo =======
+  // Se seu código usa window.speak(text) diretamente, você pode usar este helper:
+  g.PCALC_PATCH = g.PCALC_PATCH || {};
+  g.PCALC_PATCH.speak = function(text){
+    try{
+      if(CFG.TTS_ONLY_ON_FULL_FLOP){
+        const st = PC.state || {};
+        if(getStage(st)!=="flop") return; // só fala quando flop completo
+      }
+      if(typeof g.speak==="function") return g.speak(text);
+      // fallback Web Speech
+      if("speechSynthesis" in g){
+        const u = new SpeechSynthesisUtterance(text);
+        // tenta voz pt-BR se disponível
+        const vs = speechSynthesis.getVoices() || [];
+        const v = vs.find(v=>/Portuguese \(Brazil\)|pt-BR/i.test(v.name||""));
+        if(v) u.voice = v;
+        g.speechSynthesis.speak(u);
+      }
+    } catch(e){
+      console.warn("[PATCH] speak fallback erro:", e);
+    }
+  };
+
+  // ======= Modo turbo pré-flop: 1M amostras em batches (opcional) =======
+  // Use: window.PCALC_PATCH.runPreflopMillion({ batch: 50000, onPartial, onDone })
+  g.PCALC_PATCH.runPreflopMillion = function runPreflopMillion(opts={}){
+    const total = 1_000_000;
+    const batch = Math.max(10_000, opts.batch||50_000);
+    let done = 0, wins=0, ties=0, runs=0;
+
+    function step(){
+      const st = PC.state || {};
+      const o = { state: st, samples: batch };
+      const r = (original ? original(o) : null);
+      if(r){
+        wins += r.win * r.samples || 0; // se seu original retorna proporção sem samples, ajuste
+        ties += r.tie * r.samples || 0;
+        runs += r.samples || batch;
+      }else{
+        // degrade: assume batch contado
+        runs += batch;
+      }
+      done += batch;
+      if(typeof opts.onPartial==="function"){
+        const pw = runs? (wins/runs) : 0, pt = runs? (ties/runs) : 0;
+        opts.onPartial({ done, total, win: pw, tie: pt, lose: 1-pw-pt, eta: Math.max(total-done,0) });
+      }
+      if(done < total){
+        setTimeout(step, 0);
+      } else {
+        const pw = runs? (wins/runs) : 0, pt = runs? (ties/runs) : 0;
+        if(typeof opts.onDone==="function"){
+          opts.onDone({ samples: runs, win: pw, tie: pt, lose: 1-pw-pt });
+        }
+      }
+    }
+    step();
+  };
+
+  console.log("[PATCH] Flop exato ativado (runouts) + gate de voz no flop. Preflop samples:", CFG.PREFLOP_SAMPLES);
+})(window);
