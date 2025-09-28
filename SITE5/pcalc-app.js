@@ -909,273 +909,125 @@
 })(window);
 
 
-/* =========================
-   PATCH v5 — Preflop 1.000.000 MC (com modo assíncrono) + Flop/Turn/River EXATO
-   (cole isso NO FIM do arquivo principal)
-   ========================= */
-(function(g){
-  const PC = g.PCALC || g.PC || {};
-  if(!PC || typeof PC.makeDeck!=="function" || typeof PC.evalBest!=="function"){
-    console.warn("[PATCH v5] PCALC ausente/incompleto — ignorado.");
-    return;
-  }
+/* ===== UI PATCH — trocar 3k/5k/10k -> 300k/500k/1M e setar 1M como padrão ===== */
+(function(){
+  const PC = window.PCALC || window.PC || {};
+  if(!PC) return;
 
-  const CFG = {
-    PREFLOP_SAMPLES: 1_000_000, // alvo no pré-flop
-    BATCH_SIZE:      50_000,    // tamanho do batch no modo assíncrono
-    VILLAIN_SAMPLES: 400,       // combos amostrados por vilão no pós-flop
-    TTS_ONLY_ON_FULL_FLOP: true
-  };
+  // Guarda global para leitura pela UI (opcional)
+  PC.PREFLOP_SAMPLES_CHOICES = { "300k": 300_000, "500k": 500_000, "1M": 1_000_000 };
+  PC.PREFLOP_SAMPLES_DEFAULT = 1_000_000;
 
-  // ========= Utils básicos =========
-  const { cardId, makeDeck, evalBest } = PC;
+  // Se você está usando o PATCH v5/v6, ele já usa 1M por padrão quando não vier samples.
+  // Mesmo assim, vamos fazer a UI refletir os novos valores.
 
-  function getStage(st){
-    const sel = st?.selected || [];
-    const board = sel.slice(2);
-    if(sel.length<2) return "empty";
-    if(board.length===0) return "pre";
-    if(board.length===3) return "flop";
-    if(board.length===4) return "turn";
-    if(board.length===5) return "river";
-    return "unknown";
-  }
-  function removeCards(deck, cards){
-    const dead = new Set(cards.map(cardId));
-    return deck.filter(c => !dead.has(cardId(c)));
-  }
-  function cmpEv(a,b){ return a===b?0:(a>b?1:-1); }
-  function enumerateTurnRiver(deckLeft){
-    const out=[];
-    for(let i=0;i<deckLeft.length;i++){
-      for(let j=0;j<deckLeft.length;j++){
-        if(i===j) continue;
-        out.push([deckLeft[i], deckLeft[j]]); // 1081 quando 47 cartas
-      }
-    }
-    return out;
-  }
-  function sampleVillainCombos(deckLeft, maxSamples){
-    const N = deckLeft.length, target = Math.min(maxSamples, (N*(N-1))/2);
-    const seen = new Set(), combos=[];
-    while(combos.length<target){
-      const i = (Math.random()*N)|0;
-      let j = (Math.random()*N)|0;
-      if(j===i) j=(j+1)%N;
-      const a = deckLeft[i], b = deckLeft[j];
-      const A = cardId(a), B = cardId(b);
-      const key = A<B ? A+"_"+B : B+"_"+A;
-      if(seen.has(key)) continue;
-      seen.add(key);
-      combos.push([a,b]);
-    }
-    return combos;
-  }
-
-  // ========= Pós-flop EXATO =========
-  function exactPostflopEquity(hero, board, nOpp){
-    const deck = makeDeck();
-    const dead = hero.concat(board);
-    const deckLeft = removeCards(deck, dead);
-
-    const repeats = Math.max(1, nOpp|0);
-    let aggWin=0, aggTie=0, aggTot=0;
-
-    for(let k=0;k<repeats;k++){
-      const vCombos = sampleVillainCombos(deckLeft, CFG.VILLAIN_SAMPLES);
-      let win=0, tie=0, tot=0;
-
-      if(board.length===3){ // FLOP: turn+river exatos
-        for(const [v1,v2] of vCombos){
-          const dl2 = removeCards(deckLeft, [v1,v2]);
-          const runouts = enumerateTurnRiver(dl2); // 1081
-          for(const [t,r] of runouts){
-            const b = board.concat([t,r]);
-            const he = evalBest(hero, b);
-            const ve = evalBest([v1,v2], b);
-            tot++;
-            const c = cmpEv(he,ve);
-            if(c>0) win++; else if(c===0) tie++;
-          }
-        }
-      } else if(board.length===4){ // TURN: todos os rivers
-        for(const [v1,v2] of vCombos){
-          const dl2 = removeCards(deckLeft, [v1,v2]);
-          for(const r of dl2){
-            const b = board.concat([r]);
-            const he = evalBest(hero, b);
-            const ve = evalBest([v1,v2], b);
-            tot++;
-            const c = cmpEv(he,ve);
-            if(c>0) win++; else if(c===0) tie++;
-          }
-        }
-      } else if(board.length===5){ // RIVER: comparação direta
-        for(const [v1,v2] of vCombos){
-          const he = evalBest(hero, board);
-          const ve = evalBest([v1,v2], board);
-          tot++;
-          const c = cmpEv(he,ve);
-          if(c>0) win++; else if(c===0) tie++;
-        }
-      } else {
-        return null;
-      }
-
-      aggWin+=win; aggTie+=tie; aggTot+=tot;
-    }
-
-    const win = aggWin/aggTot, tie = aggTie/aggTot, lose = 1-win-tie;
-    return { win, tie, lose, method:"Exact board runouts", samples: aggTot };
-  }
-
-  // ========= Pré-flop Monte Carlo (núcleo) =========
-  function mcPreflopOnce(hero, opponents, deck){
-    // amostra mãos dos vilões e 5 cartas do board sem conflito e avalia showdown
-    // 1) baralho sem herói
-    let pool = removeCards(deck, hero);
-
-    // 2) comprar 2*opponents cartas diferentes para vilões
-    const oppHands = [];
-    for(let o=0;o<opponents;o++){
-      const i = (Math.random()*pool.length)|0;
-      const c1 = pool.splice(i,1)[0];
-      const j = (Math.random()*pool.length)|0;
-      const c2 = pool.splice(j,1)[0];
-      oppHands.push([c1,c2]);
-    }
-
-    // 3) board (5 cartas)
-    const b = [];
-    for(let k=0;k<5;k++){
-      const x = (Math.random()*pool.length)|0;
-      b.push(pool.splice(x,1)[0]);
-    }
-
-    // 4) avaliar
-    const he = evalBest(hero, b);
-    let best = he, ties = 0, ahead = true;
-
-    for(const [v1,v2] of oppHands){
-      const ve = evalBest([v1,v2], b);
-      const c = cmpEv(ve, best);
-      if(c>0){ best = ve; ahead = false; ties=0; }
-      else if(c===0){ ties++; }
-    }
-
-    if(ahead){
-      // herói empatou com (ties) vilões que alcançaram o mesmo best
-      return ties>0 ? "tie" : "win";
-    } else {
-      // vilão tem melhor
-      // pode verificar se empata com alguém melhor que herói, mas aqui já é perda
-      return "lose";
-    }
-  }
-
-  function mcPreflopSync(hero, opponents, samples){
-    const deck = makeDeck();
-    let win=0, tie=0, lose=0;
-    for(let n=0;n<samples;n++){
-      const r = mcPreflopOnce(hero, opponents, deck);
-      if(r==="win") win++;
-      else if(r==="tie") tie++;
-      else lose++;
-    }
-    const tot = win+tie+lose;
-    return { win:win/tot, tie:tie/tot, lose:lose/tot, method:"Monte Carlo", samples: tot };
-  }
-
-  function mcPreflopAsync(hero, opponents, totalSamples, batchSize, onProgress){
-    const deck = makeDeck();
-    let win=0, tie=0, lose=0, done=0;
-
-    return new Promise(resolve=>{
-      function step(){
-        const chunk = Math.min(batchSize, totalSamples - done);
-        for(let n=0;n<chunk;n++){
-          const r = mcPreflopOnce(hero, opponents, deck);
-          if(r==="win") win++;
-          else if(r==="tie") tie++;
-          else lose++;
-        }
-        done += chunk;
-        if(typeof onProgress==="function"){
-          onProgress({ done, total: totalSamples, win, tie, lose });
-        }
-        if(done < totalSamples){
-          setTimeout(step, 0);
-        } else {
-          const tot = win+tie+lose;
-          resolve({ win:win/tot, tie:tie/tot, lose:lose/tot, method:"Monte Carlo", samples: tot });
-        }
-      }
-      step();
-    });
-  }
-
-  // ========= Gate de voz (opcional) =========
-  const _speak = g.speak;
-  g.speak = function(text){
-    try{
-      if(CFG.TTS_ONLY_ON_FULL_FLOP){
-        const st = PC.state || {};
-        if(getStage(st)!=="flop") return;
-      }
-      return _speak ? _speak(text) : (function(){
-        if("speechSynthesis" in g){
-          const u = new SpeechSynthesisUtterance(text);
-          const vs = speechSynthesis.getVoices()||[];
-          const v = vs.find(v=>/Portuguese \(Brazil\)|pt-BR/i.test(v.name||""));
-          if(v) u.voice=v;
-          speechSynthesis.speak(u);
-        }
-      })();
-    }catch(e){ console.warn("[PATCH v5] speak fallback erro:", e); }
-  };
-
-  // ========= API pública (sincrona) =========
-  PC.computeEquity = function(opts){
-    const st = (opts && opts.state) || PC.state || {};
-    const stage = getStage(st);
-    const sel = st.selected||[];
-    const hero = sel.slice(0,2);
-    const board = sel.slice(2);
-    const opponents = Math.max(1, Number(st.opponents || opts?.opponents || 1));
-
-    if(stage==="pre"){
-      const samples = Math.max(Number(opts?.samples||0), CFG.PREFLOP_SAMPLES);
-      return mcPreflopSync(hero, opponents, samples);
-    }
-    if(stage==="flop" || stage==="turn" || stage==="river"){
-      return exactPostflopEquity(hero, board, opponents);
-    }
+  function mapTextToSamples(txt){
+    const t = String(txt||"").trim().toLowerCase();
+    if (t === "3k") return 300_000;
+    if (t === "5k") return 500_000;
+    if (t === "10k") return 1_000_000;
+    // já nos novos rótulos?
+    if (t === "300k") return 300_000;
+    if (t === "500k") return 500_000;
+    if (t === "1m") return 1_000_000;
     return null;
-  };
+  }
 
-  // ========= API pública (assíncrona, com batches) =========
-  PC.computeEquityAsync = function(opts={}){
-    const st = (opts && opts.state) || PC.state || {};
-    const stage = getStage(st);
-    const sel = st.selected||[];
-    const hero = sel.slice(0,2);
-    const board = sel.slice(2);
-    const opponents = Math.max(1, Number(st.opponents || opts?.opponents || 1));
+  function relabel(el, val){
+    // Reetiqueta visual
+    if(val===300_000) el.textContent = el.value = "300k";
+    if(val===500_000) el.textContent = el.value = "500k";
+    if(val===1_000_000) el.textContent = el.value = "1M";
+    // Grava dataset
+    el.dataset.samples = String(val);
+  }
 
-    if(stage==="pre"){
-      const total = Math.max(Number(opts?.samples||0), CFG.PREFLOP_SAMPLES);
-      const batch = Math.max(10_000, Number(opts?.batch||CFG.BATCH_SIZE));
-      return mcPreflopAsync(hero, opponents, total, batch, opts.onProgress);
+  function rewriteOptions(root){
+    const nodes = root.querySelectorAll('button, .btn, input[type=radio], option, [data-samples]');
+    nodes.forEach(el=>{
+      // Pega valor de amostra do data-attr ou do texto
+      const ds = Number(el.dataset?.samples||NaN);
+      let samples = Number.isFinite(ds) ? ds : mapTextToSamples(el.textContent || el.value);
+      if(!samples) return;
+      // Atualiza para novos valores
+      if(samples<=10_000){ // era 3k/5k/10k
+        samples = samples===3000 ? 300_000 :
+                  samples===5000 ? 500_000 : 1_000_000;
+      }
+      relabel(el, samples);
+    });
+
+    // Se houver um container exclusivo, selecione automaticamente 1M
+    const all = [...nodes].filter(el => el.dataset?.samples);
+    const oneM = all.find(el => Number(el.dataset.samples)===1_000_000);
+    if(oneM){
+      if(oneM.tagName==="INPUT" && (oneM.type==="radio"||oneM.type==="checkbox")){
+        oneM.checked = true;
+      }
+      // marca “ativo” visualmente quando for botão
+      oneM.classList?.add('active');
     }
-    if(stage==="flop" || stage==="turn" || stage==="river"){
-      // pós-flop é rápido; mantém síncrono e embrulha em Promise
-      return Promise.resolve(exactPostflopEquity(hero, board, opponents));
-    }
-    return Promise.resolve(null);
-  };
+  }
 
-  console.log("[PATCH v5] Pré-flop: MC próprio (1M sync/async); Pós-flop: EXATO (runouts). APIs: PCALC.computeEquity / computeEquityAsync");
-})(window);
+  function currentPreflopSamples(){
+    // 1) Procura elemento marcado
+    const selRadio = document.querySelector('input[type=radio][data-samples]:checked');
+    if(selRadio) return Number(selRadio.dataset.samples||PC.PREFLOP_SAMPLES_DEFAULT);
+    // 2) Procura botão com classe “active”
+    const btnActive = document.querySelector('[data-samples].active');
+    if(btnActive) return Number(btnActive.dataset.samples||PC.PREFLOP_SAMPLES_DEFAULT);
+    // 3) Fallback: 1M
+    return PC.PREFLOP_SAMPLES_DEFAULT || 1_000_000;
+  }
+
+  // Expõe um helper para sua UI (se quiser chamar antes do compute)
+  PC.getPreflopSamples = currentPreflopSamples;
+
+  // Hook no computeEquity / computeEquityAsync para garantir uso do valor escolhido (só no pré-flop)
+  const _sync = PC.computeEquity;
+  const _async = PC.computeEquityAsync;
+
+  if(typeof _sync === "function"){
+    PC.computeEquity = function(opts){
+      const o = {...(opts||{})};
+      const st = (o.state)||PC.state||{};
+      const boardLen = Math.max(0, (st.selected||[]).length - 2);
+      if(boardLen===0){ // pré-flop
+        o.samples = Math.max(Number(o.samples||0), currentPreflopSamples());
+      }
+      return _sync.call(PC, o);
+    };
+  }
+  if(typeof _async === "function"){
+    PC.computeEquityAsync = function(opts){
+      const o = {...(opts||{})};
+      const st = (o.state)||PC.state||{};
+      const boardLen = Math.max(0, (st.selected||[]).length - 2);
+      if(boardLen===0){ // pré-flop
+        o.samples = Math.max(Number(o.samples||0), currentPreflopSamples());
+      }
+      return _async.call(PC, o);
+    };
+  }
+
+  // Inicializa já com 1M e corrige labels
+  function boot(){
+    rewriteOptions(document);
+    // Se sua UI imprime “Amostras: 5k” em texto fixo, atualiza:
+    document.body.innerHTML = document.body.innerHTML
+      .replace(/\bAmostras:\s*5k\b/gi, 'Amostras: 1M')
+      .replace(/\bMonte Carlo .*5\.000\b/gi, m => m.replace(/5\.000/g, '1.000.000'));
+  }
+
+  if(document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+
+  console.log("[UI PATCH] Opções trocadas p/ 300k / 500k / 1M; padrão = 1M. Flop/Turn/River continuam EXATOS.");
+})();
+
 
 
 
