@@ -1,22 +1,21 @@
-// raise.js — "Tomei Raise" com Equity automático sem mexer no app.js
-// Lê equity da UI (Win/Tie/Lose) via DOM e observa mudanças para atualizar.
+// raise.js — "Tomei Raise" com Equity automática (Win + Tie/2) e calculadora em FICHAS
+// Sem tocar no app.js: lê Win/Tie da UI ou de PC.state.
 // API pública:
 //   window.RAISE.init({ mountSelector, suggestSelector, onUpdateText, readState, ...opts })
-//   window.RAISE.setState(patch)
-//   window.RAISE.getRecommendation()
-//   window.RAISE.setUsePotOdds(bool)
+//   window.RAISE.setState(patch)                 // { tomeiRaise, potAtual, toCall, equityPct, rakePct, rakeCap }
+//   window.RAISE.getRecommendation()             // último cálculo de Pot Odds (quando ligado) ou texto padrão
+//   window.RAISE.setUsePotOdds(bool)             // liga/desliga mini calculadora
 (function (g) {
-  // ================== Config ==================
+  // ===== Config =====
   var DEFAULTS = {
     mountSelector: '#pcalc-toolbar',
     suggestSelector: '#pcalc-sugestao',
+    potOddsCompact: true,
 
-    // === Opções/UI ===
-    potOddsCompact: true,   // mostra só BE/Equity/Decisão
-    // chaves usuais no PC.state (se existirem, ainda serão usadas)
+    // chaves usuais no PC.state (se existirem)
     potKey: 'potAtual',
     toCallKey: 'toCall',
-    equityKey: 'equityPct', // se o app já preencher (0..100)
+    equityKey: 'equityPct', // % pronta
     winKey: 'win',          // 0..1 ou 0..100
     tieKey: 'tie',
 
@@ -30,110 +29,126 @@
       var wk  = DEFAULTS.winKey     || 'win';
       var tk  = DEFAULTS.tieKey     || 'tie';
 
-      // ---------- Equity prioridade: 1) equityPct do state 2) win/tie do state 3) DOM ----------
+      // 1) equityPct direta (0..100)
       var eqPct = toNum(st[ek]);
 
+      // 2) senão, usa win/tie do state (aceita 0..1 ou 0..100)
       if (!isFinite(eqPct)) {
-        var win = toNum(st[wk]);
-        var tie = toNum(st[tk]);
-        if (isFinite(win) && isFinite(tie)) {
-          // normaliza caso venham em %
-          if (win > 1 || tie > 1) { win = win / 100; tie = tie / 100; }
-          eqPct = (win + 0.5 * tie) * 100;
+        var winS = toNum(st[wk]);
+        var tieS = toNum(st[tk]);
+        if (isFinite(winS)) {
+          if (winS > 1) winS = winS/100;
+          if (isFinite(tieS)) tieS = (tieS > 1 ? tieS/100 : tieS);
+          var eqFromState = (winS + (isFinite(tieS)? tieS/2 : 0)) * 100;
+          eqPct = clamp01pct(eqFromState);
         }
       }
 
+      // 3) se ainda não deu, extrai da UI (DOM) — Win + Tie/2
       if (!isFinite(eqPct)) {
-        // tenta extrair da UI (sem tocar no app.js)
-        var domEq = extractEquityFromDOM();
+        var domEq = extractEquityFromDOM(); // % (0..100)
         if (isFinite(domEq)) eqPct = domEq;
       }
 
-      if (!isFinite(eqPct)) eqPct = 50; // fallback seguro
+      // 4) fallback
+      if (!isFinite(eqPct)) eqPct = 50;
 
-      // ---------- Pot / To call em FICHAS ----------
+      // Pot/ToCall em fichas
       var potAtual = toNum(st[pk]);   if (!isFinite(potAtual)) potAtual = 0;
       var toCall   = toNum(st[ck]);   if (!isFinite(toCall))   toCall   = 0;
 
       return {
-        maoLabel: st.maoLabel || st.mao || '',
-        categoria: st.maoCategoria || 'premium (top 20)',
-        callers: Number(st.callers || 0),
-
         potAtual: potAtual,
         toCall: toCall,
         equityPct: eqPct,
         rakePct: toNum(st.rakePct) || 0,
-        rakeCap: (st.rakeCap != null ? Number(st.rakeCap) : Infinity),
-        spr: (st.spr != null ? Number(st.spr) : undefined),
-        players: Number(st.players || 2),
-        wasPotControl: !!st.wasPotControl
+        rakeCap: (st.rakeCap != null ? Number(st.rakeCap) : Infinity)
       };
     },
     onUpdateText: null
   };
 
-  // ================== Estado ==================
+  // ===== Estado =====
   var state = {
     mounted: false,
     elements: {},
-    tomeiRaise: false,
-    pos: 'IP',            // 'IP' | 'OOP' | null (contexto textual)
-    callers: 0,           // contexto
+    tomeiRaise: false,   // agora controlado via botão toggle
     usePotOdds: true,
     lastPotOdds: null,
     _cfg: null,
-    // Overrides vindos via setState() ou inputs
     overrides: { potAtual: undefined, toCall: undefined, equityPct: undefined, rakePct: undefined, rakeCap: undefined },
-    // Observers DOM
     observers: []
   };
 
-  // ================== Utils ==================
+  // ===== Utils =====
   function $(sel, root){ return (root||document).querySelector(sel); }
   function el(tag, cls){ var x=document.createElement(tag); if(cls) x.className=cls; return x; }
   function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
+  function clamp01pct(p){ return Math.max(0, Math.min(100, +Number(p).toFixed(1))); }
   function toNum(x){ var n = Number(x); return isFinite(n) ? n : NaN; }
 
-  // ---- Extrair Equity da UI sem mexer no app.js ----
+  // Parser robusto: "16.1", "16,1", "1.234,5", "1,234.5"
+  function parseFlexibleNumber(raw){
+    if(raw==null) return NaN;
+    var s = String(raw).trim();
+    if(!s) return NaN;
+    var hasDot = s.indexOf('.') >= 0;
+    var hasComma = s.indexOf(',') >= 0;
+
+    if (hasDot && hasComma){
+      // último separador é o decimal
+      if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
+        s = s.replace(/\./g,'').replace(',', '.'); // 1.234,5 → 1234.5
+      } else {
+        s = s.replace(/,/g,''); // 1,234.5 → 1234.5
+      }
+    } else if (hasComma){
+      s = s.replace(',', '.');  // 16,1 → 16.1
+    }
+    var n = parseFloat(s);
+    return isFinite(n) ? n : NaN;
+  }
+  function matchPct(text, re){
+    var m = (text||'').match(re);
+    if (!m) return NaN;
+    return parseFlexibleNumber(m[1]);
+  }
+
+  // Extrai equity da UI: Win + Tie/2
   function extractEquityFromDOM(){
-    // 1) #eqBreak: "<small><b>Win:</b> 97.0%</small> <small><b>Tie:</b> 0.0%</small> ..."
+    // 1) #eqBreak: "Win: X% ... Tie: Y% ..."
     var br = document.getElementById('eqBreak');
     if (br) {
       var txt = br.textContent || '';
       var win = matchPct(txt, /Win:\s*([\d.,]+)%/i);
       var tie = matchPct(txt, /Tie:\s*([\d.,]+)%/i);
-      if (isFinite(win) && isFinite(tie)) return +(win + tie/2).toFixed(1);
+      if (isFinite(win)) {
+        var eq = win + (isFinite(tie) ? tie/2 : 0);
+        return clamp01pct(eq);
+      }
     }
-
-    // 2) #eqBarWin width: "97.0%"
+    // 2) barra de Win
     var bar = document.getElementById('eqBarWin');
     if (bar && bar.style && bar.style.width){
-      var w = parseFloat((bar.style.width||'').replace(',', '.'));
-      if (isFinite(w)) return +w.toFixed(1);
+      var w = parseFlexibleNumber((bar.style.width||'').replace('%',''));
+      if (isFinite(w)) return clamp01pct(w); // se não tiver Tie na UI, melhor que nada
     }
-
-    // 3) Varredura geral por nós com "Win:" e "Tie:"
+    // 3) varredura geral (fallback)
     var nodes = Array.from(document.querySelectorAll('div,span,small,p,li,td,th'));
     var node = nodes.find(n => /Win:\s*[\d.,]+%/i.test(n.textContent||''));
     if (node){
       var t = node.textContent || '';
       var win2 = matchPct(t, /Win:\s*([\d.,]+)%/i);
       var tie2 = matchPct(t, /Tie:\s*([\d.,]+)%/i);
-      if (isFinite(win2) && isFinite(tie2)) return +(win2 + tie2/2).toFixed(1);
+      if (isFinite(win2)) {
+        var eq2 = win2 + (isFinite(tie2) ? tie2/2 : 0);
+        return clamp01pct(eq2);
+      }
     }
-
     return NaN;
   }
-  function matchPct(text, re){
-    var m = (text||'').match(re);
-    if (!m) return NaN;
-    var raw = String(m[1]).replace(/\./g,'').replace(',','.');
-    var n = parseFloat(raw);
-    return isFinite(n) ? n : NaN;
-  }
 
-  // ---- Pot Odds ----
+  // Pot Odds
   function potOddsBE(potAtual, toCall, rakePct, rakeCap){
     potAtual = Number(potAtual||0);
     toCall   = Number(toCall||0);
@@ -168,36 +183,22 @@
     var css = ''
       + '#pcalc-toolbar{border:1px dashed #334155;border-radius:5px;padding:8px}\n'
       + '.raise-bar{display:flex;gap:.9rem;align-items:center;flex-wrap:wrap;margin:.5rem 0}\n'
-      + '.field{display:flex;align-items:center;gap:.5rem}\n'
+      + '.field{display:flex;align-items:center;gap:.6rem}\n'
       + '.fld-label{color:#93c5fd;font-weight:600;white-space:nowrap}\n'
       + '.input-modern input{width:110px;padding:.48rem .6rem;border:1px solid #334155;'
         + 'background:#0f172a;color:#e5e7eb;border-radius:.6rem;outline:0}\n'
-      + '.raise-checks{display:flex;align-items:center;gap:1rem}\n'
-      + '.rc-item{display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.9rem;color:#e5e7eb}\n'
-      + '.rc-item input{width:16px;height:16px;cursor:pointer}\n'
-      + '.rc-item.active span{font-weight:700;color:#38bdf8}\n'
-      + '.raise-potodds.card{background:#0b1324;border:1px solid #22304a;border-radius:10px;padding:10px;line-height:1.2}\n';
+      + '.raise-potodds.card{background:#0b1324;border:1px solid #22304a;border-radius:10px;padding:10px;line-height:1.2}\n'
+      + '.toggle-btn{display:inline-flex;align-items:center;gap:.5rem;border:1px solid #334155;'
+        + 'background:#0f172a;color:#e5e7eb;border-radius:.7rem;padding:.5rem .75rem;cursor:pointer;user-select:none}\n'
+      + '.toggle-btn.on{background:#14532d;border-color:#166534}\n'
+      + '.toggle-dot{width:10px;height:10px;border-radius:50%;background:#475569}\n'
+      + '.toggle-btn.on .toggle-dot{background:#10b981}\n';
     var style = el('style'); style.id='raise-css-hook';
     style.appendChild(document.createTextNode(css));
     document.head.appendChild(style);
   }
 
-  // ================== Fallback textual ==================
-  function buildSuggestion(ctx){
-    var maoLabel = ctx.maoLabel || ctx.categoria || '';
-    var posIn    = ctx.pos;
-    var pos      = posIn || 'IP';
-    var posIndef = (posIn == null);
-    var callers  = Number(ctx.callers || 0);
-
-    var actionText = 'Sem cálculo de pot odds.\n'
-      + '→ Contexto: ' + (ctx.tomeiRaise ? 'Houve raise antes' : 'Sem raise antes')
-      + (callers>0? (' + ' + callers + ' caller(s)'):'') + ' (' + pos + ').\n'
-      + '→ Mão: ' + (maoLabel || '—') + '.';
-    return actionText + (posIndef ? '\n(Obs.: posição não marcada — usando IP padrão)' : '');
-  }
-
-  // ================== UI helpers ==================
+  // ===== UI helpers =====
   function buildPotInputs(initialPot, initialCall){
     var potWrap = el('div','field');
     var potLbl  = el('span','fld-label'); potLbl.textContent='Pot (fichas):';
@@ -217,89 +218,37 @@
     return { potWrap, callWrap, potInput: potInp, callInput: callInp };
   }
 
-  // ================== UI / Montagem ==================
+  // ===== UI / Montagem =====
   function renderControls(cfg){
     var mount = $(cfg.mountSelector);
     if (!mount) return null;
 
     var bar = el('div', 'raise-bar');
 
-    // (1) Switch Tomei Raise
-    var switchWrap = el('div', 'field');
-    var lblTxt = el('span', 'fld-label'); lblTxt.textContent = 'Tomei Raise';
-    var rsw = el('label', 'rc-item');
-    var chk = document.createElement('input'); chk.type='checkbox'; chk.id='chk-tomei-raise';
-    var chkTxt  = document.createElement('span'); chkTxt.textContent='Ativar calculadora de Pot Odds';
-    rsw.appendChild(chk); rsw.appendChild(chkTxt);
-    switchWrap.appendChild(lblTxt); switchWrap.appendChild(rsw);
+    // (1) Botão Toggle: Tomei Raise
+    var raiseWrap = el('div','field');
+    var lblTxt = el('span','fld-label'); lblTxt.textContent = 'Situação:';
+    var btn = el('button','toggle-btn'); btn.type='button';
+    btn.innerHTML = '<span class="toggle-dot"></span><span id="tg-label">Sem Raise</span>';
+    raiseWrap.appendChild(lblTxt); raiseWrap.appendChild(btn);
 
-    // (2) Posição (opcional p/ contexto)
-    var posWrap = el('div','field');
-    var posLbl  = el('span','fld-label'); posLbl.textContent = 'Posição:';
-    var posGrp  = el('div','raise-checks');
-
-    var ipWrap  = el('label', 'rc-item');
-    var ipCb    = document.createElement('input'); ipCb.type='checkbox';
-    var ipTxt   = document.createElement('span'); ipTxt.textContent='Depois (IP)';
-    ipWrap.appendChild(ipCb); ipWrap.appendChild(ipTxt);
-
-    var oopWrap = el('label', 'rc-item');
-    var oopCb   = document.createElement('input'); oopCb.type='checkbox';
-    var oopTxt  = document.createElement('span'); oopTxt.textContent='Antes (OOP)';
-    oopWrap.appendChild(oopCb); oopWrap.appendChild(oopTxt);
-
-    posGrp.appendChild(ipWrap); posGrp.appendChild(oopWrap);
-    posWrap.appendChild(posLbl); posWrap.appendChild(posGrp);
-
-    // (3) Nº de callers
-    var callersWrap = el('div','field');
-    var cLabel  = el('span','fld-label'); cLabel.textContent='Nº callers:';
-    var cInpW   = el('div','input-modern'); cInpW.innerHTML='<input id="inp-callers" type="number" step="1" min="0" max="8" placeholder="0">';
-    callersWrap.appendChild(cLabel); callersWrap.appendChild(cInpW);
-    var callersInput = cInpW.querySelector('input');
-
-    // (4) Calculadora: Pot / A pagar (FICHAS)
+    // (2) Calculadora: Pot / A pagar (FICHAS)
     var st0   = cfg.readState();
     var pots  = buildPotInputs(st0.potAtual, st0.toCall);
 
     // Montagem
-    bar.appendChild(switchWrap);
-    bar.appendChild(posWrap);
-    bar.appendChild(callersWrap);
+    bar.appendChild(raiseWrap);
     bar.appendChild(pots.potWrap);
     bar.appendChild(pots.callWrap);
     mount.appendChild(bar);
 
-    // Estado inicial
-    chk.checked = state.tomeiRaise;
-
-    ipCb.checked  = (state.pos==='IP');
-    oopCb.checked = (state.pos==='OOP');
-    ipWrap.classList.toggle('active', ipCb.checked);
-    oopWrap.classList.toggle('active', oopCb.checked);
-
-    if (typeof state.callers === 'number') callersInput.value = String(state.callers);
+    // Estado inicial do botão
+    syncToggleVisual(btn, state.tomeiRaise);
 
     // Eventos
-    chk.addEventListener('change',function(){ state.tomeiRaise=chk.checked; updateSuggestion(cfg); });
-    function syncPosVisual(){
-      ipWrap.classList.toggle('active', ipCb.checked);
-      oopWrap.classList.toggle('active', oopCb.checked);
-    }
-    ipCb.addEventListener('change',function(){
-      if(ipCb.checked){ oopCb.checked=false; state.pos='IP'; }
-      else { state.pos=null; }
-      syncPosVisual(); updateSuggestion(cfg);
-    });
-    oopCb.addEventListener('change',function(){
-      if(oopCb.checked){ ipCb.checked=false; state.pos='OOP'; }
-      else { state.pos=null; }
-      syncPosVisual(); updateSuggestion(cfg);
-    });
-
-    callersInput.addEventListener('input', function(){
-      var v = parseInt(callersInput.value||'0',10);
-      state.callers = clamp(isFinite(v)?v:0,0,8);
+    btn.addEventListener('click', function(){
+      state.tomeiRaise = !state.tomeiRaise;
+      syncToggleVisual(btn, state.tomeiRaise);
       updateSuggestion(cfg);
     });
 
@@ -315,14 +264,21 @@
     });
 
     return {
-      bar: bar, chk: chk,
-      ipCb: ipCb, oopCb: oopCb, ipWrap: ipWrap, oopWrap: oopWrap,
-      callersInput: callersInput,
-      potInput: pots.potInput, callInput: pots.callInput
+      bar: bar,
+      toggleBtn: btn,
+      potInput: pots.potInput,
+      callInput: pots.callInput
     };
   }
 
-  // ============== Render do bloco de sugestão ==============
+  function syncToggleVisual(btn, on){
+    if(!btn) return;
+    btn.classList.toggle('on', !!on);
+    var lab = btn.querySelector('#tg-label');
+    if(lab) lab.textContent = on ? 'Tomei Raise' : 'Sem Raise';
+  }
+
+  // ===== Render =====
   function renderPotOddsUI(ctx, cfg){
     var out = $(cfg.suggestSelector);
     if(!out) return;
@@ -364,13 +320,17 @@
     }
   }
 
-  function renderDefaultRecommendation(ctx, cfg){
+  function renderOff(ctx, cfg){
     var out = $(cfg.suggestSelector);
-    var texto = buildSuggestion(ctx);
-    if (typeof cfg.onUpdateText === 'function'){
-      cfg.onUpdateText(texto, {});
-    } else if (out){
-      out.innerText = texto;
+    if(!out) return;
+    out.innerHTML = `
+      <div class="raise-potodds card">
+        <div style="font-weight:700;margin-bottom:6px">Sem raise</div>
+        <div class="mut">Ative <b>"Tomei Raise"</b> para ver Pot Odds desta mão.</div>
+      </div>
+    `;
+    if(typeof DEFAULTS.onUpdateText === 'function'){
+      DEFAULTS.onUpdateText('Sem raise — Pot Odds desligado');
     }
   }
 
@@ -385,36 +345,28 @@
     var rakeCap  = (state.overrides.rakeCap  != null ? state.overrides.rakeCap  : st.rakeCap);
 
     var ctx = {
-      maoLabel: st.maoLabel,
-      categoria: st.categoria,
-      callers: state.callers,
-      pos: state.pos,
       tomeiRaise: state.tomeiRaise,
       potAtual: potAtual,
       toCall: toCall,
       equityPct: equity,
       rakePct: rakePct,
-      rakeCap: rakeCap,
-      spr: st.spr,
-      players: st.players,
-      wasPotControl: st.wasPotControl
+      rakeCap: rakeCap
     };
 
     if (ctx.tomeiRaise && state.usePotOdds){
       renderPotOddsUI(ctx, cfg);
     } else {
-      renderDefaultRecommendation(ctx, cfg);
+      renderOff(ctx, cfg);
     }
   }
 
-  // ---- Observa a UI do app para reagir ao término do Monte Carlo ----
+  // Observa a UI do app para reagir ao término do Monte Carlo
   function attachDOMObservers(){
     detachDOMObservers();
 
     var br = document.getElementById('eqBreak');
     if (br && g.MutationObserver){
       var mo1 = new MutationObserver(function(){
-        // Quando Win/Tie/Lose mudarem, refaz a leitura/significado de equity
         if (state._cfg) updateSuggestion(state._cfg);
       });
       mo1.observe(br, { childList:true, subtree:true, characterData:true });
@@ -424,7 +376,6 @@
     var bar = document.getElementById('eqBarWin');
     if (bar && g.MutationObserver){
       var mo2 = new MutationObserver(function(muts){
-        // Se style.width mudar, atualiza
         var refresh = muts.some(m => m.attributeName === 'style');
         if (refresh && state._cfg) updateSuggestion(state._cfg);
       });
@@ -432,17 +383,17 @@
       state.observers.push(mo2);
     }
 
-    // Fallback leve: um ping tardio para casos em que o DOM troca inteiro
-    setTimeout(function(){ if (state._cfg) updateSuggestion(state._cfg); }, 50);
-    setTimeout(function(){ if (state._cfg) updateSuggestion(state._cfg); }, 250);
-    setTimeout(function(){ if (state._cfg) updateSuggestion(state._cfg); }, 750);
+    // pings tardios, caso o DOM re-renderize por completo
+    [50, 250, 750].forEach(function(ms){
+      setTimeout(function(){ if (state._cfg) updateSuggestion(state._cfg); }, ms);
+    });
   }
   function detachDOMObservers(){
     (state.observers||[]).forEach(function(mo){ try{ mo.disconnect(); }catch(_){ } });
     state.observers = [];
   }
 
-  // ================== API pública ==================
+  // ===== API pública =====
   var API = {
     init: function(userCfg){
       if (state.mounted) return;
@@ -462,16 +413,13 @@
       state.mounted  = true;
       state._cfg     = cfg;
 
-      attachDOMObservers(); // >>> OUVE mudanças na UI do app (Win/Tie/Lose/barra)
-
+      attachDOMObservers();
       updateSuggestion(cfg);
     },
 
     setState: function(patch){
       patch = patch || {};
       if ('tomeiRaise' in patch) state.tomeiRaise = !!patch.tomeiRaise;
-      if ('pos' in patch)        state.pos = (patch.pos === 'OOP' ? 'OOP' : (patch.pos === 'IP' ? 'IP' : null));
-      if ('callers' in patch)    state.callers = clamp(parseInt(patch.callers || 0, 10), 0, 8);
 
       // Overrides aceitos (em fichas)
       if ('potAtual'  in patch) state.overrides.potAtual  = (patch.potAtual==null?undefined:Number(patch.potAtual));
@@ -480,15 +428,9 @@
       if ('rakePct'   in patch) state.overrides.rakePct   = (patch.rakePct==null?undefined:Number(patch.rakePct));
       if ('rakeCap'   in patch) state.overrides.rakeCap   = (patch.rakeCap==null?undefined:Number(patch.rakeCap));
 
-      // sync mínimo de UI (se existir)
+      // sync botão (se existir)
       var els = state.elements || {};
-      if (els.ipCb && els.oopCb && els.ipWrap && els.oopWrap){
-        els.ipCb.checked  = (state.pos === 'IP');
-        els.oopCb.checked = (state.pos === 'OOP');
-        els.ipWrap.classList.toggle('active', els.ipCb.checked);
-        els.oopWrap.classList.toggle('active', els.oopCb.checked);
-      }
-      if (els.callersInput) els.callersInput.value = String(state.callers);
+      if (els.toggleBtn) syncToggleVisual(els.toggleBtn, state.tomeiRaise);
       if (els.potInput && state.overrides.potAtual!=null)  els.potInput.value  = String(state.overrides.potAtual||0);
       if (els.callInput && state.overrides.toCall!=null)    els.callInput.value = String(state.overrides.toCall||0);
 
@@ -499,15 +441,7 @@
       if (state.usePotOdds && state.lastPotOdds){
         return { type: 'potodds', data: state.lastPotOdds };
       }
-      var cfg = state._cfg || DEFAULTS;
-      var st  = cfg.readState();
-      return buildSuggestion({
-        maoLabel: st.maoLabel,
-        categoria: st.categoria,
-        callers: state.callers,
-        pos: state.pos,
-        tomeiRaise: state.tomeiRaise
-      });
+      return 'Sem raise — Pot Odds desligado';
     },
 
     setUsePotOdds: function(flag){
