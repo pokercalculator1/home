@@ -1,28 +1,57 @@
 // raise.js — "Tomei Raise" com mini calculadora de Pot Odds no lugar do "3x"
 // API pública (mantida e expandida):
-//   window.RAISE.init({ mountSelector, suggestSelector, onUpdateText, readState })
+//   window.RAISE.init({ mountSelector, suggestSelector, onUpdateText, readState, ...opts })
 //   window.RAISE.setState(patch)                 // { tomeiRaise, pos, raiseBB, callers, stackBB, ... }
-//   window.RAISE.getRecommendation()             // texto ou último cálculo de Pot Odds
-//   window.RAISE.setUsePotOdds(bool)             // novo: liga/desliga mini calculadora
-
+//   window.RAISE.getRecommendation()             // texto padrão ou último cálculo de Pot Odds
+//   window.RAISE.setUsePotOdds(bool)             // liga/desliga mini calculadora
 (function (g) {
   // ================== Config ==================
   var DEFAULTS = {
     mountSelector: '#pcalc-toolbar',
     suggestSelector: '#pcalc-sugestao',
+
+    // === Opções novas (pode sobrescrever em RAISE.init({...})) ===
+    potOddsCompact: true,   // true = só mostra BE/Equity/Decisão (sem inputs)
+    potKey: 'potAtual',     // chave em PC.state do pote (BB) antes da sua ação
+    toCallKey: 'toCall',    // chave em PC.state do valor a pagar (BB)
+    equityKey: 'equityPct', // se já vem em %
+    winKey: 'win',          // se vier 0..1 (Monte Carlo), equity = (win + 0.5*tie)*100
+    tieKey: 'tie',
+
     readState: function () {
       var PC = g.PC || g.PCALC || {};
       var st = PC.state || {};
+
+      // coleta chaves configuráveis
+      var ek  = DEFAULTS.equityKey || 'equityPct';
+      var pk  = DEFAULTS.potKey     || 'potAtual';
+      var tk  = DEFAULTS.toCallKey  || 'toCall';
+      var wk  = DEFAULTS.winKey     || 'win';
+      var tk2 = DEFAULTS.tieKey     || 'tie';
+
+      // equity: tenta equityPct direta; senão calcula por win/tie (0..1)
+      var eqPct = Number(st[ek]);
+      if (!isFinite(eqPct)) {
+        var win = Number(st[wk]); var tie = Number(st[tk2]);
+        if (isFinite(win) && isFinite(tie)) {
+          eqPct = (win + 0.5 * tie) * 100;
+        }
+      }
+      if (!isFinite(eqPct)) eqPct = 50;
+
+      // pot/toCall
+      var potAtual = Number(st[pk]);   if (!isFinite(potAtual)) potAtual = 0;
+      var toCall   = Number(st[tk]);   if (!isFinite(toCall))   toCall   = 0;
+
       return {
         maoLabel: st.maoLabel || st.mao || '',
         categoria: st.maoCategoria || 'premium (top 20)',
         stackBB: Number(st.stackBB || st.stack || 100),
         callers: Number(st.callers || 0),
 
-        // Pot Odds (se o app já prover; senão o usuário digita no UI)
-        potAtual: Number(st.potAtual || st.pot || 0),
-        toCall: Number(st.toCall || st.chamar || 0),
-        equityPct: Number(st.equityPct || st.eq || 50),
+        potAtual: potAtual,
+        toCall: toCall,
+        equityPct: eqPct,
         rakePct: Number(st.rakePct || 0),
         rakeCap: (st.rakeCap != null ? Number(st.rakeCap) : Infinity),
         spr: (st.spr != null ? Number(st.spr) : undefined),
@@ -38,12 +67,12 @@
     mounted: false,
     elements: {},
     tomeiRaise: false,
-    pos: 'IP',        // 'IP' | 'OOP' | null (quando desmarcado)
+    pos: 'IP',        // 'IP' | 'OOP' | null
     raiseBB: null,    // tamanho do raise do vilão (BB)
     callers: 0,       // nº de callers entre agressor e você
     stackBB: 100,     // stack efetivo (BB)
-    usePotOdds: true, // NOVO: mostra mini calculadora quando tomeiRaise = true
-    lastPotOdds: null, // guarda último cálculo para getRecommendation()
+    usePotOdds: true, // mostra mini calculadora quando tomeiRaise = true
+    lastPotOdds: null,
     _cfg: null
   };
 
@@ -53,7 +82,7 @@
   function roundHalf(x){ return Math.round(x*2)/2; }
   function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
 
-  // Pot Odds helpers
+  // Pot Odds
   function potOddsBE(potAtual, toCall, rakePct, rakeCap){
     potAtual = Number(potAtual||0);
     toCall   = Number(toCall||0);
@@ -199,12 +228,10 @@
 
   // ================== UI helpers ==================
   function buildCallersInline(current){
-    // container inline: label + botão
     var wrap = el('div','field callers-inline');
     var lbl  = el('span','fld-label'); lbl.textContent = 'Nº callers:';
     var btn  = el('button','menu-btn'); btn.type='button'; btn.textContent = (current||0);
 
-    // painel flutuante ancorado ao botão
     var holder = el('div'); holder.style.position = 'relative';
     var panel  = el('div','menu-panel');
 
@@ -278,10 +305,9 @@
     // (4) Nº de callers (inline)
     var callers = buildCallersInline(state.callers);
 
-    // (5) Posição com legenda clara (centralizada em linha própria)
+    // (5) Posição com legenda clara (centralizada)
     var posWrap = el('div','pos-wrap');
-    var posLegend = el('span','pos-legend');
-    posLegend.textContent = 'Você está antes ou depois do agressor?';
+    var posLegend = el('span','pos-legend'); posLegend.textContent = 'Você está antes ou depois do agressor?';
     var grpPos = el('div','raise-checks');
 
     var ipWrap  = el('label', 'rc-item');
@@ -298,7 +324,7 @@
     posWrap.appendChild(posLegend);
     posWrap.appendChild(grpPos);
 
-    // Montagem na ordem: switch | raise | stack | callers | (linha) posição
+    // Montagem
     bar.appendChild(switchWrap);
     bar.appendChild(raiseField);
     bar.appendChild(stackField);
@@ -318,7 +344,6 @@
     chk.addEventListener('change',function(){
       state.tomeiRaise=chk.checked; updateSuggestion(cfg);
     });
-
     function syncPosVisual(){
       ipWrap.classList.toggle('active', ipCb.checked);
       oopWrap.classList.toggle('active', oopCb.checked);
@@ -326,19 +351,16 @@
     ipCb.addEventListener('change',function(){
       if(ipCb.checked){ oopCb.checked=false; state.pos='IP'; }
       else { state.pos=null; }
-      syncPosVisual();
-      updateSuggestion(cfg);
+      syncPosVisual(); updateSuggestion(cfg);
     });
     oopCb.addEventListener('change',function(){
       if(oopCb.checked){ ipCb.checked=false; state.pos='OOP'; }
       else { state.pos=null; }
-      syncPosVisual();
-      updateSuggestion(cfg);
+      syncPosVisual(); updateSuggestion(cfg);
     });
 
     var raiseInput = $('#inp-raise-bb', bar);
     var stackInput = $('#inp-stack', bar);
-
     if (raiseInput) raiseInput.addEventListener('input', function(){
       var v = parseFloat(raiseInput.value);
       state.raiseBB = (isFinite(v) && v > 0) ? v : null;
@@ -358,7 +380,7 @@
       callers.btn.textContent = state.callers;
       var act = callers.panel.querySelector('.menu-item.active'); if (act) act.classList.remove('active');
       var items = callers.panel.querySelectorAll('.menu-item');
-      if (items[state.callers]) items[state.callers].classList.add('active'); // índice 0..8
+      if (items[state.callers]) items[state.callers].classList.add('active');
     }
 
     return {
@@ -374,43 +396,68 @@
     var out = $(cfg.suggestSelector);
     if(!out) return;
 
-    // valores iniciais (do estado/app), editáveis pelo usuário
-    var potAtual = (ctx.potAtual != null) ? ctx.potAtual : '';
-    var toCall   = (ctx.toCall   != null) ? ctx.toCall   : '';
-    var equity   = (ctx.equityPct!= null) ? ctx.equityPct: '';
-    var rakePct  = (ctx.rakePct  != null) ? ctx.rakePct  : 0;
-    var rakeCap  = (ctx.rakeCap  != null) ? ctx.rakeCap  : '';
+    var potAtual = Number(ctx.potAtual || 0);
+    var toCall   = Number(ctx.toCall   || 0);
+    var equity   = Number(ctx.equityPct!= null ? ctx.equityPct : 50);
+    var rakePct  = Number(ctx.rakePct  || 0);
+    var rakeCap  = (ctx.rakeCap===Infinity || ctx.rakeCap==null) ? Infinity : Number(ctx.rakeCap);
 
     var result = decideVsRaise(potAtual, toCall, equity, rakePct, rakeCap);
     state.lastPotOdds = result;
 
+    if (DEFAULTS.potOddsCompact) {
+      out.innerHTML = `
+        <div class="raise-potodds card">
+          <div style="font-weight:700;margin-bottom:6px">Pot Odds (vs Raise) — Compacto</div>
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
+            <div>Pot atual</div><div><b>${potAtual ? potAtual.toFixed(1) : '—'}</b></div>
+            <div>To call</div><div><b>${toCall ? toCall.toFixed(1) : '—'}</b></div>
+            <div>BE (pot odds)</div><div><b>${result.bePct}%</b></div>
+            <div>Equity</div><div><b>${result.equityPct}%</b></div>
+            <div>Recomendação</div>
+            <div><span id="po-rec" style="padding:2px 8px;border-radius:999px;border:1px solid #22304a">${result.rec}</span></div>
+          </div>
+        </div>
+      `;
+      var pill = out.querySelector('#po-rec');
+      if (pill){
+        var c = result.rec === 'Call' ? '#10b981' : (result.rec === 'Fold' ? '#ef4444' : '#f59e0b');
+        pill.style.background = c + '22';
+        pill.style.borderColor = c + '66';
+        pill.style.color = '#e5e7eb';
+      }
+      if(typeof DEFAULTS.onUpdateText === 'function'){
+        DEFAULTS.onUpdateText(`PotOdds: BE ${result.bePct}% | EQ ${result.equityPct}% → ${result.rec}`);
+      }
+      return;
+    }
+
+    // modo editável (opcional)
     out.innerHTML = `
       <div class="raise-potodds card">
         <div style="font-weight:700;margin-bottom:6px">Pot Odds (vs Raise)</div>
-
         <div class="grid">
           <label style="display:flex;flex-direction:column;gap:4px">
             <span>Pot atual</span>
-            <input id="po-pot" type="number" min="0" step="0.1" value="${potAtual}">
+            <input id="po-pot" type="number" min="0" step="0.1" value="${potAtual||''}">
           </label>
           <label style="display:flex;flex-direction:column;gap:4px">
             <span>To call</span>
-            <input id="po-call" type="number" min="0" step="0.1" value="${toCall}">
+            <input id="po-call" type="number" min="0" step="0.1" value="${toCall||''}">
           </label>
           <label style="display:flex;flex-direction:column;gap:4px">
             <span>Equity %</span>
-            <input id="po-eq" type="number" min="0" max="100" step="0.1" value="${equity}">
+            <input id="po-eq" type="number" min="0" max="100" step="0.1" value="${equity||''}">
           </label>
           <label style="display:flex;flex-direction:column;gap:4px">
             <span>Rake % (opcional)</span>
-            <input id="po-rake" type="number" min="0" max="0.2" step="0.005" value="${rakePct}">
+            <input id="po-rake" type="number" min="0" max="0.2" step="0.005" value="${rakePct||0}">
           </label>
           <label style="display:flex;flex-direction:column;gap:4px">
             <span>Rake Cap (opcional)</span>
             <input id="po-cap" type="number" min="0" step="0.1" value="${(rakeCap===Infinity)?'':rakeCap}">
           </label>
         </div>
-
         <div id="po-out" style="margin-top:10px;font-size:14px">
           <div>BE (pot odds): <b>${result.bePct}%</b></div>
           <div>Equity: <b>${result.equityPct}%</b></div>
@@ -418,59 +465,47 @@
         </div>
       </div>
     `;
-
-    function recolor(recEl, rec){
-      var c = rec === 'Call' ? '#10b981' : (rec === 'Fold' ? '#ef4444' : '#f59e0b');
-      recEl.style.background = c + '22';
-      recEl.style.borderColor = c + '66';
-      recEl.style.color = '#e5e7eb';
+    var pill = out.querySelector('#po-rec');
+    if(pill){
+      var c = result.rec === 'Call' ? '#10b981' : (result.rec === 'Fold' ? '#ef4444' : '#f59e0b');
+      pill.style.background = c + '22';
+      pill.style.borderColor = c + '66';
+      pill.style.color = '#e5e7eb';
     }
-    recolor(out.querySelector('#po-rec'), result.rec);
-
-    // listeners para recalcular ao editar campos
     var $pot  = out.querySelector('#po-pot');
     var $call = out.querySelector('#po-call');
     var $eq   = out.querySelector('#po-eq');
     var $rk   = out.querySelector('#po-rake');
     var $cap  = out.querySelector('#po-cap');
-
     function recompute(){
-      var potVal  = Number($pot.value || 0);
-      var callVal = Number($call.value || 0);
-      var eqVal   = Number($eq.value || 0);
-      var rkVal   = Number($rk.value || 0);
-      var capVal  = $cap.value === '' ? Infinity : Number($cap.value || 0);
-
-      var outCalc = decideVsRaise(potVal, callVal, eqVal, rkVal, capVal);
+      var outCalc = decideVsRaise(
+        Number($pot.value||0), Number($call.value||0), Number($eq.value||0),
+        Number($rk.value||0), ($cap.value===''?Infinity:Number($cap.value||0))
+      );
       state.lastPotOdds = outCalc;
-
       var outBox = out.querySelector('#po-out');
-      if(outBox){
-        outBox.innerHTML =
-          `<div>BE (pot odds): <b>${outCalc.bePct}%</b></div>
-           <div>Equity: <b>${outCalc.equityPct}%</b></div>
-           <div>Recomendação: <span id="po-rec" style="padding:2px 8px;border-radius:999px;border:1px solid #22304a">${outCalc.rec}</span></div>`;
-        var pill2 = out.querySelector('#po-rec');
-        if(pill2) recolor(pill2, outCalc.rec);
+      outBox.innerHTML =
+        `<div>BE (pot odds): <b>${outCalc.bePct}%</b></div>
+         <div>Equity: <b>${outCalc.equityPct}%</b></div>
+         <div>Recomendação: <span id="po-rec" style="padding:2px 8px;border-radius:999px;border:1px solid #22304a">${outCalc.rec}</span></div>`;
+      var pill2 = out.querySelector('#po-rec');
+      if(pill2){
+        var c2 = outCalc.rec === 'Call' ? '#10b981' : (outCalc.rec === 'Fold' ? '#ef4444' : '#f59e0b');
+        pill2.style.background = c2 + '22';
+        pill2.style.borderColor = c2 + '66';
+        pill2.style.color = '#e5e7eb';
       }
-
       if(typeof DEFAULTS.onUpdateText === 'function'){
         DEFAULTS.onUpdateText(`PotOdds: BE ${outCalc.bePct}% | EQ ${outCalc.equityPct}% → ${outCalc.rec}`);
       }
     }
-
-    [$pot,$call,$eq,$rk,$cap].forEach(function(el){
-      if(el) el.addEventListener('input', recompute);
-    });
-
-    // callback inicial
+    [$pot,$call,$eq,$rk,$cap].forEach(function(el){ if(el) el.addEventListener('input', recompute); });
     if(typeof DEFAULTS.onUpdateText === 'function'){
       DEFAULTS.onUpdateText(`PotOdds: BE ${result.bePct}% | EQ ${result.equityPct}% → ${result.rec}`);
     }
   }
 
   function renderDefaultRecommendation(ctx, cfg){
-    // fallback: mostra a msg padrão (ex.: “3x o raise”) quando a calculadora está desligada
     var out = $(cfg.suggestSelector);
     var texto = buildSuggestion(ctx);
     if (typeof cfg.onUpdateText === 'function'){
@@ -490,7 +525,6 @@
       callers: state.callers,
       pos: state.pos,
       tomeiRaise: state.tomeiRaise,
-
       // Pot Odds
       potAtual: st.potAtual,
       toCall: st.toCall,
@@ -539,8 +573,8 @@
       if ('callers' in patch)   state.callers = clamp(parseInt(patch.callers || 0, 10), 0, 8);
       if ('stackBB' in patch)   state.stackBB = clamp(parseInt(patch.stackBB || 100, 10), 1, 1000);
 
-      // também aceita setState para Pot Odds (opcional)
-      if ('potAtual' in patch)   ; // valores são usados via readState; UI permite editar
+      // aceita chaves de Pot Odds no patch (usadas em readState/UI)
+      if ('potAtual' in patch)   ;
       if ('toCall' in patch)     ;
       if ('equityPct' in patch)  ;
       if ('rakePct' in patch)    ;
@@ -568,11 +602,9 @@
     },
 
     getRecommendation: function(){
-      // Se PotOdds estiver ativo e houver último cálculo, devolve isso;
       if (state.usePotOdds && state.lastPotOdds){
         return { type: 'potodds', data: state.lastPotOdds };
       }
-      // Caso contrário, retorna o texto padrão (3x, squeeze etc.)
       var cfg = state._cfg || DEFAULTS;
       var st  = cfg.readState();
       return buildSuggestion({
