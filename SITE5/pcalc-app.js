@@ -542,7 +542,7 @@
             <span class="lbl">Amostras:
               <select id="eqTrials" style="background:#0b1324;color:#e5e7eb;border:none;outline:0">
                 <option value="3000">3k</option>
-                <option value="5000">50</option>
+                <option value="5000">5k</option>
                 <option value="10000"selected>10k</option>
               </select>
             </span>
@@ -909,90 +909,76 @@
 })(window);
 
 
-/* ================================
-   PATCH v7 — Pré-flop 1M assíncrono + textos "1M"
-   - Roda 1.000.000 em batches (padrão 50k) sem travar a aba
-   - Mostra progresso e corrige rótulos pra "1M"
-   - Não mexe no cálculo pós-flop (deixe seu "exato" como está)
-   ================================= */
+/* ===== PATCH — eqTrials: 1M em batches e rótulos "1M" ===== */
 (function(g){
   const PC = g.PCALC || g.PC || {};
   if(!PC || typeof PC.makeDeck!=="function" || typeof PC.evalBest!=="function"){
-    console.warn("[PATCH v7] PCALC ausente/incompleto — ignorado.");
+    console.warn("[eqTrials PATCH] PCALC ausente/incompleto — ignorado.");
     return;
   }
 
-  // ===== Config =====
   const CFG = {
-    TARGET: 1_000_000,   // total preflop
-    BATCH:  50_000,      // tamanho do lote (ajuste se quiser)
-    SELECT_ID: "eqTrials",     // seu <select id="eqTrials">
-    BTN_TEXT_CONTAINS: "Recalcular" // texto do botão (caso não tenha id fixo)
+    SELECT_ID: "eqTrials",
+    TARGET_1M: 1_000_000,
+    BATCH: 50_000,
+    BTN_TEXT_CONTAINS: "Recalcular" // ajuste se o botão tiver outro texto
   };
 
-  // ===== Helpers UI leves (não invasivos) =====
-  function findRecalcButton(){
-    // tenta por id comum
-    let btn = g.document.getElementById("recalc") || g.document.getElementById("btnRecalcular");
-    if(btn) return btn;
-    // fallback: procura botão com o texto "Recalcular"
-    const all = Array.from(document.querySelectorAll("button, [role=button], .btn"));
-    return all.find(el => (el.textContent||"").trim().toLowerCase().includes(CFG.BTN_TEXT_CONTAINS.toLowerCase())) || null;
-  }
-
-  function ensure1MOptions(){
+  // --------- UI: atualiza o <select> para 300k/500k/1M ----------
+  function upgradeSelect(){
     const sel = document.getElementById(CFG.SELECT_ID);
     if(!sel) return;
-    // substitui 3k/5k/10k por 300k/500k/1M e seta 1M como padrão visual
-    sel.innerHTML = `
-      <option value="300000">300k</option>
-      <option value="500000">500k</option>
-      <option value="1000000" selected>1M</option>
-    `;
+    const opts = sel.querySelectorAll("option");
+    if(opts.length>=3){
+      // 1º -> 300k
+      opts[0].value = "300000"; opts[0].textContent = "300k";
+      // 2º -> 500k
+      opts[1].value = "500000"; opts[1].textContent = "500k";
+      // 3º -> 1M (padrão)
+      opts[2].value = String(CFG.TARGET_1M); opts[2].textContent = "1M"; opts[2].selected = true;
+    }
   }
 
-  // overlay simples de progresso (não quebra layout)
-  function showProgressOverlay(){
+  // --------- Helpers leves de UI ----------
+  function findRecalcButton(){
+    // tente IDs comuns
+    let btn = document.getElementById("recalc") || document.getElementById("btnRecalcular");
+    if(btn) return btn;
+    // fallback: por texto
+    const candidates = Array.from(document.querySelectorAll("button,[role=button],.btn"));
+    return candidates.find(el => (el.textContent||"").trim().toLowerCase().includes(CFG.BTN_TEXT_CONTAINS.toLowerCase())) || null;
+  }
+  function showOverlay(){
     let el = document.getElementById("pcalc-progress");
     if(!el){
       el = document.createElement("div");
       el.id = "pcalc-progress";
-      el.style.cssText = "position:fixed;right:12px;bottom:12px;background:#0b1324;color:#e5e7eb;padding:10px 12px;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,.4);font:500 13px/1.3 system-ui,Segoe UI,Roboto,Arial";
+      el.style.cssText = "position:fixed;right:12px;bottom:12px;background:#0b1324;color:#e5e7eb;padding:10px 12px;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,.4);font:500 13px/1.3 system-ui,Segoe UI,Roboto,Arial;z-index:99999";
       document.body.appendChild(el);
     }
     return el;
   }
-  function setOverlayText(txt){
-    const el = showProgressOverlay();
-    el.textContent = txt;
-  }
-  function hideOverlay(){
-    const el = document.getElementById("pcalc-progress");
-    if(el) el.remove();
-  }
+  function setOverlay(txt){ showOverlay().textContent = txt; }
+  function hideOverlay(){ const el = document.getElementById("pcalc-progress"); if(el) el.remove(); }
 
-  // Corrige rótulos “5k” → “1M” quando relevante
   function rewriteLabelsTo1M(){
     try{
-      // Cabeçalho "Monte Carlo vs X ... • Y amostras"
       document.querySelectorAll("*").forEach(el=>{
         const t = (el.textContent||"").trim();
-        if(/Monte Carlo vs .*oponente/.test(t)){
-          el.textContent = t.replace(/\b\d{1,3}\.?\d{0,3}\b(?=\s*amostras)/, "1.000.000");
-        }
-        if(/^Amostras:\s*/.test(t)){
-          el.textContent = "Amostras: 1.000.000";
-        }
-        if(/\b5k\b/i.test(t)) el.textContent = t.replace(/\b5k\b/ig, "1M");
+        if(/Monte Carlo vs .*oponente/.test(t)){ el.textContent = t.replace(/\b\d{1,3}\.?\d{0,3}\b(?=\s*amostras)/, "1.000.000"); }
+        if(/^Amostras:\s*/.test(t)){ el.textContent = "Amostras: 1.000.000"; }
         if(/\b10k\b/i.test(t)) el.textContent = t.replace(/\b10k\b/ig, "1M");
+        if(/\b5k\b/i.test(t))  el.textContent = t.replace(/\b5k\b/ig, "500k");
+        if(/\b3k\b/i.test(t))  el.textContent = t.replace(/\b3k\b/ig, "300k");
       });
-    }catch(e){}
+    }catch(_){}
   }
 
-  // ===== Núcleo — MC pré-flop assíncrono (não trava) =====
+  // --------- Núcleo: pré-flop 1M em batches (não trava) ----------
   const { makeDeck, evalBest, cardId } = PC;
   const EVAL_ARITY = Number(evalBest.length || 2);
   function evalSafe(hero2, board5){
+    // compatível com evalBest(hero,board) ou evalBest([...7])
     return (EVAL_ARITY<=1) ? evalBest(hero2.concat(board5)) : evalBest(hero2, board5);
   }
   function removeCards(deck, cards){
@@ -1002,10 +988,10 @@
   function cmpEv(a,b){ return a===b?0:(a>b?1:-1); }
 
   function mcOnce(hero, opponents){
-    // amostra vilões e board; tudo como objetos do core (PCALC.state já guarda assim)
     const deck = makeDeck();
     let pool = removeCards(deck, hero);
     const oppHands = [];
+    opponents = Math.max(1, Number(opponents)||1);
     for(let o=0;o<opponents;o++){
       const i = (Math.random()*pool.length)|0;
       const c1 = pool.splice(i,1)[0];
@@ -1030,110 +1016,80 @@
     return "lose";
   }
 
-  async function runPreflop1MAsync({opponents=2, batch=CFG.BATCH, onProgress}={}){
+  async function runPreflopAsync(total, batch){
     const sel = (PC.state && PC.state.selected) || [];
-    if(sel.length<2){ throw new Error("Selecione 2 cartas antes."); }
+    if(sel.length<2) throw new Error("Selecione 2 cartas antes.");
     const hero = sel.slice(0,2);
+    const opponents = Math.max(1, Number(PC.state?.opponents||2));
     let win=0,tie=0,lose=0,done=0;
-    const total = CFG.TARGET;
-
     return await new Promise(resolve=>{
       function step(){
         const chunk = Math.min(batch, total - done);
-        // loop do chunk
         for(let i=0;i<chunk;i++){
-          const r = mcOnce(hero, Math.max(1, Number(PC.state?.opponents||opponents)));
+          const r = mcOnce(hero, opponents);
           if(r==="win") win++; else if(r==="tie") tie++; else lose++;
         }
         done += chunk;
-        if(onProgress) onProgress({done,total,win,tie,lose});
-        if(done < total){
-          setTimeout(step, 0);
-        } else {
+        const pct = Math.min(100, Math.round(done*100/total));
+        setOverlay(`Pré-flop: rodando ${total.toLocaleString('pt-BR')} (${pct}%)…`);
+        if(done < total) setTimeout(step, 0);
+        else {
           const tot = win+tie+lose;
-          resolve({
-            method: "Monte Carlo",
-            samples: tot,
-            win: win/tot,
-            tie: tie/tot,
-            lose: lose/tot
-          });
+          resolve({ method:"Monte Carlo", samples: tot, win: win/tot, tie: tie/tot, lose: lose/tot });
         }
       }
       step();
     });
   }
 
-  // Exponha uma API para chamar via console se quiser
-  PC.runPreflop1M = function(opts){
-    return runPreflop1MAsync({
-      opponents: (opts && opts.opponents) || 2,
-      batch: (opts && opts.batch) || CFG.BATCH,
-      onProgress: (opts && opts.onProgress) || null
-    });
-  };
-
-  // ===== Integração leve com a sua UI =====
-  // 1) Troca o <select> para 1M como opção padrão
-  ensure1MOptions();
-
-  // 2) Intercepta clique em "Recalcular" *quando* o select estiver em 1M
-  const btn = findRecalcButton();
-  if(btn){
+  // --------- Integra com seu botão "Recalcular" só quando 1M estiver selecionado ----------
+  function hookRecalcular(){
+    const btn = findRecalcButton();
+    if(!btn) return;
     btn.addEventListener("click", function onRecalc(e){
       const sel = document.getElementById(CFG.SELECT_ID);
       const val = sel ? Number(sel.value) : 0;
-      // só intercepta se for 1M; caso contrário, deixa seu fluxo original
-      if(val === 1_000_000){
+      const boardLen = Math.max(0, (PC.state?.selected?.length||0) - 2);
+      // Só pré-flop + 1M → intercepta
+      if(boardLen===0 && val === CFG.TARGET_1M){
         e.preventDefault();
         e.stopPropagation();
-        // feedback visual
-        setOverlayText("Pré-flop: rodando 1.000.000 (0%)…");
         rewriteLabelsTo1M();
-
-        runPreflop1MAsync({
-          opponents: Math.max(1, Number(PC.state?.opponents||2)),
-          batch: CFG.BATCH,
-          onProgress: ({done,total})=>{
-            const pct = Math.min(100, Math.round(done*100/total));
-            setOverlayText(`Pré-flop: rodando 1.000.000 (${pct}%)…`);
-          }
-        }).then(res=>{
-          // Mostra resumo no overlay e ajusta rótulos
-          setOverlayText(`Monte Carlo • 1.000.000 amostras — Win ${(res.win*100).toFixed(2)}% · Tie ${(res.tie*100).toFixed(2)}% · Lose ${(res.lose*100).toFixed(2)}%`);
-          rewriteLabelsTo1M();
-
-          // Opcional: injeta percentuais na UI existente (heurística simples)
-          try{
-            const winEl = Array.from(document.querySelectorAll("*")).find(n => /^\s*Win:\s*/.test(n.textContent||""));
-            const tieEl = Array.from(document.querySelectorAll("*")).find(n => /^\s*Tie:\s*/.test(n.textContent||""));
-            const loseEl= Array.from(document.querySelectorAll("*")).find(n => /^\s*Lose:\s*/.test(n.textContent||""));
-            if(winEl) winEl.textContent = `Win: ${(res.win*100).toFixed(1)}%`;
-            if(tieEl) tieEl.textContent = `Tie: ${(res.tie*100).toFixed(1)}%`;
-            if(loseEl)loseEl.textContent= `Lose: ${(res.lose*100).toFixed(1)}%`;
-          }catch(_){}
-
-          // some o overlay depois de alguns segundos
-          setTimeout(hideOverlay, 4000);
-        }).catch(err=>{
-          setOverlayText("Falhou o 1M — veja console");
-          console.error("[PATCH v7] Erro no 1M:", err);
-          setTimeout(hideOverlay, 4000);
-        });
+        runPreflopAsync(CFG.TARGET_1M, CFG.BATCH)
+          .then(res=>{
+            // Atualiza rótulos e percentuais na UI (heurística)
+            rewriteLabelsTo1M();
+            try{
+              const winEl = Array.from(document.querySelectorAll("*")).find(n => /^\s*Win:\s*/.test(n.textContent||""));
+              const tieEl = Array.from(document.querySelectorAll("*")).find(n => /^\s*Tie:\s*/.test(n.textContent||""));
+              const loseEl= Array.from(document.querySelectorAll("*")).find(n => /^\s*Lose:\s*/.test(n.textContent||""));
+              if(winEl)  winEl.textContent  = `Win: ${(res.win*100).toFixed(1)}%`;
+              if(tieEl)  tieEl.textContent  = `Tie: ${(res.tie*100).toFixed(1)}%`;
+              if(loseEl) loseEl.textContent = `Lose: ${(res.lose*100).toFixed(1)}%`;
+            }catch(_){}
+            setOverlay(`Monte Carlo • 1.000.000 amostras — Win ${(res.win*100).toFixed(2)}% · Tie ${(res.tie*100).toFixed(2)}% · Lose ${(res.lose*100).toFixed(2)}%`);
+            setTimeout(hideOverlay, 4000);
+          })
+          .catch(err=>{
+            console.error("[eqTrials PATCH] erro no 1M:", err);
+            setOverlay("Falhou o 1M — veja console");
+            setTimeout(hideOverlay, 4000);
+          });
       }
-    }, true); // capture=true pra pegar antes do handler original
+      // Caso contrário, deixa o fluxo original seguir (300k/500k, pós-flop, etc.)
+    }, true); // capture=true para interceptar antes dos handlers originais
   }
 
-  // 3) Se o usuário mudar o select pra 1M, já ajusta os textos
-  const sel = document.getElementById(CFG.SELECT_ID);
-  if(sel){
-    sel.addEventListener("change", ()=>{
-      if(Number(sel.value)===1_000_000) rewriteLabelsTo1M();
-    });
+  function boot(){
+    upgradeSelect();
+    hookRecalcular();
   }
+  if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
 
-  console.log("[PATCH v7] Pré-flop 1M em batches ativo; rótulos ajustados para '1M'. API: PCALC.runPreflop1M({batch})");
+  console.log("[eqTrials PATCH] eqTrials → 300k/500k/1M; 1M roda em batches com overlay e rótulos.");
 })(window);
+
 
 
 
