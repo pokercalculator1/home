@@ -1,9 +1,10 @@
-// raise.js — "Tomei Raise" com Equity automático (win+0.5*tie) e calculadora em FICHAS
+// raise.js — "Tomei Raise" com Equity automático sem mexer no app.js
+// Lê equity da UI (Win/Tie/Lose) via DOM e observa mudanças para atualizar.
 // API pública:
 //   window.RAISE.init({ mountSelector, suggestSelector, onUpdateText, readState, ...opts })
-//   window.RAISE.setState(patch)                 // aceita { tomeiRaise, pos, callers, potAtual, toCall, equityPct, rakePct, rakeCap, ... }
-//   window.RAISE.getRecommendation()             // texto padrão ou último cálculo de Pot Odds
-//   window.RAISE.setUsePotOdds(bool)             // liga/desliga mini calculadora
+//   window.RAISE.setState(patch)
+//   window.RAISE.getRecommendation()
+//   window.RAISE.setUsePotOdds(bool)
 (function (g) {
   // ================== Config ==================
   var DEFAULTS = {
@@ -11,12 +12,12 @@
     suggestSelector: '#pcalc-sugestao',
 
     // === Opções/UI ===
-    potOddsCompact: true,   // true = só mostra BE/Equity/Decisão (sem inputs extras)
-    // chaves no PC.state
-    potKey: 'potAtual',     // pote atual em FICHAS (antes da sua ação)
-    toCallKey: 'toCall',    // valor a pagar em FICHAS
-    equityKey: 'equityPct', // equity pronta em % (0..100), se houver
-    winKey: 'win',          // Monte Carlo: pode vir 0..1 ou 0..100
+    potOddsCompact: true,   // mostra só BE/Equity/Decisão
+    // chaves usuais no PC.state (se existirem, ainda serão usadas)
+    potKey: 'potAtual',
+    toCallKey: 'toCall',
+    equityKey: 'equityPct', // se o app já preencher (0..100)
+    winKey: 'win',          // 0..1 ou 0..100
     tieKey: 'tie',
 
     readState: function () {
@@ -29,22 +30,30 @@
       var wk  = DEFAULTS.winKey     || 'win';
       var tk  = DEFAULTS.tieKey     || 'tie';
 
-      // ---------- Equity: tenta equityPct (%); senão calcula via win/tie ----------
-      var eqPct = Number(st[ek]);
+      // ---------- Equity prioridade: 1) equityPct do state 2) win/tie do state 3) DOM ----------
+      var eqPct = toNum(st[ek]);
+
       if (!isFinite(eqPct)) {
-        var win = Number(st[wk]);
-        var tie = Number(st[tk]);
+        var win = toNum(st[wk]);
+        var tie = toNum(st[tk]);
         if (isFinite(win) && isFinite(tie)) {
-          // normaliza caso estejam em %
+          // normaliza caso venham em %
           if (win > 1 || tie > 1) { win = win / 100; tie = tie / 100; }
           eqPct = (win + 0.5 * tie) * 100;
         }
       }
+
+      if (!isFinite(eqPct)) {
+        // tenta extrair da UI (sem tocar no app.js)
+        var domEq = extractEquityFromDOM();
+        if (isFinite(domEq)) eqPct = domEq;
+      }
+
       if (!isFinite(eqPct)) eqPct = 50; // fallback seguro
 
       // ---------- Pot / To call em FICHAS ----------
-      var potAtual = Number(st[pk]);   if (!isFinite(potAtual)) potAtual = 0;
-      var toCall   = Number(st[ck]);   if (!isFinite(toCall))   toCall   = 0;
+      var potAtual = toNum(st[pk]);   if (!isFinite(potAtual)) potAtual = 0;
+      var toCall   = toNum(st[ck]);   if (!isFinite(toCall))   toCall   = 0;
 
       return {
         maoLabel: st.maoLabel || st.mao || '',
@@ -54,7 +63,7 @@
         potAtual: potAtual,
         toCall: toCall,
         equityPct: eqPct,
-        rakePct: Number(st.rakePct || 0),
+        rakePct: toNum(st.rakePct) || 0,
         rakeCap: (st.rakeCap != null ? Number(st.rakeCap) : Infinity),
         spr: (st.spr != null ? Number(st.spr) : undefined),
         players: Number(st.players || 2),
@@ -69,21 +78,62 @@
     mounted: false,
     elements: {},
     tomeiRaise: false,
-    pos: 'IP',            // 'IP' | 'OOP' | null (usado em fallback textual)
-    callers: 0,           // nº de callers (contexto)
-    usePotOdds: true,     // mostra mini calculadora quando tomeiRaise = true
+    pos: 'IP',            // 'IP' | 'OOP' | null (contexto textual)
+    callers: 0,           // contexto
+    usePotOdds: true,
     lastPotOdds: null,
     _cfg: null,
-    // Overrides vindos via setState() ou inputs da calculadora
-    overrides: { potAtual: undefined, toCall: undefined, equityPct: undefined, rakePct: undefined, rakeCap: undefined }
+    // Overrides vindos via setState() ou inputs
+    overrides: { potAtual: undefined, toCall: undefined, equityPct: undefined, rakePct: undefined, rakeCap: undefined },
+    // Observers DOM
+    observers: []
   };
 
   // ================== Utils ==================
   function $(sel, root){ return (root||document).querySelector(sel); }
   function el(tag, cls){ var x=document.createElement(tag); if(cls) x.className=cls; return x; }
   function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
+  function toNum(x){ var n = Number(x); return isFinite(n) ? n : NaN; }
 
-  // Pot Odds (pot/toCall nas mesmas unidades → ok)
+  // ---- Extrair Equity da UI sem mexer no app.js ----
+  function extractEquityFromDOM(){
+    // 1) #eqBreak: "<small><b>Win:</b> 97.0%</small> <small><b>Tie:</b> 0.0%</small> ..."
+    var br = document.getElementById('eqBreak');
+    if (br) {
+      var txt = br.textContent || '';
+      var win = matchPct(txt, /Win:\s*([\d.,]+)%/i);
+      var tie = matchPct(txt, /Tie:\s*([\d.,]+)%/i);
+      if (isFinite(win) && isFinite(tie)) return +(win + tie/2).toFixed(1);
+    }
+
+    // 2) #eqBarWin width: "97.0%"
+    var bar = document.getElementById('eqBarWin');
+    if (bar && bar.style && bar.style.width){
+      var w = parseFloat((bar.style.width||'').replace(',', '.'));
+      if (isFinite(w)) return +w.toFixed(1);
+    }
+
+    // 3) Varredura geral por nós com "Win:" e "Tie:"
+    var nodes = Array.from(document.querySelectorAll('div,span,small,p,li,td,th'));
+    var node = nodes.find(n => /Win:\s*[\d.,]+%/i.test(n.textContent||''));
+    if (node){
+      var t = node.textContent || '';
+      var win2 = matchPct(t, /Win:\s*([\d.,]+)%/i);
+      var tie2 = matchPct(t, /Tie:\s*([\d.,]+)%/i);
+      if (isFinite(win2) && isFinite(tie2)) return +(win2 + tie2/2).toFixed(1);
+    }
+
+    return NaN;
+  }
+  function matchPct(text, re){
+    var m = (text||'').match(re);
+    if (!m) return NaN;
+    var raw = String(m[1]).replace(/\./g,'').replace(',','.');
+    var n = parseFloat(raw);
+    return isFinite(n) ? n : NaN;
+  }
+
+  // ---- Pot Odds ----
   function potOddsBE(potAtual, toCall, rakePct, rakeCap){
     potAtual = Number(potAtual||0);
     toCall   = Number(toCall||0);
@@ -120,7 +170,7 @@
       + '.raise-bar{display:flex;gap:.9rem;align-items:center;flex-wrap:wrap;margin:.5rem 0}\n'
       + '.field{display:flex;align-items:center;gap:.5rem}\n'
       + '.fld-label{color:#93c5fd;font-weight:600;white-space:nowrap}\n'
-      + '.input-modern input{width:100px;padding:.48rem .6rem;border:1px solid #334155;'
+      + '.input-modern input{width:110px;padding:.48rem .6rem;border:1px solid #334155;'
         + 'background:#0f172a;color:#e5e7eb;border-radius:.6rem;outline:0}\n'
       + '.raise-checks{display:flex;align-items:center;gap:1rem}\n'
       + '.rc-item{display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.9rem;color:#e5e7eb}\n'
@@ -132,7 +182,7 @@
     document.head.appendChild(style);
   }
 
-  // ================== Lógica de fallback (texto) ==================
+  // ================== Fallback textual ==================
   function buildSuggestion(ctx){
     var maoLabel = ctx.maoLabel || ctx.categoria || '';
     var posIn    = ctx.pos;
@@ -201,7 +251,7 @@
     posGrp.appendChild(ipWrap); posGrp.appendChild(oopWrap);
     posWrap.appendChild(posLbl); posWrap.appendChild(posGrp);
 
-    // (3) Nº de callers (contexto)
+    // (3) Nº de callers
     var callersWrap = el('div','field');
     var cLabel  = el('span','fld-label'); cLabel.textContent='Nº callers:';
     var cInpW   = el('div','input-modern'); cInpW.innerHTML='<input id="inp-callers" type="number" step="1" min="0" max="8" placeholder="0">';
@@ -312,8 +362,6 @@
       }
       return;
     }
-
-    // (modo editável foi removido a pedido)
   }
 
   function renderDefaultRecommendation(ctx, cfg){
@@ -359,6 +407,41 @@
     }
   }
 
+  // ---- Observa a UI do app para reagir ao término do Monte Carlo ----
+  function attachDOMObservers(){
+    detachDOMObservers();
+
+    var br = document.getElementById('eqBreak');
+    if (br && g.MutationObserver){
+      var mo1 = new MutationObserver(function(){
+        // Quando Win/Tie/Lose mudarem, refaz a leitura/significado de equity
+        if (state._cfg) updateSuggestion(state._cfg);
+      });
+      mo1.observe(br, { childList:true, subtree:true, characterData:true });
+      state.observers.push(mo1);
+    }
+
+    var bar = document.getElementById('eqBarWin');
+    if (bar && g.MutationObserver){
+      var mo2 = new MutationObserver(function(muts){
+        // Se style.width mudar, atualiza
+        var refresh = muts.some(m => m.attributeName === 'style');
+        if (refresh && state._cfg) updateSuggestion(state._cfg);
+      });
+      mo2.observe(bar, { attributes:true, attributeFilter:['style'] });
+      state.observers.push(mo2);
+    }
+
+    // Fallback leve: um ping tardio para casos em que o DOM troca inteiro
+    setTimeout(function(){ if (state._cfg) updateSuggestion(state._cfg); }, 50);
+    setTimeout(function(){ if (state._cfg) updateSuggestion(state._cfg); }, 250);
+    setTimeout(function(){ if (state._cfg) updateSuggestion(state._cfg); }, 750);
+  }
+  function detachDOMObservers(){
+    (state.observers||[]).forEach(function(mo){ try{ mo.disconnect(); }catch(_){ } });
+    state.observers = [];
+  }
+
   // ================== API pública ==================
   var API = {
     init: function(userCfg){
@@ -378,6 +461,9 @@
       state.elements = els;
       state.mounted  = true;
       state._cfg     = cfg;
+
+      attachDOMObservers(); // >>> OUVE mudanças na UI do app (Win/Tie/Lose/barra)
+
       updateSuggestion(cfg);
     },
 
