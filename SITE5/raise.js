@@ -1,23 +1,24 @@
 // raise.js — Pot Odds sempre visível + switch para injetar decisão (Call/Fold/Indiferente) no bloco principal
-// Com TTS integrado:
-//   - ON: fala a decisão do Raise (BE/EQ) sempre que atualizar.
-//   - OFF: restaura UI, recalcula e fala a sugestão do Monte Carlo.
-// Não altera o app.js; usa DOM e g.TTS se disponível.
+// TTS: ON fala apenas a decisão com frases personalizadas; OFF restaura e fala a sugestão do Monte Carlo.
+// Não mexe no app.js; usa DOM, PC.state e g.TTS se disponível.
 (function (g) {
   var DEFAULTS = {
     mountSelector: '#pcalc-toolbar',
     suggestSelector: '#pcalc-sugestao',
     potOddsCompact: true,
+
+    // chaves usuais no PC.state
     potKey: 'potAtual',
     toCallKey: 'toCall',
-    equityKey: 'equityPct',
-    winKey: 'win',
+    equityKey: 'equityPct', // % pronta
+    winKey: 'win',          // 0..1 ou 0..100
     tieKey: 'tie',
 
     readState: function () {
       var PC = g.PC || g.PCALC || {};
       var st = PC.state || {};
 
+      // equity: primeiro equityPct (%), senão Win+Tie/2
       var eqPct = num(st[DEFAULTS.equityKey]); // 0..100
       if (!isFinite(eqPct)) {
         var winS = num(st[DEFAULTS.winKey]);
@@ -51,7 +52,7 @@
   var state = {
     mounted: false,
     elements: {},
-    usePotOdds: true,
+    usePotOdds: true,          // compat; não oculta o card
     injectDecision: false,     // switch ON/OFF
     lastPotOdds: null,
     _cfg: null,
@@ -60,8 +61,7 @@
     lastSuggestSnapshot: null,
 
     // TTS
-    ttsLastKey: null,          // antirrep
-    ttsPendingMC: false        // OFF: falar uma vez quando o Monte Carlo reescrever #suggestOut
+    ttsPendingMC: false        // OFF: falar MC uma vez quando #suggestOut for reescrito
   };
 
   // ===== Utils
@@ -70,7 +70,7 @@
   function num(x){ var n=Number(x); return isFinite(n)?n:NaN; }
   function clamp01pct(p){ return Math.max(0, Math.min(100, +Number(p).toFixed(1))); }
 
-  // parser pt/intl
+  // parser pt/intl: “16.1”, “16,1”, “1.234,5”, “1,234.5”
   function parseFlexibleNumber(raw){
     if(raw==null) return NaN;
     var s = String(raw).trim(); if(!s) return NaN;
@@ -86,8 +86,6 @@
     if (!m) return NaN;
     return parseFlexibleNumber(m[1]);
   }
-
-  // Extrai equity (Win + Tie/2) do DOM quando necessário
   function extractEquityFromDOM(){
     var br = document.getElementById('eqBreak');
     if (br) {
@@ -145,39 +143,47 @@
     };
   }
 
-  // ===== TTS helpers
+  // ===== TTS helpers (fala apenas a decisão com frases PT-BR)
   function ttsEnabled(){
     return !!(g.TTS && g.TTS.state && g.TTS.state.enabled && 'speechSynthesis' in g);
   }
-  function ttsSayOnce(text, key){
+  function ttsSayNow(text){
     if(!ttsEnabled()) return;
-    if(key && state.ttsLastKey === key) return;
-    state.ttsLastKey = key || text;
+    try{ speechSynthesis.cancel(); }catch(_){}
     try{ g.TTS.speak(text); }catch(_){}
   }
+  // ON: fala somente a decisão
   function ttsRaise(result){
-    var text = `Raise Equity: ${result.rec}. BE ${result.bePct} por cento, equity ${result.equityPct} por cento.`;
-    var key  = `raise:${result.rec}:${result.bePct}:${result.equityPct}`;
-    ttsSayOnce(text, key);
+    var phrase;
+    switch (result.rec) {
+      case 'Call':
+        phrase = 'Sugestão: Pague o raise.';
+        break;
+      case 'Fold':
+        phrase = 'Sugestão: Desista do raise.';
+        break;
+      default: // Indiferente
+        phrase = 'Sugestão: Pague.';
+        break;
+    }
+    ttsSayNow(phrase);
   }
+  // OFF: fala a sugestão do Monte Carlo (uma vez)
   function extractMainSuggestionTitle(){
     var host = document.getElementById('suggestOut');
     if(!host) return '';
-    var t = '';
     var h = host.querySelector('.decision-title');
-    if(h && h.textContent) t = h.textContent.trim();
-    if(!t) t = (host.textContent||'').trim().split('\n').map(s=>s.trim()).filter(Boolean)[0] || '';
+    if(h && h.textContent) return h.textContent.trim();
+    var t = (host.textContent||'').trim().split('\n').map(s=>s.trim()).filter(Boolean)[0] || '';
     return t;
   }
   function ttsMonteCarloOnce(){
-    // fala “Sugestão: <título atual>”
     var title = extractMainSuggestionTitle();
     if(!title) return;
-    var key = `mc:${title}`;
-    ttsSayOnce(`Sugestão: ${title}`, key);
+    ttsSayNow('Sugestão: ' + title);
   }
 
-  // ===== Estilos (switch cinza/verde)
+  // ===== Estilos (inclui switch cinza/verde)
   function ensureCSS(){
     if ($('#raise-css-hook')) return;
     var css = ''
@@ -250,12 +256,12 @@
     injCb.addEventListener('change', function(){
       state.injectDecision = !!injCb.checked;
       if (!state.injectDecision) {
-        // OFF → restaura e marca para falar MC na próxima atualização
+        // OFF → restaura e agenda falar MC na próxima atualização visual
         restoreDefaultSuggestion();
         state.ttsPendingMC = true;
         triggerAppRecalc();
       } else {
-        // ON → recalcula já para falar Raise
+        // ON → recalcula já e fala Raise
         updateSuggestion(cfg);
       }
       updateSuggestion(cfg);
@@ -274,7 +280,7 @@
     return { injCb: injCb, potInput: pots.potInput, callInput: pots.callInput };
   }
 
-  // ===== Patch: injetar e restaurar no bloco principal
+  // ===== Patch: injetar e restaurar no bloco principal (“APOSTE POR VALOR”)
   function injectDecisionIntoMain(result, ctx){
     var host = document.getElementById('suggestOut');
     if (!host) return;
@@ -282,6 +288,7 @@
     if (state.lastSuggestSnapshot == null) {
       state.lastSuggestSnapshot = host.innerHTML;
     }
+
     var cls = (result.rec === 'Call') ? 'good' : (result.rec === 'Fold' ? 'bad' : 'warn');
     var glow = (result.rec === 'Call');
 
@@ -295,6 +302,7 @@
       </div>
     `;
   }
+
   function restoreDefaultSuggestion(){
     var host = document.getElementById('suggestOut');
     if (host && state.lastSuggestSnapshot != null){
@@ -302,6 +310,7 @@
     }
     state.lastSuggestSnapshot = null;
   }
+
   function triggerAppRecalc(){
     try{
       var btn = document.getElementById('btnEqCalc');
@@ -345,6 +354,7 @@
     // ON → injeta + fala Raise
     if (state.injectDecision) {
       injectDecisionIntoMain(result, ctx);
+      // reforços para competir com re-renders do app
       setTimeout(function(){ injectDecisionIntoMain(result, ctx); }, 0);
       setTimeout(function(){ injectDecisionIntoMain(result, ctx); }, 60);
       ttsRaise(result);
@@ -379,17 +389,18 @@
     renderPotOddsUI(ctx, cfg);
   }
 
-  // Observadores: Win/Tie (MC), barra de Win e bloco principal
+  // Observadores de DOM
   function attachDOMObservers(){
     detachDOMObservers();
 
-    // Win/Tie mudam → recalcula/injeta/fala (Raise ON)
+    // Win/Tie mudam (MC) → recalcula (se ON injeta/fala)
     var br = document.getElementById('eqBreak');
     if (br && g.MutationObserver){
       var mo1 = new MutationObserver(function(){ if (state._cfg) updateSuggestion(state._cfg); });
       mo1.observe(br, { childList:true, subtree:true, characterData:true });
       state.observers.push(mo1);
     }
+    // Barra gráfica de Win
     var bar = document.getElementById('eqBarWin');
     if (bar && g.MutationObserver){
       var mo2 = new MutationObserver(function(muts){
@@ -398,8 +409,7 @@
       mo2.observe(bar, { attributes:true, attributeFilter:['style'] });
       state.observers.push(mo2);
     }
-
-    // #suggestOut reescrito → ON reinjeta; OFF fala MC uma única vez se marcado
+    // #suggestOut reescrito → ON reinjeta e fala; OFF fala MC uma única vez
     var so = document.getElementById('suggestOut');
     if (so && g.MutationObserver){
       var mo3 = new MutationObserver(function(){
@@ -410,7 +420,6 @@
           injectDecisionIntoMain(res, ctx);
           ttsRaise(res);
         } else if (state.ttsPendingMC) {
-          // fala MC e limpa o flag
           ttsMonteCarloOnce();
           state.ttsPendingMC = false;
         }
@@ -419,6 +428,7 @@
       state.observers.push(mo3);
     }
 
+    // pings tardios
     [50, 250, 750].forEach(function(ms){
       setTimeout(function(){ if (state._cfg) updateSuggestion(state._cfg); }, ms);
     });
