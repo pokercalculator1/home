@@ -1,6 +1,4 @@
-// raise.js — Pot Odds + chave de decisão com botão "Enviar"
-// Agora: Equity (MC) só aparece quando existe; caso contrário mostra "Aguardando cartas...".
-// Regras de decisão por faixas com checagem de pot odds (BE).
+
 (function (g) {
   var DEFAULTS = {
     mountSelector: '#pcalc-toolbar',
@@ -164,28 +162,29 @@
       return { rec:'Aguardando', detail:'Aguardando cartas…', tag:'wait' };
     }
     var hasPotOdds = eqPct >= bePct;
+
     if (eqPct < 30) {
-      return { rec:'Fold', detail:'Equity < 30%', tag:'fold' };
+      return { rec:'Desista', detail:'Equity < 30%', tag:'fold' };
     }
     if (eqPct < 50) {
       return hasPotOdds
-        ? { rec:'Call (até 2 blinds, em posição)', detail:'30–50% e com pot odds', tag:'call2bb' }
-        : { rec:'Fold', detail:'30–50% sem pot odds', tag:'fold' };
+        ? { rec:'Call até 2 blinds', detail:'30–50% e com pot odds', tag:'call2bb' }
+        : { rec:'Desista', detail:'30–50% sem pot odds', tag:'fold' };
     }
     if (eqPct < 70) {
       return hasPotOdds
         ? { rec:'Raise 3 blinds / ~½ pot', detail:'50–70% e com pot odds', tag:'r3b' }
-        : { rec:'Fold', detail:'50–70% sem pot odds', tag:'fold' };
+        : { rec:'Desista', detail:'50–70% sem pot odds', tag:'fold' };
     }
     if (eqPct <= 80) {
       return hasPotOdds
         ? { rec:'Raise 4 blinds / 50–70% pot', detail:'70–80% e com pot odds', tag:'r4b' }
-        : { rec:'Fold', detail:'70–80% sem pot odds', tag:'fold' };
+        : { rec:'Desista', detail:'70–80% sem pot odds', tag:'fold' };
     }
     // >80%
     return hasPotOdds
       ? { rec:'All-in / Overbet', detail:'>80% e com pot odds', tag:'shove' }
-      : { rec:'Fold', detail:'>80% sem pot odds (sem preço)', tag:'fold' };
+      : { rec:'Desista', detail:'>80% sem pot odds (sem preço)', tag:'fold' };
   }
 
   function decideVsRaise(potAtual, toCall, equityPct, rakePct, rakeCap){
@@ -194,7 +193,6 @@
     var eq    = equityPct; // pode ser NaN
     var choice = decideByRanges(eq, bePct);
 
-    // Retornamos campos padronizados + escolha textual
     return {
       bePct: bePct,
       equityPct: isFinite(eq)? +eq.toFixed(1) : NaN,
