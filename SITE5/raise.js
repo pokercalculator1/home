@@ -1,6 +1,6 @@
 // raise.js — Pot Odds + chave de decisão com botão "Enviar"
-// Agora: Equity (MC) atualiza SEMPRE (switch ON ou OFF), com reattach dinâmico + heartbeat.
-// Fluxo do TTS: Ligar → preencher Pot/A pagar → Enviar → fala e desliga a chave.
+// Agora: Equity (MC) só aparece quando existe; caso contrário mostra "Aguardando cartas...".
+// Regras de decisão por faixas com checagem de pot odds (BE).
 (function (g) {
   var DEFAULTS = {
     mountSelector: '#pcalc-toolbar',
@@ -42,8 +42,7 @@
       if (isFinite(winS) && winS > 1) winS /= 100;
       if (isFinite(tieS) && tieS > 1) tieS /= 100;
       var eqFromWT = (isFinite(winS) ? winS : NaN) + (isFinite(tieS) ? tieS/2 : 0);
-      if (!isFinite(eqFromWT)) eqFromWT = NaN;
-      else eqFromWT = Math.max(0, Math.min(1, eqFromWT)) * 100;
+      if (isFinite(eqFromWT)) eqFromWT = Math.max(0, Math.min(1, eqFromWT)) * 100; else eqFromWT = NaN;
 
       // 2) tenta Win/Tie do DOM
       var eqFromDOM = (function(){
@@ -57,12 +56,11 @@
       // 3) equityPct do state (fallback)
       var eqFromState = Number(st[ek]); if (!isFinite(eqFromState)) eqFromState = NaN;
 
-      // 4) prioridade
+      // 4) prioridade — se nada for válido, deixamos NaN para "Aguardando cartas..."
       var eqPct = NaN;
       if (isFinite(eqFromDOM))        eqPct = eqFromDOM;
       else if (isFinite(eqFromWT))    eqPct = eqFromWT;
       else if (isFinite(eqFromState)) eqPct = eqFromState;
-      if (!isFinite(eqPct)) eqPct = 50;
 
       // pot/toCall (fichas)
       function num(x){ var n=Number(x); return isFinite(n)?n:NaN; }
@@ -72,7 +70,7 @@
       return {
         potAtual: potAtual,
         toCall: toCall,
-        equityPct: +eqPct.toFixed(1),
+        equityPct: isFinite(eqPct) ? +eqPct.toFixed(1) : NaN,
         rakePct: num(st.rakePct) || 0,
         rakeCap: (st.rakeCap != null ? Number(st.rakeCap) : Infinity)
       };
@@ -96,14 +94,12 @@
 
     // heartbeat para garantir atualização mesmo se o app trocar nós silenciosamente
     pollTimer: null,
-    lastEqPctSeen: null,
     lastSelSignature: null
   };
 
   // ===== Utils
   function $(sel, root){ return (root||document).querySelector(sel); }
   function el(tag, cls){ var x=document.createElement(tag); if(cls) x.className=cls; return x; }
-  function num(x){ var n=Number(x); return isFinite(n)?n:NaN; }
   function clamp01pct(p){ return Math.max(0, Math.min(100, +Number(p).toFixed(1))); }
 
   // parser pt/intl
@@ -149,7 +145,7 @@
     return NaN;
   }
 
-  // ===== Pot Odds/Decisão
+  // ===== Pot Odds/Decisão base
   function potOddsBE(potAtual, toCall, rakePct, rakeCap){
     potAtual = Number(potAtual||0);
     toCall   = Number(toCall||0);
@@ -161,25 +157,57 @@
     var be = toCall / (potFinalEfetivo || 1); // 0..1
     return { be: be, bePct: +(be*100).toFixed(1), potFinal: potFinal, potFinalEfetivo: potFinalEfetivo, rake: rake };
   }
+
+  // ===== Mapa de decisão por faixas (com pot odds)
+  function decideByRanges(eqPct, bePct){
+    if (!isFinite(eqPct)) {
+      return { rec:'Aguardando', detail:'Aguardando cartas…', tag:'wait' };
+    }
+    var hasPotOdds = eqPct >= bePct;
+    if (eqPct < 30) {
+      return { rec:'Fold', detail:'Equity < 30%', tag:'fold' };
+    }
+    if (eqPct < 50) {
+      return hasPotOdds
+        ? { rec:'Call (até 2 blinds, em posição)', detail:'30–50% e com pot odds', tag:'call2bb' }
+        : { rec:'Fold', detail:'30–50% sem pot odds', tag:'fold' };
+    }
+    if (eqPct < 70) {
+      return hasPotOdds
+        ? { rec:'Raise 3 blinds / ~½ pot', detail:'50–70% e com pot odds', tag:'r3b' }
+        : { rec:'Fold', detail:'50–70% sem pot odds', tag:'fold' };
+    }
+    if (eqPct <= 80) {
+      return hasPotOdds
+        ? { rec:'Raise 4 blinds / 50–70% pot', detail:'70–80% e com pot odds', tag:'r4b' }
+        : { rec:'Fold', detail:'70–80% sem pot odds', tag:'fold' };
+    }
+    // >80%
+    return hasPotOdds
+      ? { rec:'All-in / Overbet', detail:'>80% e com pot odds', tag:'shove' }
+      : { rec:'Fold', detail:'>80% sem pot odds (sem preço)', tag:'fold' };
+  }
+
   function decideVsRaise(potAtual, toCall, equityPct, rakePct, rakeCap){
     var r = potOddsBE(potAtual, toCall, rakePct, rakeCap);
     var bePct = r.bePct;
-    var eq    = Number(equityPct||0);
-    var buffer = 3; // zona cinza ±3pp
-    var rec = 'Indiferente';
-    if(eq >= bePct + buffer) rec = 'Call';
-    else if(eq <= bePct - buffer) rec = 'Fold';
+    var eq    = equityPct; // pode ser NaN
+    var choice = decideByRanges(eq, bePct);
+
+    // Retornamos campos padronizados + escolha textual
     return {
       bePct: bePct,
-      equityPct: +eq.toFixed(1),
-      rec: rec,
+      equityPct: isFinite(eq)? +eq.toFixed(1) : NaN,
+      rec: choice.rec,
+      recDetail: choice.detail,
+      recTag: choice.tag,
       potFinal: r.potFinal,
       potFinalEfetivo: r.potFinalEfetivo,
       rake: r.rake
     };
   }
 
-  // ===== TTS helpers — fala apenas no clique do Enviar
+  // ===== TTS helpers — só fala quando houver decisão (não no "Aguardando")
   function ttsEnabled(){
     return !!(g.TTS && g.TTS.state && g.TTS.state.enabled && 'speechSynthesis' in g);
   }
@@ -193,12 +221,8 @@
     return isFinite(p) && p > 0 && isFinite(c) && c > 0;
   }
   function ttsRaise(result){
-    var phrase;
-    switch (result.rec) {
-      case 'Call': phrase = 'Sugestão: Pague o raise.'; break;
-      case 'Fold': phrase = 'Sugestão: Desista do raise.'; break;
-      default:     phrase = 'Sugestão: Pague.'; break;
-    }
+    if (result.recTag === 'wait') return; // não falar aguardando
+    var phrase = 'Sugestão: ' + result.rec + '.';
     ttsSayNow(phrase);
   }
 
@@ -281,7 +305,7 @@
     bar.appendChild(pots.potWrap);
     bar.appendChild(pots.callWrap);
     bar.appendChild(sendBtn);
-    bar.appendChild(infoTxt); // <-- adicionado logo após o botão
+    bar.appendChild(infoTxt); // após o botão
     mount.appendChild(bar);
 
     // Estado inicial do switch
@@ -294,7 +318,7 @@
     if (pots.potInput) pots.potInput.addEventListener('input', function(){
       var v = Number(pots.potInput.value||0);
       state.overrides.potAtual = isFinite(v)?v:0;
-      if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg); // atualiza card, sem falar/injetar
+      if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
     });
     if (pots.callInput) pots.callInput.addEventListener('input', function(){
       var v = Number(pots.callInput.value||0);
@@ -320,7 +344,7 @@
     }
   }
 
-  // ===== Patch: injetar e restaurar no bloco principal
+  // ===== Injeção no bloco principal
   function injectDecisionIntoMain(result, ctx){
     var host = document.getElementById('suggestOut');
     if (!host) return;
@@ -329,15 +353,19 @@
       state.lastSuggestSnapshot = host.innerHTML;
     }
 
-    var cls = (result.rec === 'Call') ? 'good' : (result.rec === 'Fold' ? 'bad' : 'warn');
-    var glow = (result.rec === 'Call');
+    var cls =
+      result.recTag === 'wait' ? 'warn' :
+      result.recTag === 'fold' ? 'bad'  : 'good';
+    var glow = (result.recTag !== 'wait' && result.recTag !== 'fold');
+
+    var eqLabel = isFinite(result.equityPct) ? (result.equityPct + '%') : 'Aguardando cartas…';
 
     host.innerHTML = `
       <div class="decision ${glow ? 'glow' : ''}">
-        <div class="decision-title ${cls}">RAISE EQUITY: ${result.rec}</div>
+        <div class="decision-title ${cls}">${result.rec}</div>
         <div class="decision-detail">
-          BE ${result.bePct}% | EQ ${result.equityPct}% &nbsp;•&nbsp;
-          Pot ${Number(ctx.potAtual||0).toFixed(0)} | A pagar ${Number(ctx.toCall||0).toFixed(0)}
+          BE ${result.bePct}% | EQ ${eqLabel} &nbsp;•&nbsp;
+          Pot ${Number(ctx.potAtual||0).toFixed(0)} | A pagar ${Number(ctx.toCall||0).toFixed(0)}${result.recDetail ? ' · ' + result.recDetail : ''}
         </div>
       </div>
     `;
@@ -363,12 +391,12 @@
     // desliga a chavinha automaticamente, SEM restaurar MC (decisão permanece na tela)
     setInjectDecision(false, { source:'auto', restore:false });
 
-    // [PATCH] limpar campos e zerar overrides para sumir do card compacto
+    // limpar campos e overrides
     try {
       if (state.elements.potInput)  state.elements.potInput.value  = '';
       if (state.elements.callInput) state.elements.callInput.value = '';
-      state.overrides.potAtual = 0;   // força '—' no card
-      state.overrides.toCall   = 0;   // força '—' no card
+      state.overrides.potAtual = 0;
+      state.overrides.toCall   = 0;
       if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
     } catch(_) {}
   }
@@ -381,6 +409,12 @@
     var result = computeDecision(ctx);
     state.lastPotOdds = result;
 
+    var eqLabel = isFinite(result.equityPct) ? (result.equityPct + '%') : 'Aguardando cartas…';
+    var recLabel = result.rec || 'Aguardando';
+    var pillColor =
+      result.recTag === 'wait' ? '#f59e0b' :
+      result.recTag === 'fold' ? '#ef4444' : '#10b981';
+
     out.innerHTML = `
       <div class="raise-potodds card">
         <div style="font-weight:700;margin-bottom:6px">Pot Odds (vs Raise) — Compacto</div>
@@ -388,16 +422,15 @@
           <div>Pot (fichas)</div><div><b>${ctx.potAtual ? ctx.potAtual.toFixed(0) : '—'}</b></div>
           <div>A pagar (fichas)</div><div><b>${ctx.toCall ? ctx.toCall.toFixed(0) : '—'}</b></div>
           <div>BE (pot odds)</div><div><b>${result.bePct}%</b></div>
-          <div>Equity (MC)</div><div><b>${result.equityPct}%</b></div>
+          <div>Equity (MC)</div><div><b>${eqLabel}</b></div>
           <div>Recomendação</div>
-          <div><span id="po-rec" style="padding:2px 8px;border-radius:999px;border:1px solid #22304a">${result.rec}</span></div>
+          <div><span id="po-rec" style="padding:2px 8px;border-radius:999px;border:1px solid #22304a">${recLabel}</span></div>
         </div>
       </div>`;
     var pill = out.querySelector('#po-rec');
     if (pill){
-      var c = result.rec === 'Call' ? '#10b981' : (result.rec === 'Fold' ? '#ef4444' : '#f59e0b');
-      pill.style.background = c + '22';
-      pill.style.borderColor = c + '66';
+      pill.style.background = pillColor + '22';
+      pill.style.borderColor = pillColor + '66';
       pill.style.color = '#e5e7eb';
     }
   }
@@ -405,7 +438,7 @@
   function computeDecision(ctx){
     var potAtual = Number(ctx.potAtual || 0);
     var toCall   = Number(ctx.toCall   || 0);
-    var equity   = Number(ctx.equityPct!= null ? ctx.equityPct : 50);
+    var equity   = (ctx.equityPct!= null ? Number(ctx.equityPct) : NaN); // pode ser NaN
     var rakePct  = Number(ctx.rakePct  || 0);
     var rakeCap  = (ctx.rakeCap===Infinity || ctx.rakeCap==null) ? Infinity : Number(ctx.rakeCap);
     return decideVsRaise(potAtual, toCall, equity, rakePct, rakeCap);
@@ -430,7 +463,6 @@
   // ===== Reattach dinâmico + Heartbeat =====
   function attachObserverTo(targetEl, kind){
     if (!g.MutationObserver || !targetEl) return;
-    // desconecta anterior se trocou o nó
     if (kind==='eqBreak' && state.domNodes.eqBreakEl !== targetEl && state.domObs.eqBreak){
       try{ state.domObs.eqBreak.disconnect(); }catch(_){}
       state.domObs.eqBreak = null;
@@ -439,7 +471,6 @@
       try{ state.domObs.eqBar.disconnect(); }catch(_){}
       state.domObs.eqBar = null;
     }
-    // cria/reattacha
     if (kind==='eqBreak' && !state.domObs.eqBreak){
       var mo1 = new MutationObserver(function(){
         if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
@@ -478,12 +509,8 @@
     stopHeartbeat();
     state.pollTimer = setInterval(function(){
       if (!state._cfg) return;
-
-      // 1) equity mudou?
       var eq = extractEquityFromDOM();
       var eqKey = isFinite(eq)? eq.toFixed(2) : 'NA';
-
-      // 2) assinatura da seleção (pra reagir a trocar HH, flop/turn/river)
       var PC = g.PC || g.PCALC || {};
       var sel = (PC.state && Array.isArray(PC.state.selected)) ? PC.state.selected.join(',') : '';
       var sig = eqKey + '|' + sel;
@@ -500,11 +527,7 @@
 
   function attachDOMObservers(){
     detachDOMObservers();
-
-    // tenta anexar imediatamente
     ensureDomObserversAttached();
-
-    // observa o body para detectar criação/substituição de nós
     if (g.MutationObserver && document.body) {
       var moBody = new MutationObserver(function(){
         ensureDomObserversAttached();
@@ -513,11 +536,7 @@
       state.observers.push(moBody);
       state.domObs.body = moBody;
     }
-
-    // heartbeat garante atualização mesmo se o app trocar nós silenciosamente
     startHeartbeat();
-
-    // pings tardios extra
     [80, 300, 1200].forEach(function(ms){
       setTimeout(function(){
         ensureDomObserversAttached();
@@ -529,7 +548,6 @@
   function detachDOMObservers(){
     (state.observers||[]).forEach(function(mo){ try{ mo.disconnect(); }catch(_){ } });
     state.observers = [];
-    // desconecta individuais
     ['eqBreak','eqBar','suggestOut','body'].forEach(function(k){
       if (state.domObs[k]) { try{ state.domObs[k].disconnect(); }catch(_){} state.domObs[k]=null; }
     });
@@ -562,7 +580,6 @@
 
     setState: function(patch){
       patch = patch || {};
-
       if ('useDecisionInjection' in patch) {
         setInjectDecision(!!patch.useDecisionInjection, { source:'code', restore:false });
       }
