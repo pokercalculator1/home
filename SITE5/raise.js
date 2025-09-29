@@ -210,7 +210,7 @@
       + '.raise-bar{display:flex;gap:.9rem;align-items:center;flex-wrap:wrap;margin:.5rem 0}\n'
       + '.field{display:flex;align-items:center;gap:.6rem}\n'
       + '.fld-label{color:#93c5fd;font-weight:600;white-space:nowrap}\n'
-      + '.input-modern input{width:110px;padding:.48rem .6rem;border:1px solid #334155;'
+      + '.input-modern input{width:60px;padding:.48rem .6rem;border:1px solid #334155;'
         + 'background:#0f172a;color:#e5e7eb;border-radius:.6rem;outline:0}\n'
       + '.raise-potodds.card{background:#0b1324;border:1px solid #22304a;border-radius:10px;padding:10px;line-height:1.2}\n'
       + '.rsw{position:relative;display:inline-block;width:48px;height:26px}\n'
@@ -221,7 +221,8 @@
       + '.rsw input:checked + .slider:before{transform:translateX(22px)}\n'
       + '.raise-send-btn{padding:.48rem .7rem;border:1px solid #334155;background:#0f172a;color:#e5e7eb;'
         + 'border-radius:.6rem;cursor:pointer;user-select:none}\n'
-      + '.raise-send-btn:hover{border-color:#60a5fa}\n';
+      + '.raise-send-btn:hover{border-color:#60a5fa}\n'
+      + '#eqStatus{margin-top:8px;color:#9ca3af}\n';
     var style = el('style'); style.id='raise-css-hook';
     style.appendChild(document.createTextNode(css));
     document.head.appendChild(style);
@@ -256,7 +257,7 @@
     // (1) Switch: Houve Ação ?
     var injWrap = el('div','field');
     var injLbl  = el('span','fld-label'); 
-    injLbl.textContent = 'Houve Ação ?'; // [PATCH] texto alterado
+    injLbl.textContent = 'Houve Ação ?';
     var injRsw  = el('label','rsw');
     var injCb   = document.createElement('input'); injCb.type='checkbox'; injCb.id='rsw-inject';
     var injSl   = el('span','slider');
@@ -270,10 +271,17 @@
     // (3) Botão Enviar
     var sendBtn = el('button','raise-send-btn'); sendBtn.id='btn-raise-send'; sendBtn.type='button'; sendBtn.textContent='Enviar';
 
+    // (4) Texto informativo solicitado (logo após o botão)
+    var infoTxt = el('div'); 
+    infoTxt.id = 'eqStatus';
+    infoTxt.className = 'mut';
+    infoTxt.textContent = 'Ative se houver Apostas ou Aumento, para Calcular Pot Odds e Tomar a Melhor Decisão!';
+
     bar.appendChild(injWrap);
     bar.appendChild(pots.potWrap);
     bar.appendChild(pots.callWrap);
     bar.appendChild(sendBtn);
+    bar.appendChild(infoTxt); // <-- adicionado logo após o botão
     mount.appendChild(bar);
 
     // Estado inicial do switch
