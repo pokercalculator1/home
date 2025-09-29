@@ -210,7 +210,7 @@
       + '.raise-bar{display:flex;gap:.9rem;align-items:center;flex-wrap:wrap;margin:.5rem 0}\n'
       + '.field{display:flex;align-items:center;gap:.6rem}\n'
       + '.fld-label{color:#93c5fd;font-weight:600;white-space:nowrap}\n'
-      + '.input-modern input{width:110px;padding:.48rem .6rem;border:1px solid #334155;'
+      + '.input-modern input{width:60px;padding:.48rem .6rem;border:1px solid #334155;'
         + 'background:#0f172a;color:#e5e7eb;border-radius:.6rem;outline:0}\n'
       + '.raise-potodds.card{background:#0b1324;border:1px solid #22304a;border-radius:10px;padding:10px;line-height:1.2}\n'
       + '.rsw{position:relative;display:inline-block;width:48px;height:26px}\n'
@@ -231,12 +231,12 @@
   function buildPotInputs(initialPot, initialCall){
     var potWrap = el('div','field');
     var potLbl  = el('span','fld-label'); potLbl.textContent='Pot (fichas):';
-    var potInpW = el('div','input-modern'); potInpW.innerHTML='<input id="inp-pot" type="number" step="1" min="0" placeholder="ex: 1200">';
+    var potInpW = el('div','input-modern'); potInpW.innerHTML='<input id="inp-pot" type="number" step="1" min="0" placeholder="">';
     potWrap.appendChild(potLbl); potWrap.appendChild(potInpW);
 
     var callWrap = el('div','field');
     var callLbl  = el('span','fld-label'); callLbl.textContent='A pagar (fichas):';
-    var callInpW = el('div','input-modern'); callInpW.innerHTML='<input id="inp-call" type="number" step="1" min="0" placeholder="ex: 400">';
+    var callInpW = el('div','input-modern'); callInpW.innerHTML='<input id="inp-call" type="number" step="1" min="0" placeholder="">';
     callWrap.appendChild(callLbl); callWrap.appendChild(callInpW);
 
     var potInp  = potInpW.querySelector('input');
@@ -255,8 +255,8 @@
 
     // (1) Switch: Houve Ação ?
     var injWrap = el('div','field');
-    var injLbl  = el('span','fld-label'); 
-    injLbl.textContent = 'Houve Ação ?'; // [PATCH] texto alterado
+    var injLbl  = el('span','fld-label');
+    injLbl.textContent = 'Houve Ação ?';
     var injRsw  = el('label','rsw');
     var injCb   = document.createElement('input'); injCb.type='checkbox'; injCb.id='rsw-inject';
     var injSl   = el('span','slider');
@@ -275,6 +275,14 @@
     bar.appendChild(pots.callWrap);
     bar.appendChild(sendBtn);
     mount.appendChild(bar);
+
+    // (4) eqStatus (texto exato solicitado) — dentro da .raise-bar
+    var status = el('div');
+    status.id = 'eqStatus';
+    status.className = 'mut';
+    status.style.marginTop = '8px';
+    status.textContent = 'Ative se houver Apostas ou Aumento, para Calcular Pot Odds e Tomar a Melhor Decisão!';
+    bar.appendChild(status);
 
     // Estado inicial do switch
     injCb.checked = !!state.injectDecision;
@@ -355,12 +363,12 @@
     // desliga a chavinha automaticamente, SEM restaurar MC (decisão permanece na tela)
     setInjectDecision(false, { source:'auto', restore:false });
 
-    // [PATCH] limpar campos e zerar overrides para sumir do card compacto
+    // limpar campos e zerar overrides para sumir do card compacto
     try {
       if (state.elements.potInput)  state.elements.potInput.value  = '';
       if (state.elements.callInput) state.elements.callInput.value = '';
-      state.overrides.potAtual = 0;   // força '—' no card
-      state.overrides.toCall   = 0;   // força '—' no card
+      state.overrides.potAtual = 0;
+      state.overrides.toCall   = 0;
       if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
     } catch(_) {}
   }
