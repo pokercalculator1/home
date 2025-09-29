@@ -253,9 +253,10 @@
 
     var bar = el('div', 'raise-bar');
 
-    // (1) Switch: Decisão do Raise
+    // (1) Switch: Houve Ação ?
     var injWrap = el('div','field');
-    var injLbl  = el('span','fld-label'); injLbl.textContent = 'Decisão do Raise:';
+    var injLbl  = el('span','fld-label'); 
+    injLbl.textContent = 'Houve Ação ?'; // [PATCH] texto alterado
     var injRsw  = el('label','rsw');
     var injCb   = document.createElement('input'); injCb.type='checkbox'; injCb.id='rsw-inject';
     var injSl   = el('span','slider');
@@ -353,6 +354,15 @@
 
     // desliga a chavinha automaticamente, SEM restaurar MC (decisão permanece na tela)
     setInjectDecision(false, { source:'auto', restore:false });
+
+    // [PATCH] limpar campos e zerar overrides para sumir do card compacto
+    try {
+      if (state.elements.potInput)  state.elements.potInput.value  = '';
+      if (state.elements.callInput) state.elements.callInput.value = '';
+      state.overrides.potAtual = 0;   // força '—' no card
+      state.overrides.toCall   = 0;   // força '—' no card
+      if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
+    } catch(_) {}
   }
 
   // ===== Render do card compacto
