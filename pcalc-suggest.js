@@ -183,20 +183,20 @@
     }
 
     if (!gePost(70))
-      return { title: 'APOSTE 50–75% DO POTE', detail: 'Faixa de valor (50–70%)' };
+      return { title: 'APOSTE 50 á 75% DO POTE', detail: 'Faixa de valor (50–70%)' };
 
     if (!gePost(80))
-      return { title: 'APOSTE 75–100% DO POTE', detail: 'Valor forte (70–80%)' };
+      return { title: 'APOSTE 75 á 100% DO POTE', detail: 'Valor forte (70–80%)' };
 
     // >80%
     if (slowPlayOn())
-      return { title: 'SLOW PLAY', detail: 'Passe / 33% do pote para induzir' };
+      return { title: 'SLOW PLAY: APOSTE 33% DO POTE', detail: 'Passe / 33% do pote para induzir' };
 
     const ebb2 = effBB();
     if (isFinite(ebb2) && ebb2 <= 12)
-      return { title: 'ALL-IN / OVERBET', detail: 'Efetivo curto (≤12 BB)' };
+      return { title: 'AAPOSTE O VALOR DO POTE OU ALL IN', detail: 'Efetivo curto (≤12 BB)' };
 
-    return { title: 'APOSTE GRANDE', detail: 'Pot / overbet' };
+    return { title: 'APOSTE 100% DO POTE OU MAIS', detail: 'Pot / overbet' };
   };
 
 })(window);
