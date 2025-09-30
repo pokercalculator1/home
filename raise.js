@@ -202,11 +202,11 @@
     }
     if (eqPct < 50) {
       return hasPotOdds
-        ? { rec:'Pague a aposta', detail:'30–50% de equity com pot odds', tag:'call' }
+        ? { rec:'Pague a aposta', detail:'30–49% de equity com pot odds', tag:'call' }
         : { rec:'Desista',        detail:'30–50% de equity sem pot odds', tag:'fold' };
     }
     if (eqPct < 70) {
-      return { rec:'Aposte 50 á 75% do pote', detail:'50–70% de equity. Aposte por valor.', tag:'value_bet_medium' };
+      return { rec:'Aposte 50 á 75% do pote', detail:'50–69% de equity. Aposte por valor.', tag:'value_bet_medium' };
     }
     if (eqPct <= 80) {
       return { rec:'Aposte 75 á 100% do pote', detail:'70–80% de equity. Maximize o valor.', tag:'value_bet_strong' };
