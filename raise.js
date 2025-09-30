@@ -1072,6 +1072,7 @@
     div.style.marginLeft = '8px';
     div.style.opacity = '0.98';
     div.style.display = 'inline-block';
+    div.style.color = '#9ca3af';
     mimicEqStatusStyles(div);
     btn.insertAdjacentElement('afterend', div);
   }
