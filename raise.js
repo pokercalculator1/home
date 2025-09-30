@@ -1041,3 +1041,107 @@
 
 })();
 
+
+// ========= PATCH: info fixa + "Passe ou Desista" =========
+(function(){
+  // --------------- helpers
+  function q(sel, root){ return (root||document).querySelector(sel); }
+  function on(el,ev,fn){ if(el) el.addEventListener(ev,fn); }
+
+  // Copia alguns estilos visuais da primeira .eqStatus que existir
+  function mimicEqStatusStyles(target){
+    try{
+      var src = q('.eqStatus');
+      if(!src || !target) return;
+      var cs = getComputedStyle(src);
+      ['fontSize','color','fontWeight','fontFamily','lineHeight','letterSpacing','textTransform']
+        .forEach(function(p){ target.style[p] = cs[p]; });
+    }catch(_){}
+  }
+
+  // Cria/garante a mensagem fixa após o botão Enviar (sem classe eqStatus)
+  function ensureInfoMsg(){
+    if (q('#raise-info-msg')) return;
+    var btn = q('#btn-raise-send');
+    if (!btn) return; // espera o raise.js montar
+    var div = document.createElement('div');
+    div.id = 'raise-info-msg';
+    div.className = 'raise-info';
+    div.textContent = 'Ative se houver Apostas ou Aumento, para Calcular Pot Odds e Tomar a Melhor Decisão!';
+    // estilo base (fallback) + mimetizar eqStatus quando existir
+    div.style.marginLeft = '8px';
+    div.style.opacity = '0.98';
+    div.style.display = 'inline-block';
+    mimicEqStatusStyles(div);
+    btn.insertAdjacentElement('afterend', div);
+  }
+
+  // Substitui "Desista" por "Passe ou Desista" nas saídas visuais
+  function replaceDesista(){
+    // card compacto
+    var sug = q('#pcalc-sugestao');
+    if (sug) {
+      // texto e pílula
+      if (sug.innerHTML.includes('Desista')) {
+        sug.innerHTML = sug.innerHTML.replace(/\bDesista\b/g, 'Passe ou Desista');
+      }
+      // pílula colorida
+      var pill = q('#pcalc-sugestao #po-rec');
+      if (pill && /Passe ou Desista/.test(pill.textContent||'')){
+        pill.style.background = '#ef444422';
+        pill.style.borderColor = '#ef444466';
+        pill.style.color = '#e5e7eb';
+      }
+    }
+    // bloco principal
+    var main = q('#suggestOut');
+    if (main && main.innerHTML.includes('Desista')) {
+      main.innerHTML = main.innerHTML.replace(/\bDesista\b/g, 'Passe ou Desista');
+      // tenta também ajustar um badge/pílula se existir ali
+      var pill2 = main.querySelector('.decision-title');
+      if (pill2 && /Passe ou Desista/.test(pill2.textContent||'')){
+        pill2.style.color = '#ef4444';
+      }
+    }
+  }
+
+  // Reaplica o visual da info quando a eqStatus aparecer/trocar no painel
+  function watchEqStatus(){
+    var obs = new MutationObserver(function(){
+      var info = q('#raise-info-msg');
+      if (info) mimicEqStatusStyles(info);
+    });
+    if (document.body){
+      obs.observe(document.body, { childList:true, subtree:true });
+    }
+  }
+
+  // Loop leve até toolbar existir, depois roda manutenção leve
+  var tries = 0;
+  var t = setInterval(function(){
+    ensureInfoMsg();
+    replaceDesista();
+    if (++tries > 200) clearInterval(t); // ~50s
+    if (q('#btn-raise-send') && q('#pcalc-sugestao')) {
+      // inicia observador para manter estilos/replace ao vivo
+      watchEqStatus();
+      // também roda um ticker leve para sincronizar textos/pílulas
+      setInterval(replaceDesista, 500);
+      clearInterval(t);
+    }
+  }, 250);
+
+  // CSS mínimo de fallback (caso .eqStatus não exista ainda)
+  (function addCSS(){
+    if (q('#raise-info-css')) return;
+    var st = document.createElement('style');
+    st.id = 'raise-info-css';
+    st.textContent =
+      '.raise-info{font-size:12px;color:#93c5fd;font-weight:600;margin-top:4px}';
+    document.head.appendChild(st);
+  })();
+
+})();
+
+
+
