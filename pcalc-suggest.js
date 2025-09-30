@@ -1,16 +1,15 @@
-// pcalc-suggest.js — Sugestões SEM AÇÃO alinhadas ao raise.js
+// pcalc-suggest.js — Sugestões SEM AÇÃO alinhadas ao raise.js (frases ajustadas)
 // - Pré-flop (você primeiro a agir) e Pós-flop (ninguém apostou)
-// - Mesmas faixas do raise.js:
+// - Faixas:
 //   <30%  -> Desista
-//   30–50 -> Check / só continue se surgirem pot odds (vs aposta)
-//   50–70 -> Aposta de valor 50–75%  | Pré: open 2–3 BB
-//   70–80 -> Aposta de valor 75–100% | Pré: open 3–4 BB
-//   >80%  -> All-in / overbet (ou Slow Play se toggle ligado). Efetivo ≤12BB => All-in
-//
-// Observações:
-// - Mantém “Desista” (nada de "Fold").
-// - Ajuste multiway: +2 pontos de porcentagem no limiar por oponente extra.
-// - Se equity indisponível, mostra “Aguardando cartas…”.
+//   30–50 -> Passe ou Desista (só continue vs aposta se houver pot odds)
+//   50–70 -> Pré: APOSTE 2 ou 3 blinds | Pós: APOSTE 50–75% do pote
+//   70–80 -> Pré: APOSTE 3 ou 4 blinds | Pós: APOSTE 75–100% do pote
+//   >80%  -> Pré: APOSTE 4 ou 5 blinds (Efetivo ≤12BB => All-in; Slow Play se toggle ligado)
+//            Pós: All-in/overbet (ou Slow Play)
+// - “check” substituído por “passe” em todo o texto.
+// - Ajuste multiway: +2pp no limiar por oponente extra.
+// - Equity indefinida -> “Aguardando cartas…”.
 
 (function (g) {
   const PCALC = g.PCALC || (g.PCALC = {});
@@ -21,13 +20,13 @@
   // =========================================================
   PCALC.decisionClass = function (title) {
     const t = (title || '').toUpperCase();
-    if (t.includes('APOSTE') || t.includes('VALOR') || t.includes('AUMENTE') || t.includes('3-BET') || t.includes('SQUEEZE'))
+    if (t.includes('APOSTE') || t.includes('AUMENTE') || t.includes('3-BET') || t.includes('SQUEEZE'))
       return 'ok';
     if (t.includes('SEMI-BLEFE'))
       return 'warn';
-    if (t.includes('CHECK OU DESISTA') || t.includes('DESISTA') || t.includes('FOLD'))
+    if (t.includes('PASSE OU DESISTA') || t.includes('DESISTA') || t.includes('FOLD'))
       return 'danger';
-    if (t.includes('CONTROLE') || t.includes('CHECK') || t.includes('POT CONTROL') || t.includes('PAGUE') || t.includes('CALL'))
+    if (t.includes('CONTROLE') || t.includes('PASSE') || t.includes('POT CONTROL') || t.includes('PAGUE') || t.includes('CALL'))
       return 'info';
     return 'info';
   };
@@ -105,33 +104,32 @@
     if (st === 'pre') {
       const norm = normalizeHand(hand);
 
-      // Premium de verdade → sempre valor
+      // Premium de verdade → sempre valor (texto concreto em blinds)
       if (top20.has(norm)) {
-        // Ajuste por força: TP/overpairs abrem 3–4 BB; pares médios 2–3 BB
-        return { title: 'APOSTE POR VALOR', detail: 'Abra 3–4 BB (mão premium)' };
+        return { title: 'APOSTE 3 OU 4 BLINDS', detail: 'Mão premium (top 20)' };
       }
 
       if (eqPct < 30)
         return { title: 'DESISTA', detail: 'Equity < 30%' };
 
       if (eqPct < 50)
-        return { title: 'CHECK OU DESISTA', detail: '30–50%: evite abrir; só continue se mais tarde houver pot odds vs aposta' };
+        return { title: 'PASSE OU DESISTA', detail: '30–50%: evite abrir; só continue mais tarde vs aposta se houver pot odds' };
 
       if (eqPct < 70)
-        return { title: 'APOSTE POR VALOR', detail: 'Abra 2–3 BB (50–70% equity)' };
+        return { title: 'APOSTE 2 OU 3 BLINDS', detail: '50–70% de equity' };
 
       if (eqPct <= 80)
-        return { title: 'APOSTE POR VALOR', detail: 'Abra 3–4 BB (70–80% equity)' };
+        return { title: 'APOSTE 3 OU 4 BLINDS', detail: '70–80% de equity' };
 
       // >80%
       if (slowPlayOn())
-        return { title: 'SLOW PLAY', detail: 'Limp/passe ou 33% para induzir' };
+        return { title: 'SLOW PLAY', detail: 'Passe/limp ou 33% para induzir' };
 
       const ebb = effBB();
       if (isFinite(ebb) && ebb <= 12)
         return { title: 'ALL-IN', detail: '>80% equity e efetivo curto (≤12 BB)' };
 
-      return { title: 'APOSTE POR VALOR', detail: 'Abra 4–5 BB (muito forte)' };
+      return { title: 'APOSTE 4 OU 5 BLINDS', detail: 'Mão muito forte' };
     }
 
     // -------------------- PÓS-FLOP — ninguém apostou ainda --------------------
@@ -139,17 +137,16 @@
       return { title: 'DESISTA', detail: '<30%: blefe só com MUITA fold equity' };
 
     if (eqPct < 50) {
-      // Draws podem ditar um semi-blefe leve em HU, mas a regra padrão é check
       if (strongDraw) return { title: 'SEMI-BLEFE', detail: '33–50% do pote (draw forte)' };
       if (weakDraw && oppN === 1 && ge(32)) return { title: 'SEMI-BLEFE (HU)', detail: '30–40% do pote' };
-      return { title: 'CHECK', detail: '30–50%: se houver aposta, continue só com pot odds' };
+      return { title: 'PASSE', detail: '30–50%: se houver aposta, continue só com pot odds' };
     }
 
     if (eqPct < 70)
-      return { title: 'APOSTE POR VALOR', detail: '50–75% do pote' };
+      return { title: 'APOSTE 50–75% DO POTE', detail: 'Faixa de valor (50–70%)' };
 
     if (eqPct <= 80)
-      return { title: 'APOSTE POR VALOR', detail: '75–100% do pote' };
+      return { title: 'APOSTE 75–100% DO POTE', detail: 'Valor forte (70–80%)' };
 
     // >80%
     if (slowPlayOn())
