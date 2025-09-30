@@ -645,7 +645,7 @@
 
     out.innerHTML = `
       <div class="raise-potodds card">
-        <div style="font-weight:700;margin-bottom:6px">Pot Odds (vs Raise) — Compacto</div>
+        <div style="font-weight:700;margin-bottom:6px">Informações do Pot Odd</div>
         <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
           <div>Pot (fichas)</div><div><b>${ctx.potAtual ? ctx.potAtual.toFixed(0) : '—'}</b></div>
           <div>A pagar (fichas)</div><div><b>${ctx.toCall ? ctx.toCall.toFixed(0) : '—'}</b></div>
