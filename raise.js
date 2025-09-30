@@ -975,3 +975,87 @@
     if (++tries > 40) clearInterval(t);
   }, 250);
 })();
+// ========== PATCH: Card Pot Odds com "Recomendação" em bloco central ==========
+(function(){
+  function q(s,r){return (r||document).querySelector(s);}
+  function restyleCard(){
+    const host = q('#pcalc-sugestao');
+    if(!host) return;
+    const card = host.querySelector('.raise-potodds.card');
+    if(!card) return;
+
+    // 1) Título -> "Informações do Pot Odd"
+    const titleEl = card.firstElementChild;
+    if (titleEl && /Pot Odds/i.test(titleEl.textContent||'')) {
+      titleEl.textContent = 'Informações do Pot Odd';
+    }
+
+    // 2) Pega o container em grid (é o segundo filho do card)
+    const grid = card.children[1];
+    if (!grid) return;
+
+    // Já transformado? então não repete
+    if (card.querySelector('.po-rec-wrap')) return;
+
+    // 3) Últimos 2 itens da grid são "Recomendação" + valor
+    const cells = Array.from(grid.children);
+    if (cells.length < 2) return;
+
+    const labelEl = cells[cells.length - 2];
+    const valueEl = cells[cells.length - 1];
+
+    // Confirma que é "Recomendação"
+    if (!/Recomendação/i.test((labelEl.textContent||'').trim())) return;
+
+    // 4) Remove esses 2 da grid
+    grid.removeChild(labelEl);
+    grid.removeChild(valueEl);
+
+    // 5) Cria bloco centralizado para a recomendação
+    const wrap = document.createElement('div');
+    wrap.className = 'po-rec-wrap';
+    wrap.innerHTML = `
+      <div class="po-rec-title">Recomendação</div>
+      <div class="po-rec-value"></div>
+    `;
+
+    // move o span #po-rec (se existir) para dentro do bloco
+    const pill = valueEl.querySelector('#po-rec');
+    const valueSlot = wrap.querySelector('.po-rec-value');
+    if (pill) {
+      valueSlot.appendChild(pill);
+      // garante que o badge fique centralizado
+      pill.style.display = 'inline-block';
+    } else {
+      // fallback: se não achou o #po-rec, leva o conteúdo bruto
+      valueSlot.appendChild(valueEl);
+    }
+
+    // 6) insere o bloco no final do card
+    card.appendChild(wrap);
+  }
+
+  // CSS do bloco de recomendação
+  (function ensureCSS(){
+    if (q('#po-rec-css')) return;
+    const st = document.createElement('style');
+    st.id = 'po-rec-css';
+    st.textContent =
+      '.raise-potodds.card .po-rec-wrap{margin-top:10px;text-align:center}'
+      + '.raise-potodds.card .po-rec-title{font-weight:600;opacity:.9;margin-bottom:6px}'
+      + '.raise-potodds.card .po-rec-value{display:block}';
+    document.head.appendChild(st);
+  })();
+
+  // Observa mudanças no #pcalc-sugestao para re-aplicar quando re-renderizar
+  const mo = new MutationObserver(restyleCard);
+  mo.observe(document.documentElement, {childList:true, subtree:true});
+
+  // boot + pequenos ticks para garantir na primeira montagem
+  restyleCard();
+  let tries = 0;
+  const t = setInterval(()=>{
+    restyleCard();
+    if (++tries > 40) clearInterval(t); // ~10s
+  }, 250);
+})();
