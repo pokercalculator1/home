@@ -868,125 +868,53 @@
 })(window);
 
 
-
-// ===== PATCH: Enviar -> Slow Play -> Mensagem; eqStatus após "↻ Recalcular" =====
+// ===== PATCH: eqStatus nasce e permanece logo após "#btnEqCalc" =====
 (function(){
+  const ANCHOR_SEL = '#btnEqCalc';   // botão "↻ Recalcular"
+
   function q(s, r){ return (r||document).querySelector(s); }
-  function inside(el, rootSel){ if(!el) return false; const root=q(rootSel); return !!(root && root.contains(el)); }
-  function moveAfter(node, ref){ if(node && ref && ref.parentNode){ ref.insertAdjacentElement('afterend', node); } }
-
-  // 1) Slow Play DEPOIS de Enviar (na barra do raise)
-  function placeSlowInToolbar(){
-    const btnSend  = q('#btn-raise-send'); if(!btnSend) return;
-    const slow     = q('#rsw-slow'); if(!slow) return;
-    const slowWrap = slow.closest('.field') || slow.parentElement || slow;
-
-    // se estiver fora da barra, traz pra #pcalc-toolbar
-    if (!inside(slowWrap, '#pcalc-toolbar')){
-      moveAfter(slowWrap, btnSend);
-    } else {
-      // garantir que fica imediatamente depois do Enviar
-      if (slowWrap.previousElementSibling !== btnSend){
-        moveAfter(slowWrap, btnSend);
-      }
-    }
+  function moveAfter(node, ref){
+    if (node && ref && ref.parentNode) ref.insertAdjacentElement('afterend', node);
   }
 
-  // 2) Mensagem informativa DEPOIS do Slow Play (ou depois do Enviar se não existir Slow)
-  function ensureInfoMsg(){
-    const btnSend  = q('#btn-raise-send'); if(!btnSend) return;
-    const slow     = q('#rsw-slow');
-    const slowWrap = slow ? (slow.closest('.field') || slow.parentElement || slow) : null;
+  // coloca/segura o eqStatus no lugar correto
+  function anchorEqStatus(){
+    const eqStatus = document.getElementById('eqStatus');
+    if (!eqStatus) return;
 
-    let info = q('#raise-info-msg');
-    if(!info){
-      info = document.createElement('div');
-      info.id = 'raise-info-msg';
-      info.className = 'raise-info';
-      info.textContent = 'Ative se houver Apostas ou Aumento, para Calcular Pot Odds e Tomar a Melhor Decisão!';
-      // fallback visual (imitar .eqStatus se existir)
-      const eqs = q('.eqStatus');
-      if (eqs){
-        const cs = getComputedStyle(eqs);
-        ['fontSize','color','fontWeight','fontFamily','lineHeight','letterSpacing','textTransform']
-          .forEach(p=> info.style[p] = cs[p]);
-      } else {
-        info.style.fontSize = '12px';
-        info.style.color = '#93c5fd';
-        info.style.fontWeight = '600';
-      }
-      info.style.display = 'inline-block';
-      info.style.marginLeft = '8px';
+    const anchor = q(ANCHOR_SEL);
+    if (!anchor){
+      // ainda não existe o botão → não deixa o eqStatus “estrear” no lugar errado
+      eqStatus.style.display = 'none';
+      eqStatus.dataset.waitAnchor = '1';
+      return;
     }
-    // posição: DEPOIS do Slow; se não houver Slow, depois do Enviar
-    const anchor = slowWrap || btnSend;
-    if (anchor.nextElementSibling !== info){
-      moveAfter(info, anchor);
-    }
-  }
 
-  // 3) eqStatus LOGO após o botão "↻ Recalcular"
-  function placeEqStatusAfterRecalc(){
-    const eqStatus = document.getElementById('eqStatus'); if(!eqStatus) return;
-    const recalcBtn = q('#btnEqCalc'); if(!recalcBtn) return;
+    // âncora existe → garante posição e mostra
+    if (anchor.nextElementSibling !== eqStatus){
+      moveAfter(eqStatus, anchor);
+    }
+    if (eqStatus.dataset.waitAnchor){
+      delete eqStatus.dataset.waitAnchor;
+      eqStatus.style.display = ''; // volta a mostrar
+    }
+    // garante classe visual
     if (!eqStatus.classList.contains('mut')) eqStatus.classList.add('mut');
-    if (recalcBtn.nextElementSibling !== eqStatus){
-      moveAfter(eqStatus, recalcBtn);
-    }
   }
 
-  // 4) Se houver Slow Play no painel de equidade (perto do Recalcular), REMOVER dali (mantemos só na barra)
-  function purgeSlowFromEquityPanel(){
-    const slow = q('#rsw-slow'); if(!slow) return;
-    const slowWrap = slow.closest('.field') || slow.parentElement || slow;
-    if (!inside(slowWrap, '#pcalc-toolbar')){
-      // move para a barra (depois do Enviar) e tira qualquer duplicata remanescente
-      const btnSend = q('#btn-raise-send'); if(btnSend) moveAfter(slowWrap, btnSend);
-      const dups = document.querySelectorAll('.field');
-      dups.forEach(n=>{
-        if(n!==slowWrap && n.querySelector && n.querySelector('#rsw-slow')) n.remove();
-      });
-    }
-  }
+  // aplica no boot e quando a UI re-renderiza
+  function run(){ anchorEqStatus(); }
 
-  // 5) “Desista” -> “Passe ou Desista” (card e bloco principal)
-  function replaceDesista(){
-    const host = [q('#pcalc-sugestao'), q('#suggestOut')].filter(Boolean);
-    host.forEach(h=>{
-      if (h && /\bDesista\b/.test(h.textContent||'')){
-        h.innerHTML = h.innerHTML.replace(/\bDesista\b/g, 'Passe ou Desista');
-      }
-    });
-    const pill = q('#pcalc-sugestao #po-rec');
-    if (pill && /Passe ou Desista/.test(pill.textContent||'')){
-      pill.style.background = '#ef444422';
-      pill.style.borderColor = '#ef444466';
-      pill.style.color = '#e5e7eb';
-    }
-    const title = q('#suggestOut .decision-title');
-    if (title && /Passe ou Desista/.test(title.textContent||'')){
-      title.style.color = '#ef4444';
-    }
-  }
-
-  function runAll(){
-    placeSlowInToolbar();   // 1º: garantir Slow após Enviar
-    ensureInfoMsg();        // 2º: mensagem após Slow (ou Enviar)
-    purgeSlowFromEquityPanel();
-    placeEqStatusAfterRecalc();
-    replaceDesista();
-  }
-
-  // observar mudanças para manter a ordem
-  const mo = new MutationObserver(runAll);
+  const mo = new MutationObserver(run);
   mo.observe(document.documentElement, { childList:true, subtree:true });
 
-  // boot + pequenos ticks
-  runAll();
+  // boot + pequenos ticks pra cobrir inicialização
+  run();
   let tries = 0;
   const tick = setInterval(()=>{
-    runAll();
-    if (++tries > 40) clearInterval(tick);
+    run();
+    if (++tries > 40) clearInterval(tick); // ~10s
   }, 250);
 })();
+
 
