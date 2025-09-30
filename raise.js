@@ -867,14 +867,13 @@
 
 })(window);
 
-
-
-// ===== PATCH: botão Enviar (.btn.warn) + frase ANTES do "Houve Ação ?" =====
+// ===== PATCH: Enviar (.btn.warn) + Frase ANTES do "Houve Ação?" + eqStatus após "↻ Recalcular" =====
 (function(){
   function q(s, r){ return (r||document).querySelector(s); }
   function moveBefore(node, ref){ if(node && ref && ref.parentNode){ ref.parentNode.insertBefore(node, ref); } }
+  function moveAfter(node, ref){ if(node && ref && ref.parentNode){ ref.insertAdjacentElement('afterend', node); } }
 
-  // 1) CSS base do .btn e do .btn.warn (sem conflitar com seu .raise-send-btn)
+  // 1) CSS do botão e da frase
   (function ensureCSS(){
     if (q('#raise-style-btn-warn')) return;
     var st = document.createElement('style');
@@ -887,58 +886,89 @@
     document.head.appendChild(st);
   })();
 
-  // 2) Deixar o botão Enviar com classes ".btn.warn"
+  // 2) Botão Enviar com .btn.warn
   function styleEnviar(){
     var btn = q('#btn-raise-send');
-    if (!btn) return;
-    // mantém classe original e adiciona .btn.warn
-    btn.classList.add('btn','warn');
+    if (btn){ btn.classList.add('btn','warn'); }
   }
 
-  // 3) Frase ANTES do "Houve Ação ?" (a chavinha rsw-inject)
+  // 3) Remover mensagens informativas antigas (ex.: depois do Slow Play)
+  function removeOldInfo(){
+    var old = q('#raise-info-msg');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    // Se tiver sobrado algum duplicado com o mesmo texto, remove também
+    var dups = document.querySelectorAll('.raise-info');
+    dups.forEach(function(el){
+      if (el.id !== 'pre-houve-info' && /Ative se houver Apostas ou Aumento/i.test(el.textContent||'')){
+        el.remove();
+      }
+    });
+  }
+
+  // 4) Criar a frase ANTES do "Houve Ação?"
   function ensurePreHouveInfo(){
-    var inj = q('#rsw-inject');
-    if (!inj) return; // ainda não montou
-    // o container do switch normalmente é um .field
+    var inj = q('#rsw-inject');        // checkbox do "Houve Ação ?"
+    if (!inj) return;
     var injWrap = inj.closest('.field') || inj.parentElement || inj;
-    if (!injWrap || !injWrap.parentNode) return;
 
     var info = q('#pre-houve-info');
     if (!info){
       info = document.createElement('div');
       info.id = 'pre-houve-info';
+      info.className = 'raise-info';
       info.textContent = 'Ative se houver Apostas ou Aumento, para Calcular Pot Odds e Tomar a Melhor Decisão!';
 
-      // imitar tipografia da .eqStatus (se existir) sem usar a classe
+      // Imita tipografia da .eqStatus (se existir), sem usar a classe
       var eqs = q('.eqStatus');
       if (eqs){
         var cs = getComputedStyle(eqs);
         ['fontSize','color','fontWeight','fontFamily','lineHeight','letterSpacing','textTransform']
           .forEach(function(p){ info.style[p] = cs[p]; });
       } else {
-        // fallback
         info.style.fontSize = '12px';
         info.style.color = '#93c5fd';
         info.style.fontWeight = '600';
       }
     }
-
-    // posicionar a info IMEDIATAMENTE ANTES do bloco "Houve Ação ?"
-    if (info.nextElementSibling !== injWrap){
+    // posiciona IMEDIATAMENTE ANTES do bloco "Houve Ação ?"
+    if (injWrap && info.nextElementSibling !== injWrap){
       moveBefore(info, injWrap);
     }
   }
 
-  function run(){
-    styleEnviar();
-    ensurePreHouveInfo();
+  // 5) Posicionar o #eqStatus sempre DEPOIS do botão "↻ Recalcular"
+  function keepEqStatusAfterRecalc(){
+    var eqStatus = document.getElementById('eqStatus');
+    if (!eqStatus) return;
+    var recalcBtn = q('#btnEqCalc'); // id que você informou
+    if (!recalcBtn){
+      // esconde até a âncora existir (evita “nascer” em lugar errado)
+      eqStatus.style.display = 'none';
+      eqStatus.dataset.waitAnchor = '1';
+      return;
+    }
+    if (recalcBtn.nextElementSibling !== eqStatus){
+      moveAfter(eqStatus, recalcBtn);
+    }
+    if (eqStatus.dataset.waitAnchor){
+      delete eqStatus.dataset.waitAnchor;
+      eqStatus.style.display = '';
+    }
+    if (!eqStatus.classList.contains('mut')) eqStatus.classList.add('mut');
   }
 
-  // observa mudanças porque a UI do raise é dinâmica
+  function run(){
+    styleEnviar();
+    removeOldInfo();
+    ensurePreHouveInfo();
+    keepEqStatusAfterRecalc();
+  }
+
+  // Observa mudanças para manter a ordem/posições
   var mo = new MutationObserver(run);
   mo.observe(document.documentElement, { childList:true, subtree:true });
 
-  // boot + alguns ticks
+  // Boot + alguns ticks
   run();
   var tries = 0;
   var t = setInterval(function(){
@@ -946,7 +976,3 @@
     if (++tries > 40) clearInterval(t);
   }, 250);
 })();
-
-
-
-
