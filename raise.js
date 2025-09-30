@@ -868,53 +868,85 @@
 })(window);
 
 
-// ===== PATCH: eqStatus nasce e permanece logo após "#btnEqCalc" =====
+
+// ===== PATCH: botão Enviar (.btn.warn) + frase ANTES do "Houve Ação ?" =====
 (function(){
-  const ANCHOR_SEL = '#btnEqCalc';   // botão "↻ Recalcular"
-
   function q(s, r){ return (r||document).querySelector(s); }
-  function moveAfter(node, ref){
-    if (node && ref && ref.parentNode) ref.insertAdjacentElement('afterend', node);
+  function moveBefore(node, ref){ if(node && ref && ref.parentNode){ ref.parentNode.insertBefore(node, ref); } }
+
+  // 1) CSS base do .btn e do .btn.warn (sem conflitar com seu .raise-send-btn)
+  (function ensureCSS(){
+    if (q('#raise-style-btn-warn')) return;
+    var st = document.createElement('style');
+    st.id = 'raise-style-btn-warn';
+    st.textContent =
+      '.btn{padding:.48rem .7rem;border:1px solid #334155;background:#0f172a;color:#e5e7eb;border-radius:.6rem;cursor:pointer;user-select:none}'
+      + '.btn.warn{background:#1f2937;border-color:#f59e0b;color:#fde68a}'
+      + '.btn.warn:hover{filter:brightness(1.05)}'
+      + '#pre-houve-info{display:inline-block;margin-right:10px;opacity:.98;}';
+    document.head.appendChild(st);
+  })();
+
+  // 2) Deixar o botão Enviar com classes ".btn.warn"
+  function styleEnviar(){
+    var btn = q('#btn-raise-send');
+    if (!btn) return;
+    // mantém classe original e adiciona .btn.warn
+    btn.classList.add('btn','warn');
   }
 
-  // coloca/segura o eqStatus no lugar correto
-  function anchorEqStatus(){
-    const eqStatus = document.getElementById('eqStatus');
-    if (!eqStatus) return;
+  // 3) Frase ANTES do "Houve Ação ?" (a chavinha rsw-inject)
+  function ensurePreHouveInfo(){
+    var inj = q('#rsw-inject');
+    if (!inj) return; // ainda não montou
+    // o container do switch normalmente é um .field
+    var injWrap = inj.closest('.field') || inj.parentElement || inj;
+    if (!injWrap || !injWrap.parentNode) return;
 
-    const anchor = q(ANCHOR_SEL);
-    if (!anchor){
-      // ainda não existe o botão → não deixa o eqStatus “estrear” no lugar errado
-      eqStatus.style.display = 'none';
-      eqStatus.dataset.waitAnchor = '1';
-      return;
+    var info = q('#pre-houve-info');
+    if (!info){
+      info = document.createElement('div');
+      info.id = 'pre-houve-info';
+      info.textContent = 'Ative se houver Apostas ou Aumento, para Calcular Pot Odds e Tomar a Melhor Decisão!';
+
+      // imitar tipografia da .eqStatus (se existir) sem usar a classe
+      var eqs = q('.eqStatus');
+      if (eqs){
+        var cs = getComputedStyle(eqs);
+        ['fontSize','color','fontWeight','fontFamily','lineHeight','letterSpacing','textTransform']
+          .forEach(function(p){ info.style[p] = cs[p]; });
+      } else {
+        // fallback
+        info.style.fontSize = '12px';
+        info.style.color = '#93c5fd';
+        info.style.fontWeight = '600';
+      }
     }
 
-    // âncora existe → garante posição e mostra
-    if (anchor.nextElementSibling !== eqStatus){
-      moveAfter(eqStatus, anchor);
+    // posicionar a info IMEDIATAMENTE ANTES do bloco "Houve Ação ?"
+    if (info.nextElementSibling !== injWrap){
+      moveBefore(info, injWrap);
     }
-    if (eqStatus.dataset.waitAnchor){
-      delete eqStatus.dataset.waitAnchor;
-      eqStatus.style.display = ''; // volta a mostrar
-    }
-    // garante classe visual
-    if (!eqStatus.classList.contains('mut')) eqStatus.classList.add('mut');
   }
 
-  // aplica no boot e quando a UI re-renderiza
-  function run(){ anchorEqStatus(); }
+  function run(){
+    styleEnviar();
+    ensurePreHouveInfo();
+  }
 
-  const mo = new MutationObserver(run);
+  // observa mudanças porque a UI do raise é dinâmica
+  var mo = new MutationObserver(run);
   mo.observe(document.documentElement, { childList:true, subtree:true });
 
-  // boot + pequenos ticks pra cobrir inicialização
+  // boot + alguns ticks
   run();
-  let tries = 0;
-  const tick = setInterval(()=>{
+  var tries = 0;
+  var t = setInterval(function(){
     run();
-    if (++tries > 40) clearInterval(tick); // ~10s
+    if (++tries > 40) clearInterval(t);
   }, 250);
 })();
+
+
 
 
