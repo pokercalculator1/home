@@ -194,7 +194,7 @@
 
     const ebb2 = effBB();
     if (isFinite(ebb2) && ebb2 <= 12)
-      return { title: 'AAPOSTE O VALOR DO POTE OU ALL IN', detail: 'Efetivo curto (≤12 BB)' };
+      return { title: 'APOSTE 100% DO POTE OU ALL IN', detail: 'Efetivo curto (≤12 BB)' };
 
     return { title: 'APOSTE 100% DO POTE OU MAIS', detail: 'Pot / overbet' };
   };
