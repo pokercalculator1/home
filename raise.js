@@ -925,8 +925,7 @@
         ['fontSize','color','fontWeight','fontFamily','lineHeight','letterSpacing','textTransform']
           .forEach(function(p){ info.style[p] = cs[p]; });
       } else {
-        info.style.fontSize = '12px';
-        info.style.color = '#93c5fd';
+        info.style.color = '#64748b';
         info.style.fontWeight = '600';
       }
     }
