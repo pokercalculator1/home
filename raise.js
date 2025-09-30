@@ -116,9 +116,9 @@
       tLow: 20,          // limite baixo (BB)
       tHigh: 60,         // limite alto (BB)
       buckets: {
-        low:  { enabled: true,  action: 'Aposte 80–100% (shove ok)' },
-        mid:  { enabled: true,  action: 'Aposte 50–75%' },
-        high: { enabled: true,  action: 'Aposte 40–60% (ou Slow Play)' }
+        low:  { enabled: true,  action: 'Aposte 80 á 100% (shove ok)' },
+        mid:  { enabled: true,  action: 'Aposte 50 á 75%' },
+        high: { enabled: true,  action: 'Aposte 40 á 60% (ou Slow Play)' }
       }
     },
 
@@ -206,16 +206,16 @@
         : { rec:'Desista',        detail:'30–50% de equity sem pot odds', tag:'fold' };
     }
     if (eqPct < 70) {
-      return { rec:'Aposte 50–75% do pote', detail:'50–70% de equity. Aposte por valor.', tag:'value_bet_medium' };
+      return { rec:'Aposte 50 á 75% do pote', detail:'50–70% de equity. Aposte por valor.', tag:'value_bet_medium' };
     }
     if (eqPct <= 80) {
-      return { rec:'Aposte 75–100% do pote', detail:'70–80% de equity. Maximize o valor.', tag:'value_bet_strong' };
+      return { rec:'Aposte 75 á 100% do pote', detail:'70–80% de equity. Maximize o valor.', tag:'value_bet_strong' };
     }
     // >80%
     if (slowPlay) {
-      return { rec:'Slow Play: passe / 33% do pote', detail:'>80% de equity. Induza blefes em board seco ou vs vilão agressivo.', tag:'slow_play' };
+      return { rec:'Slow Play: Aposte 33% do Pote ou Passe', detail:'>80% de equity. Induza blefes em board seco ou vs vilão agressivo.', tag:'slow_play' };
     }
-    return { rec:'Aposte grande / All-in', detail:'>80% de equity. Extraia valor máximo.', tag:'nuts_value' };
+    return { rec:'Aposte Pote ou All-in', detail:'>80% de equity. Extraia valor máximo.', tag:'nuts_value' };
   }
 
   // ===== Regras por Efetivo (BB)
