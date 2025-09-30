@@ -1059,3 +1059,99 @@
     if (++tries > 40) clearInterval(t); // ~10s
   }, 250);
 })();
+
+// ===== PATCH: mostrar "Recomendação" (po-rec-wrap) só quando "Houve Ação?" estiver ligada =====
+(function(){
+  function q(s,r){return (r||document).querySelector(s);}
+  function ensureCSS(){
+    if (q('#po-rec-css')) return;
+    const st=document.createElement('style');
+    st.id='po-rec-css';
+    st.textContent =
+      '.raise-potodds.card .po-rec-wrap{margin-top:10px;text-align:center}'
+      + '.raise-potodds.card .po-rec-title{font-weight:600;opacity:.9;margin-bottom:6px}'
+      + '.raise-potodds.card .po-rec-value{display:block}';
+    document.head.appendChild(st);
+  }
+
+  // Reestrutura o card (move "Recomendação" pra bloco central) — idempotente
+  function restyleCard(){
+    const host = q('#pcalc-sugestao'); if(!host) return;
+    const card = host.querySelector('.raise-potodds.card'); if(!card) return;
+
+    // Título amigável
+    const titleEl = card.firstElementChild;
+    if (titleEl && /Pot Odds/i.test(titleEl.textContent||'')) titleEl.textContent = 'Informações do Pot Odd';
+
+    // Layout em grid é o 2º filho do card
+    const grid = card.children[1]; if(!grid) return;
+
+    // Se já existe o bloco, só sincroniza visibilidade depois
+    if (card.querySelector('.po-rec-wrap')) return;
+
+    // Procura o par "Recomendação" + valor (últimas duas células)
+    const cells = Array.from(grid.children);
+    if (cells.length < 2) return;
+    const labelEl = cells[cells.length-2];
+    const valueEl = cells[cells.length-1];
+    if (!/Recomendação/i.test((labelEl.textContent||'').trim())) return;
+
+    // Remove do grid
+    grid.removeChild(labelEl);
+    grid.removeChild(valueEl);
+
+    // Cria bloco central
+    const wrap = document.createElement('div');
+    wrap.className = 'po-rec-wrap';
+    wrap.innerHTML = `
+      <div class="po-rec-title">Recomendação</div>
+      <div class="po-rec-value"></div>
+    `;
+    // Move a pílula #po-rec para dentro do bloco
+    const pill = valueEl.querySelector('#po-rec');
+    const slot = wrap.querySelector('.po-rec-value');
+    if (pill){
+      pill.style.display = 'inline-block';
+      slot.appendChild(pill);
+    }else{
+      // fallback: leva conteúdo bruto
+      slot.appendChild(valueEl);
+    }
+    card.appendChild(wrap);
+  }
+
+  function isInjectOn(){
+    const cb = q('#rsw-inject');
+    return !!(cb && cb.checked);
+  }
+
+  // Mostra/oculta o bloco conforme a chave "Houve Ação?"
+  function updateRecVisibility(){
+    const wrap = q('#pcalc-sugestao .po-rec-wrap');
+    if (!wrap) return;
+    wrap.style.display = isInjectOn() ? '' : 'none';
+  }
+
+  function run(){
+    ensureCSS();
+    restyleCard();
+    updateRecVisibility();
+  }
+
+  // Observa mudanças de UI e o toggle da chavinha
+  const mo = new MutationObserver(run);
+  mo.observe(document.documentElement, { childList:true, subtree:true });
+
+  document.addEventListener('change', (e)=>{
+    if (e.target && e.target.id === 'rsw-inject') updateRecVisibility();
+  });
+
+  // Boot + alguns ticks
+  run();
+  let tries=0;
+  const t=setInterval(()=>{
+    run();
+    if(++tries>40) clearInterval(t);
+  },250);
+})();
+
