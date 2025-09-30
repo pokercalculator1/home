@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Poker Calculator — Outs, Equidade e Sugestão de Aposta</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Dica: se quiser, pode definir .out { white-space: pre-line; } no style.css -->
+</head>
+<body>
+  <div class="wrap">
+    <!-- Branding: logo + título -->
+    <div class="brand">
+      <img src="logo.png" alt="Poker Calculator" class="brand-logo">
+      <h1 class="brand-title">Calculadora de Outs, Equidade e Sugestão de Aposta</h1>
+    </div>
+    <p class="sub">Calculadora de Poker: Calcula Outs por Categoria, Equidade e dá Sugestão de Jogada por Voz do Pré Flop ao River.</p>
+
+    <div class="grid">
+      <!-- LEFT: Deck + Board -->
+      <div class="card">
+        <h2>1) Escolha suas cartas e o board</h2>
+        <div class="body">
+          <div class="labels">
+            <span class="lbl">Selecione suas Cartas</span>
+            <span class="lbl">Depois Selecione o Flop, Turn e River</span>
+            <span class="lbl">Clique outra vez Para <i>Desselecionar</i></span>
+          </div>
+
+          <!-- Board em 2 linhas -->
+          <div class="board2">
+            <!-- Linha de cima: sua mão (os nuts sobem via CSS) -->
+            <div class="row">
+              <div class="group">
+                <div class="mut">Sua Mão</div>
+                <div class="cardsline">
+                  <div class="slot" id="h0"></div>
+                  <div class="slot" id="h1"></div>
+                </div>
+                <div class="mut" id="handCat">Selecione Sua Mão</div>
+              </div>
+            </div>
+
+            <!-- Linha de baixo: flop / turn / river / nuts (no HTML aqui, mas sobe via CSS) -->
+            <div class="row">
+              <div class="group">
+                <div class="mut">Flop</div>
+                <div class="cardsline">
+                  <div class="slot" id="b0"></div>
+                  <div class="slot" id="b1"></div>
+                  <div class="slot" id="b2"></div>
+                </div>
+              </div>
+              <div class="group">
+                <div class="mut">Turn</div>
+                <div class="cardsline">
+                  <div class="slot" id="b3"></div>
+                </div>
+              </div>
+              <div class="group">
+                <div class="mut">River</div>
+                <div class="cardsline">
+                  <div class="slot" id="b4"></div>
+                </div>
+              </div>
+
+              <div class="spacer"></div>
+
+              <div class="group">
+                <div class="mut">A Melhor Mão</div>
+                <div class="cardsline nutsline">
+                  <div class="slot" id="n0"></div>
+                  <div class="slot" id="n1"></div>
+                </div>
+                <div class="mut" id="nutsCat"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Botões e PONTO DE MONTAGEM do módulo Tomei Raise -->
+          <div class="btns">
+            <button class="btn" id="btnFlop">Sortear flop</button>
+            <button class="btn" id="btnTurn">Sortear turn</button>
+            <button class="btn" id="btnRiver">Sortear river</button>
+            <button class="btn warn" id="btnClear">Limpar tudo</button>
+            <!-- PONTO DE MONTAGEM: o raise.js injeta aqui o menu Tomei Raise/IP/OOP/inputs -->
+            <div id="pcalc-toolbar"></div>
+
+          </div>
+
+          <div style="margin-top:12px" class="mut">Deck (clique para selecionar):</div>
+          <div id="deck" class="deck" style="margin-top:8px"></div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Painéis -->
+      <div class="card">
+        <h2>2) Painel de análise</h2>
+        <div class="body">
+          <!-- Caixa para texto de recomendação do módulo Tomei Raise -->
+          <div id="pcalc-sugestao" class="out" style="white-space:pre-line"></div>
+
+          <!-- Pré-flop (Chen) -->
+          <div id="preflopBox" class="out" style="display:none"></div>
+
+          <!-- Equidade por simulação -->
+          <div id="equityBox" class="out" style="display:none"></div>
+
+          <!-- Pot Odds & EV (com Oferta do vilão, “P inclui a oferta?”, Auto e “Pode pagar até”) -->
+          <div id="evBox" class="out" style="display:none"></div>
+
+          <!-- Estado/Contexto para outs -->
+          <div id="stateHint" class="hint">Pré-flop: adicione o <b>flop</b> para ver outs do <b>turn</b>. Com flop+turn, veja outs do <b>river</b>.</div>
+          <div id="ctxInfo" style="margin:8px 0 12px;color:#93c5fd"></div>
+
+          <!-- Outs -->
+          <div class="outs" id="outs"></div>
+
+          <div class="foot">
+            Observações:
+            <ul>
+              <li>“Outs” são cartas do <b>próximo street</b> que fazem você atingir <u>pelo menos</u> a categoria indicada (ex.: outs de Flush incluem Straight Flush/Royal).</li>
+              <li>Com apenas pré-flop selecionado, outs <i>não são definidos</i> (o próximo street é um <b>flop de 3 cartas</b>).</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Seus scripts -->
+  <script src="login-guard.js"></script>
+  <script src="pcalc-core.js"></script>
+  <script src="pcalc.fallback-suggest.js"></script>
+  <script src="pcalc-chen.js"></script>
+  <script src="pcalc-outs.js"></script>
+  <script src="pcalc-suggest.js"></script>
+  <script src="pcalc-tts.js"></script>
+  <script src="preflop_rank.js"></script>
+  <script>
+  window.PCALC = window.PCALC || {};
+  // ajuste o caminho se seus JSONs estiverem em outra pasta
+  window.PCALC.GTO_CONFIG = { basePath: "https://pokercalculator1.github.io/home/SITE5/" };
+</script>
+
+<!-- Motor GTO (precisa estar ANTES do seu app.js) -->
+<script src="pcalc-gto.js"></script>
+<script src="pcalc-app.js"></script>
+  <!-- Módulo Tomei Raise -->
+  <script src="raise.js"></script>
+  <script>
+    // Garante que os elementos #pcalc-toolbar e #pcalc-sugestao existam antes de iniciar
+    document.addEventListener('DOMContentLoaded', function () {
+      if (window.RAISE && typeof window.RAISE.init === 'function') {
+        window.RAISE.init({
+          mountSelector: '#pcalc-toolbar',    // onde os controles serão injetados
+          suggestSelector: '#pcalc-sugestao', // onde o texto da recomendação será exibido
+          // onUpdateText: (texto)=>{ /* opcional: render custom */ }
+        });
+      } else {
+        console.warn('[index] raise.js não carregado? Verifique o caminho do arquivo.');
+      }
+    });
+  </script>
+</body>
+</html>
+
+
+
+
+
