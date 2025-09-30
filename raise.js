@@ -868,307 +868,125 @@
 })(window);
 
 
-// ==== PATCH CASH | TORNEIO | PERSONALIZADO + "POT ou All-in (auto)" ====
-// Cole depois do seu IIFE principal (após "})(window);")
 
-(function(){
-  if (!window || !window.RAISE) return;
-
-  // CSS extra (segment control + collapse)
-  (function addPatchCSS(){
-    if (document.getElementById('raise-patch-css')) return;
-    var sty = document.createElement('style');
-    sty.id = 'raise-patch-css';
-    sty.textContent =
-      '.seg{display:flex;gap:.5rem;background:#0b1324;border:1px solid #22304a;border-radius:.6rem;padding:.25rem;margin-bottom:6px}'
-    + '.seg-item{display:flex;align-items:center}'
-    + '.seg-item input{display:none}'
-    + '.seg-item span{padding:.35rem .6rem;border-radius:.5rem;cursor:pointer}'
-    + '.seg-item input:checked+span{background:#1f2937;border:1px solid #334155}'
-    + '.range-box.collapsed{display:none}';
-    document.head.appendChild(sty);
-  })();
-
-  // helpers
-  function q(sel, root){ return (root||document).querySelector(sel); }
-  function on(el, ev, fn){ if (el) el.addEventListener(ev, fn); }
-  function setVal(el, v){
-    if(!el) return;
-    el.value = v;
-    el.dispatchEvent(new Event('input', {bubbles:true}));
-    el.dispatchEvent(new Event('change',{bubbles:true}));
-  }
-  function setCheck(el, v){
-    if(!el) return;
-    el.checked = !!v;
-    el.dispatchEvent(new Event('change',{bubbles:true}));
-  }
-
-  // cria o seletor Cash/Torneio/Personalizado
-  function ensureModeSeg(){
-    var mount = q('#pcalc-toolbar');
-    if (!mount) return null;
-    if (q('.seg[data-role="mode"]', mount)) return q('.seg[data-role="mode"]', mount);
-
-    var seg = document.createElement('div');
-    seg.className = 'seg';
-    seg.dataset.role = 'mode';
-    seg.innerHTML = ''
-      + '<label class="seg-item"><input type="radio" name="pcalc-mode" value="cash" checked><span>Cash</span></label>'
-      + '<label class="seg-item"><input type="radio" name="pcalc-mode" value="tournament"><span>Torneio</span></label>'
-      + '<label class="seg-item"><input type="radio" name="pcalc-mode" value="custom"><span>Personalizado</span></label>';
-    // insere no topo do toolbar
-    mount.insertBefore(seg, mount.firstChild);
-
-    Array.from(seg.querySelectorAll('input[name="pcalc-mode"]')).forEach(function(r){
-      on(r,'change', function(){
-        applyPreset(this.value);
-        toggleRangeBox(this.value);
-      });
-    });
-    return seg;
-  }
-
-  // garante que a opção "POT ou All-in (auto)" exista no select Low
-  function ensureAutoOption(){
-    var box = q('.range-box'); if (!box) return;
-    var lowSel = q('#rp-low-act', box); if (!lowSel) return;
-    var has = Array.from(lowSel.options).some(function(o){ return o.textContent === 'Aposte POT ou All-in (auto)'; });
-    if (!has){
-      var opt = document.createElement('option');
-      opt.textContent = 'Aposte POT ou All-in (auto)';
-      lowSel.insertBefore(opt, lowSel.firstChild);
-    }
-  }
-
-  // presets
-  function applyPreset(mode){
-    var box = q('.range-box'); if (!box) return;
-    ensureAutoOption();
-
-    var en    = q('#rp-en', box);
-    var lowI  = q('#rp-low', box);
-    var highI = q('#rp-high', box);
-    var lowEn = q('#rp-low-en', box);
-    var midEn = q('#rp-mid-en', box);
-    var highEn= q('#rp-high-en', box);
-    var lowAct= q('#rp-low-act', box);
-    var midAct= q('#rp-mid-act', box);
-    var highAct= q('#rp-high-act', box);
-
-    if (mode === 'tournament'){
-      setCheck(en, true);
-      setVal(lowI, 15); setVal(highI, 40);
-      setCheck(lowEn, true); setCheck(midEn, true); setCheck(highEn, true);
-      setVal(lowAct, 'Aposte grande / All-in');
-      setVal(midAct, 'Aposte 75–100%');
-      setVal(highAct,'Aposte 50–75%');
-      return;
-    }
-    if (mode === 'custom'){
-      // não mexe no que o usuário setou
-      return;
-    }
-    // CASH (default)
-    setCheck(en, true);
-    setVal(lowI, 20); setVal(highI, 60);
-    setCheck(lowEn, true); setCheck(midEn, true); setCheck(highEn, true);
-    setVal(lowAct, 'Aposte POT ou All-in (auto)'); // ligamos o modo auto na faixa Baixo
-    setVal(midAct, 'Aposte 50–75%');
-    setVal(highAct,'Aposte 40–60%');
-    autoLow(); // aplica conversão automática inicial
-  }
-
-  // colapsa/mostra a caixa de faixas conforme o modo
-  function toggleRangeBox(mode){
-    var box = q('.range-box'); if (!box) return;
-    if (mode === 'custom') box.classList.remove('collapsed');
-    else box.classList.add('collapsed');
-  }
-
-  // calcula Efetivo(BB) a partir dos inputs
-  function effBB(){
-    var eff = Number((q('#inp-eff')||{}).value || NaN);
-    var bb  = Number((q('#inp-bb') ||{}).value || NaN);
-    if (!isFinite(eff) || !isFinite(bb) || bb <= 0) return NaN;
-    return +(eff / bb).toFixed(1);
-  }
-
-  // converte "POT ou All-in (auto)" -> ação real baseada em Efetivo(BB)
-  function autoLow(){
-    var box = q('.range-box'); if (!box) return;
-    var lowSel = q('#rp-low-act', box); if (!lowSel) return;
-    if (lowSel.value !== 'Aposte POT ou All-in (auto)') return;
-
-    var ebb = effBB();
-    if (!isFinite(ebb)) return; // sem dados ainda
-
-    var target = (ebb <= 12) ? 'Aposte grande / All-in' : 'Aposte 75–100%';
-    if (lowSel.value !== target){
-      setVal(lowSel, target); // dispara o rerender interno do seu script
-    }
-  }
-
-  // liga listeners para manter o "auto" sincronizado
-  function wireAutoLow(){
-    ['input','change'].forEach(function(ev){
-      on(q('#inp-eff'), ev, autoLow);
-      on(q('#inp-bb'),  ev, autoLow);
-    });
-    var box = q('.range-box');
-    if (box){
-      on(q('#rp-low-act', box), 'change', autoLow);
-    }
-  }
-
-  // boot quando a UI do script estiver pronta
-  function boot(){
-    ensureModeSeg();
-    applyPreset('cash');           // deixa Cash por padrão
-    toggleRangeBox('cash');        // esconde a caixa (mostra em "Personalizado")
-    wireAutoLow();                 // ativa o auto POT/All-in
-  }
-
-  // espera a caixa .range-box existir para inicializar o patch
-  var tries = 0;
-  var t = setInterval(function(){
-    if (q('.range-box')){
-      clearInterval(t);
-      try { boot(); } catch(e){ console.warn('[raise-patch] erro no boot:', e); }
-    }
-    if (++tries > 60) clearInterval(t); // ~15s timeout
-  }, 250);
-
-})();
-
-
-
-// ===== PATCH: ordem da Info e do Slow Play + eqStatus após Recalcular =====
+// ===== PATCH: Enviar -> Slow Play -> Mensagem; eqStatus após "↻ Recalcular" =====
 (function(){
   function q(s, r){ return (r||document).querySelector(s); }
+  function inside(el, rootSel){ if(!el) return false; const root=q(rootSel); return !!(root && root.contains(el)); }
   function moveAfter(node, ref){ if(node && ref && ref.parentNode){ ref.insertAdjacentElement('afterend', node); } }
 
-  // cria/posiciona a Mensagem Informativa
+  // 1) Slow Play DEPOIS de Enviar (na barra do raise)
+  function placeSlowInToolbar(){
+    const btnSend  = q('#btn-raise-send'); if(!btnSend) return;
+    const slow     = q('#rsw-slow'); if(!slow) return;
+    const slowWrap = slow.closest('.field') || slow.parentElement || slow;
+
+    // se estiver fora da barra, traz pra #pcalc-toolbar
+    if (!inside(slowWrap, '#pcalc-toolbar')){
+      moveAfter(slowWrap, btnSend);
+    } else {
+      // garantir que fica imediatamente depois do Enviar
+      if (slowWrap.previousElementSibling !== btnSend){
+        moveAfter(slowWrap, btnSend);
+      }
+    }
+  }
+
+  // 2) Mensagem informativa DEPOIS do Slow Play (ou depois do Enviar se não existir Slow)
   function ensureInfoMsg(){
-    var btnSend  = q('#btn-raise-send');
-    if(!btnSend) return;
+    const btnSend  = q('#btn-raise-send'); if(!btnSend) return;
+    const slow     = q('#rsw-slow');
+    const slowWrap = slow ? (slow.closest('.field') || slow.parentElement || slow) : null;
 
-    var slow     = q('#rsw-slow');
-    var slowWrap = slow ? (slow.closest('.field') || slow.parentElement || slow) : null;
-
-    var info = q('#raise-info-msg');
+    let info = q('#raise-info-msg');
     if(!info){
       info = document.createElement('div');
       info.id = 'raise-info-msg';
       info.className = 'raise-info';
       info.textContent = 'Ative se houver Apostas ou Aumento, para Calcular Pot Odds e Tomar a Melhor Decisão!';
-      // fallback visual (imitamos a eqStatus quando possível)
-      info.style.display = 'inline-block';
-      info.style.marginLeft = '8px';
-      var eqs = q('.eqStatus');
+      // fallback visual (imitar .eqStatus se existir)
+      const eqs = q('.eqStatus');
       if (eqs){
-        var cs = getComputedStyle(eqs);
+        const cs = getComputedStyle(eqs);
         ['fontSize','color','fontWeight','fontFamily','lineHeight','letterSpacing','textTransform']
-          .forEach(function(p){ info.style[p] = cs[p]; });
+          .forEach(p=> info.style[p] = cs[p]);
       } else {
         info.style.fontSize = '12px';
         info.style.color = '#93c5fd';
         info.style.fontWeight = '600';
       }
+      info.style.display = 'inline-block';
+      info.style.marginLeft = '8px';
     }
-
-    // ORDEM: Enviar -> Info -> Slow
-    if (slowWrap && slowWrap.parentNode){
-      // garante que a info fica imediatamente ANTES do Slow
-      if (info.nextElementSibling !== slowWrap){
-        slowWrap.insertAdjacentElement('beforebegin', info);
-      }
-      // e que o Slow fica depois da Info (e, portanto, depois do Enviar)
-      var anchor = info || btnSend;
-      if (slowWrap.previousElementSibling !== anchor){
-        moveAfter(slowWrap, anchor);
-      }
-    } else {
-      // sem Slow: Info fica logo após Enviar
-      if (info.previousElementSibling !== btnSend){
-        moveAfter(info, btnSend);
-      }
-    }
-
-    // injeta no DOM caso ainda não esteja
-    if (!q('#raise-info-msg')) {
-      if (slowWrap) slowWrap.insertAdjacentElement('beforebegin', info);
-      else moveAfter(info, btnSend);
+    // posição: DEPOIS do Slow; se não houver Slow, depois do Enviar
+    const anchor = slowWrap || btnSend;
+    if (anchor.nextElementSibling !== info){
+      moveAfter(info, anchor);
     }
   }
 
-  // posiciona eqStatus logo após o botão "Recalcular"
-  function placeEqStatusAfterRecalcular(){
-    var eqStatus = document.getElementById('eqStatus');
-    if(!eqStatus) return;
-    var recalcBtn = q('#btnRecalcular') || q('#btnEqCalc') || q('#recalc');
-    if(!recalcBtn) return;
+  // 3) eqStatus LOGO após o botão "↻ Recalcular"
+  function placeEqStatusAfterRecalc(){
+    const eqStatus = document.getElementById('eqStatus'); if(!eqStatus) return;
+    const recalcBtn = q('#btnEqCalc'); if(!recalcBtn) return;
     if (!eqStatus.classList.contains('mut')) eqStatus.classList.add('mut');
     if (recalcBtn.nextElementSibling !== eqStatus){
-      recalcBtn.insertAdjacentElement('afterend', eqStatus);
+      moveAfter(eqStatus, recalcBtn);
     }
   }
 
-  // mantém "Slow Play" depois do Enviar (mas depois da Info se houver)
-  function placeSlowPlayAfterSend(){
-    var btnSend  = q('#btn-raise-send');
-    var slow     = q('#rsw-slow');
-    if(!btnSend || !slow) return;
-    var slowWrap = slow.closest('.field') || slow.parentElement || slow;
-    var info     = q('#raise-info-msg');
-    var anchor   = info || btnSend; // se houver info, slow vem DEPOIS dela
-    if (slowWrap.previousElementSibling !== anchor){
-      anchor.insertAdjacentElement('afterend', slowWrap);
+  // 4) Se houver Slow Play no painel de equidade (perto do Recalcular), REMOVER dali (mantemos só na barra)
+  function purgeSlowFromEquityPanel(){
+    const slow = q('#rsw-slow'); if(!slow) return;
+    const slowWrap = slow.closest('.field') || slow.parentElement || slow;
+    if (!inside(slowWrap, '#pcalc-toolbar')){
+      // move para a barra (depois do Enviar) e tira qualquer duplicata remanescente
+      const btnSend = q('#btn-raise-send'); if(btnSend) moveAfter(slowWrap, btnSend);
+      const dups = document.querySelectorAll('.field');
+      dups.forEach(n=>{
+        if(n!==slowWrap && n.querySelector && n.querySelector('#rsw-slow')) n.remove();
+      });
     }
   }
 
-  // troca "Desista" -> "Passe ou Desista"
+  // 5) “Desista” -> “Passe ou Desista” (card e bloco principal)
   function replaceDesista(){
-    var host = [q('#pcalc-sugestao'), q('#suggestOut')].filter(Boolean);
-    host.forEach(function(h){
-      if (!h) return;
-      if (/\bDesista\b/.test(h.textContent||'')){
+    const host = [q('#pcalc-sugestao'), q('#suggestOut')].filter(Boolean);
+    host.forEach(h=>{
+      if (h && /\bDesista\b/.test(h.textContent||'')){
         h.innerHTML = h.innerHTML.replace(/\bDesista\b/g, 'Passe ou Desista');
       }
     });
-    var pill = q('#pcalc-sugestao #po-rec');
+    const pill = q('#pcalc-sugestao #po-rec');
     if (pill && /Passe ou Desista/.test(pill.textContent||'')){
       pill.style.background = '#ef444422';
       pill.style.borderColor = '#ef444466';
       pill.style.color = '#e5e7eb';
     }
-    var title = q('#suggestOut .decision-title');
+    const title = q('#suggestOut .decision-title');
     if (title && /Passe ou Desista/.test(title.textContent||'')){
       title.style.color = '#ef4444';
     }
   }
 
   function runAll(){
-    ensureInfoMsg();
-    placeSlowPlayAfterSend();     // garante ordem Enviar -> Info -> Slow
-    placeEqStatusAfterRecalcular();
+    placeSlowInToolbar();   // 1º: garantir Slow após Enviar
+    ensureInfoMsg();        // 2º: mensagem após Slow (ou Enviar)
+    purgeSlowFromEquityPanel();
+    placeEqStatusAfterRecalc();
     replaceDesista();
   }
 
-  // observa mudanças pra manter ordem mesmo quando a UI re-renderiza
-  var mo = new MutationObserver(runAll);
+  // observar mudanças para manter a ordem
+  const mo = new MutationObserver(runAll);
   mo.observe(document.documentElement, { childList:true, subtree:true });
 
-  // boot
+  // boot + pequenos ticks
   runAll();
-  var tries = 0;
-  var tick = setInterval(function(){
+  let tries = 0;
+  const tick = setInterval(()=>{
     runAll();
     if (++tries > 40) clearInterval(tick);
   }, 250);
 })();
-
-
-
-
 
