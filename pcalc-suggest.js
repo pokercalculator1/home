@@ -110,7 +110,7 @@
       }
 
       if (eqPct < 30)
-        return { title: 'DESISTA', detail: 'Equity < 30%' };
+        return { title: 'PASSE OU DESISTA', detail: 'Equity < 30%' };
 
       if (eqPct < 50)
         return { title: 'PASSE OU DESISTA', detail: '30–50%: evite abrir; só continue mais tarde vs aposta se houver pot odds' };
