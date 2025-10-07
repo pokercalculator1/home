@@ -4,12 +4,12 @@
 //   • 3–4 blinds  → open34 (premium/broadways muito fortes)
 //   • 2–3 blinds  → open23 (opens padrão)
 //   • 1–2 blinds  → limp/call (mãos jogáveis que preferem pote menor)
-// - Faixas por equity (fallback e pós-flop):
+// - Faixas por equity (fallback e pós-flop) — AGORA COM ALEATORIEDADE CONTROLADA:
 //   <30%   -> PASSE OU DESISTA
 //   30–50  -> PRÉ: PASSE OU DESISTA | PÓS: PASSE (só continue vs aposta se houver pot odds)
-//   50–70  -> PRÉ: APOSTE 2 OU 3 BLINDS | PÓS: APOSTE 50–75% DO POTE
-//   70–80  -> PRÉ: APOSTE 3 OU 4 BLINDS | PÓS: APOSTE 75–100% DO POTE
-//   >80%   -> PRÉ: APOSTE 4 OU 5 BLINDS (Efetivo ≤12BB => ALL-IN; Slow Play se toggle ligado)
+//   50–70  -> PRÉ: APOSTE 2 OU 3 BLINDS (sorteia 2/3) | PÓS: APOSTE X% DO POTE (X ∈ [50..75], passo 5%)
+//   70–80  -> PRÉ: APOSTE 3 OU 4 BLINDS (sorteia 3/4) | PÓS: APOSTE X% DO POTE (X ∈ [75..100], passo 5%)
+//   >80%   -> PRÉ: APOSTE 4 OU 5 BLINDS (sorteia 4/5; Efetivo ≤12BB => ALL-IN; Slow Play se toggle ligado)
 //             PÓS: ALL-IN / OVERBET (ou Slow Play se toggle ligado)
 //
 // Observações:
@@ -18,10 +18,39 @@
 // - Pré-flop sem ação: NÃO aplica ajuste multiway (+pp). Pós-flop: aplica +2pp por oponente extra.
 // - Equity indefinida -> “Aguardando cartas…”.
 // - Integração leve com raise.js: se houve ação pré-flop (modo Raise ligado), a recomendação vem de lá.
+// - Aleatoriedade: blinds são escolhidos aleatoriamente dentro da faixa; porcentagens usam passo padrão de 5% (ex.: 50, 55, 60, 65, 70, 75).
 
 (function (g) {
   const PCALC = g.PCALC || (g.PCALC = {});
   const CAT = (PCALC && PCALC.CAT) ? PCALC.CAT : {};
+
+  // =========================================================
+  // Aleatoriedade controlada (helpers)
+  // =========================================================
+  function rndInt(min, max) { // inclusive
+    min = Math.ceil(min); max = Math.floor(max);
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+  function rndFrom(arr) {
+    return arr[rndInt(0, arr.length - 1)];
+  }
+  // porcentagem inteira aleatória dentro de [min..max], com passo (default 5%)
+  function rndPct(min, max, step = 5) {
+    const vals = [];
+    for (let v = Math.max(0, Math.ceil(min)); v <= Math.min(100, Math.floor(max)); v += step) {
+      vals.push(v);
+    }
+    if (vals.length === 0) return Math.max(0, Math.min(100, Math.round((min + max) / 2)));
+    return rndFrom(vals);
+  }
+  function makeBlindTitle(minB, maxB) {
+    const b = (minB === maxB) ? minB : rndInt(minB, maxB);
+    return `APOSTE ${b} BLIND${b === 1 ? '' : 'S'}`;
+  }
+  function makePotTitle(minPct, maxPct, step = 5) {
+    const p = (minPct === maxPct) ? minPct : rndPct(minPct, maxPct, step);
+    return `APOSTE ${p}% DO POTE`;
+  }
 
   // =========================================================
   // Classes de decisão (cores/estilos na UI)
@@ -100,7 +129,7 @@
     "66","55","44","33","22",
     // Axs fortes & wheel bons
     "A9s","A8s","A7s","A6s","A5s",
-    // broadways adicionais (opens, mesmo se equity <50% no MC multiway)
+    // broadways adicionais
     "AJo","KQo","ATo",
     // suited connectors fortes
     "T9s","98s"
@@ -143,26 +172,35 @@
     if (isPre) {
       const norm = normalizeHand(hand);
 
-      // Buckets fixos primeiro (independem de equity bruta)
-      if (open34.has(norm)) return { title: 'APOSTE 3 OU 4 BLINDS', detail: 'Open padrão (mão forte)' };
-      if (open23.has(norm)) return { title: 'APOSTE 2 OU 3 BLINDS', detail: 'Open padrão' };
-      if (limp12.has(norm)) return { title: 'PAGUE 1 OU 2 BLINDS', detail: 'Mão jogável; mantenha o pote menor' };
+      // Buckets fixos primeiro (independem de equity bruta) — agora com sorteio
+      if (open34.has(norm)) {
+        return { title: makeBlindTitle(3, 4), detail: 'Open padrão (mão forte)' };
+      }
+      if (open23.has(norm)) {
+        return { title: makeBlindTitle(2, 3), detail: 'Open padrão' };
+      }
+      if (limp12.has(norm)) {
+        const b = rndInt(1, 2);
+        return { title: `PAGUE ${b} BLIND${b===1?'':'S'}`, detail: 'Mão jogável; mantenha o pote menor' };
+      }
 
-      // Fallback por equity (para mãos fora das listas)
+      // Fallback por equity (para mãos fora das listas) — com sorteio
       if (eqPct < 30)  return { title: 'PASSE OU DESISTA', detail: 'Equity < 30%' };
       if (eqPct < 50)  return { title: 'PASSE OU DESISTA', detail: '30–50%: evite abrir; só continue vs aposta se houver pot odds' };
-      if (eqPct < 70)  return { title: 'APOSTE 2 OU 3 BLINDS', detail: '50–70% de equity' };
-      if (eqPct <= 80) return { title: 'APOSTE 3 OU 4 BLINDS', detail: '70–80% de equity' };
+      if (eqPct < 70)  return { title: makeBlindTitle(2, 3), detail: '50–70% de equity' };
+      if (eqPct <= 80) return { title: makeBlindTitle(3, 4), detail: '70–80% de equity' };
 
       // >80%
       if (slowPlayOn()) {
-        return { title: 'SLOW PLAY', detail: 'Passe/limp ou 33% para induzir' };
+        // pode variar o tamanho do "induzir" entre 25–40% para dar variação leve
+        const p = rndPct(25, 40, 5);
+        return { title: 'SLOW PLAY', detail: `Passe/limp ou ${p}% para induzir` };
       }
       const ebb = effBB();
       if (isFinite(ebb) && ebb <= 12) {
         return { title: 'ALL-IN', detail: '>80% equity e efetivo curto (≤12 BB)' };
       }
-      return { title: 'APOSTE 4 OU 5 BLINDS', detail: 'Mão muito forte' };
+      return { title: makeBlindTitle(4, 5), detail: 'Mão muito forte' };
     }
 
     // -------------------- PÓS-FLOP — ninguém apostou ainda --------------------
@@ -177,25 +215,41 @@
       return { title: 'PASSE OU DESISTA', detail: '<30%: blefe só com MUITA fold equity' };
 
     if (!gePost(50)) {
-      if (strongDraw) return { title: 'SEMI-BLEFE', detail: '33–50% do pote (draw forte)' };
-      if (weakDraw && oppN === 1 && gePost(32)) return { title: 'SEMI-BLEFE (HU)', detail: '30–40% do pote' };
+      if (strongDraw) {
+        const p = rndPct(33, 50, 1); // permitir 33, 34, 35… até 50
+        return { title: 'SEMI-BLEFE', detail: `${p}% do pote (draw forte)` };
+      }
+      if (weakDraw && oppN === 1 && gePost(32)) {
+        const p = rndPct(30, 40, 5); // 30/35/40
+        return { title: 'SEMI-BLEFE (HU)', detail: `${p}% do pote` };
+      }
       return { title: 'PASSE', detail: '30–50%: se houver aposta, continue só com pot odds' };
     }
 
-    if (!gePost(70))
-      return { title: 'APOSTE 50 á 75% DO POTE', detail: 'Faixa de valor (50–70%)' };
+    if (!gePost(70)) {
+      // 50–70% → 50..75%
+      const t = makePotTitle(50, 75, 5); // 50/55/60/65/70/75
+      return { title: t, detail: 'Faixa de valor (50–70%)' };
+    }
 
-    if (!gePost(80))
-      return { title: 'APOSTE 75 á 100% DO POTE', detail: 'Valor forte (70–80%)' };
+    if (!gePost(80)) {
+      // 70–80% → 75..100%
+      const t = makePotTitle(75, 100, 5); // 75/80/85/90/95/100
+      return { title: t, detail: 'Valor forte (70–80%)' };
+    }
 
     // >80%
-    if (slowPlayOn())
-      return { title: 'SLOW PLAY: APOSTE 33% DO POTE', detail: 'Passe / 33% do pote para induzir' };
+    if (slowPlayOn()) {
+      // manter 33% fixo é ok, mas pode variar 25–40% se quiser:
+      const p = rndPct(25, 40, 5);
+      return { title: `SLOW PLAY: APOSTE ${p}% DO POTE`, detail: 'Passe / size pequeno para induzir' };
+    }
 
     const ebb2 = effBB();
     if (isFinite(ebb2) && ebb2 <= 12)
       return { title: 'APOSTE 100% DO POTE OU ALL IN', detail: 'Efetivo curto (≤12 BB)' };
 
+    // overbet/pot — manter estável (suficientemente imprevisível por contexto)
     return { title: 'APOSTE 100% DO POTE OU MAIS', detail: 'Pot / overbet' };
   };
 
