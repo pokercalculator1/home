@@ -1,156 +1,97 @@
-/* sync-panels.js (v3)
- * - Se não houver eqMC no estado, lê "Win: X%  Tie: Y%" do painel MC.
- * - eqMC = Win + Tie/2
- * - EqAdj = adjustedEquity(eqMC, opps, wetScore)
- * - Atualiza o card "Informações do Pot Odd": "Equity (MC)" -> "Equity (ajustada)" + valor EqAdj
- * - Sincroniza o botão/ação com PCALC.state.finalRec.action (se existir)
- */
+// eqadj-badge.js — overlay seguro: mostra EqAdj, BE, wet, opps. Toggle: F9
 (function (g) {
   'use strict';
   const PC = g.PCALC = g.PCALC || {};
   const MW = PC.Multiway || {};
 
-  const pctStr = x => ((+x||0)*100).toFixed(1) + '%';
+  let visible = true;
+
+  // cria overlay
+  const box = document.createElement('div');
+  box.style.cssText = `
+    position:fixed; right:12px; bottom:12px; z-index:99999;
+    background:#0f172a; color:#e5e7eb; border:1px solid rgba(255,255,255,.12);
+    border-radius:10px; padding:10px 12px; font:12px/1.35 system-ui;
+    box-shadow:0 6px 20px rgba(0,0,0,.25)
+  `;
+  box.innerHTML = `
+    <div style="opacity:.8;margin-bottom:6px">EQAJ Debug</div>
+    <div id="eq-main">EqAdj —</div>
+    <div id="eq-more" style="opacity:.85;margin-top:4px"></div>
+    <div style="opacity:.6;margin-top:6px">F9 para ocultar</div>
+  `;
+  document.addEventListener('DOMContentLoaded', () => document.body.appendChild(box));
+
+  const pct = x => (100*(+x||0)).toFixed(1)+'%';
   const clamp01 = x => Math.max(0, Math.min(1, +x||0));
 
-  // --- Lê Win/Tie do bloco de Monte Carlo (texto tipo "Win: 54.9%  Tie: 0.3%") ---
-  function readWinTieFromUI(){
-    const nodes = Array.from(document.querySelectorAll('*'));
-    const line = nodes.find(n => /Win:\s*\d+(\.\d+)?%\s*Tie:\s*\d+(\.\d+)?%/i.test((n.textContent||'')));
-    if (!line) return null;
-    const t = (line.textContent || '').replace(/\s+/g, ' ');
-    const mWin = t.match(/Win:\s*([\d.]+)%/i);
-    const mTie = t.match(/Tie:\s*([\d.]+)%/i);
-    if (!mWin || !mTie) return null;
-    const win = parseFloat(mWin[1]) / 100;
-    const tie = parseFloat(mTie[1]) / 100;
-    return { win, tie };
+  function getKnown() {
+    try { return PC.getKnown ? PC.getKnown() : { hand:[], board:[] }; }
+    catch { return { hand:[], board:[] }; }
   }
 
-  // --- Busca o card de Pot Odds (onde aparece "Informações do Pot Odd") ---
-  function findPotOddsPanel(){
-    const nodes = document.querySelectorAll('section, .panel, .card, div');
-    for (const n of nodes){
-      const txt = (n.textContent || '').replace(/\s+/g,' ').trim();
-      if (/Informações do Pot Odd/i.test(txt)) return n;
-    }
-    return null;
+  function readEqMC01(){
+    const st = PC.state || {};
+    let eq = st.eqMC ?? st.equityMC ?? st.eqPct ?? 0;
+    eq = +eq;
+    if (eq > 1) eq = eq/100;
+    if (eq > 0) return clamp01(eq);
+
+    // fallback: tenta ler "Win: X%  Tie: Y%" em qualquer lugar
+    const n = Array.from(document.querySelectorAll('*')).find(el =>
+      /Win:\s*\d+(\.\d+)?%\s*Tie:\s*\d+(\.\d+)?%/i.test((el.textContent||''))
+    );
+    if (!n) return 0;
+    const t = (n.textContent||'').replace(/\s+/g, ' ');
+    const mW = t.match(/Win:\s*([\d.]+)%/i);
+    const mT = t.match(/Tie:\s*([\d.]+)%/i);
+    if (!mW || !mT) return 0;
+    const win = parseFloat(mW[1])/100;
+    const tie = parseFloat(mT[1])/100;
+    return clamp01(win + 0.5*tie);
   }
 
-  // Acha a linha "Equity (MC)" (rótulo + valor vizinho) e permite editar o valor
-  function findEquityRow(container){
-    if (!container) return null;
-    const all = container.querySelectorAll('*');
-    for (const el of all){
-      const tx = (el.textContent||'').trim();
-      if (/^Equity\s*\(MC\)$/i.test(tx)){
-        // tenta achar um irmão/descendente com número/%
-        const parent = el.closest('div,li,tr,section,article') || el.parentElement;
-        if (!parent) return { label: el, value: null };
-        // valor típico está em outro elemento dentro do mesmo "bloco"
-        const valCand = Array.from(parent.querySelectorAll('span,div,strong,b'))
-          .reverse().find(x => /%|\d+(\.\d+)?$/.test((x.textContent||'').trim()));
-        return { label: el, value: valCand || null };
-      }
-    }
-    return null;
-  }
-
-  function ensureEqAdjInState(){
+  function tick(){
     const st = PC.state = PC.state || {};
-    // 1) eqMC (0..1)
-    let eqMC = +st.eqMC || +st.equityMC || +st.eqPct || 0;
-    if (eqMC > 1) eqMC /= 100;
-
-    if (!(eqMC > 0)){
-      // tentar ler Win/Tie do UI
-      const wt = readWinTieFromUI();
-      if (wt){
-        eqMC = clamp01(wt.win + wt.tie * 0.5);
-        st.eqMC = eqMC; // mantém no estado
-      }
-    }
-
-    // 2) parâmetros para ajuste
-    const kn = PC.getKnown ? PC.getKnown() : { hand:[], board:[] };
+    const kn = getKnown();
     const flop = (kn.board || []).slice(0,3);
     const opps = +((st.eqOpp ?? st.opponents ?? 2)) || 2;
     const pot = +((st.pot ?? 0)) || 0;
     const toCall = +((st.toCall ?? 0)) || 0;
 
-    // 3) wetScore e EqAdj
+    const eqMC = readEqMC01(); // 0..1
     const wet = MW.boardWetnessScore ? MW.boardWetnessScore(flop) : 0;
+
+    // EqAdj (com fallback se não houver multiway.js)
     let eqAdj = eqMC;
     if (MW.adjustedEquity){
       eqAdj = MW.adjustedEquity(eqMC, opps, wet);
     } else {
-      // fallback simples
       const multi = Math.max(0.5, 1 - 0.08*Math.max(0,opps-1));
       const wetF  = 1 - 0.5*Math.max(0, Math.min(1, wet/100));
       eqAdj = clamp01(eqMC * multi * wetF);
     }
 
-    // 4) pot odds (BE)
     const be = MW.potOdds ? MW.potOdds(pot, toCall)
                           : (toCall>0 ? clamp01(toCall/(pot+toCall)) : 0);
 
-    // 5) grava no estado para outras partes aproveitarem
+    // grava no estado (útil para outros scripts)
     st.eqAdj = eqAdj;
     st.potOdds = be;
     st.wetScore = wet;
+
+    // render
+    const m = box.querySelector('#eq-main');
+    const more = box.querySelector('#eq-more');
+    m.textContent = `EqAdj ${pct(eqAdj)}  |  BE ${pct(be)}`;
+    more.textContent = `EqMC ${pct(eqMC)} • wet ${wet} • opps ${opps} • pot ${pot} • call ${toCall}`;
   }
 
-  function syncPotOddsCard(){
-    ensureEqAdjInState();
-    const st = PC.state || {};
-
-    const card = findPotOddsPanel();
-    if (!card) return;
-
-    const row = findEquityRow(card);
-    if (row && row.label){
-      // renomeia o rótulo
-      row.label.textContent = 'Equity (ajustada)';
-      // troca o número
-      if (row.value){
-        row.value.textContent = pctStr(st.eqAdj || 0);
-      } else {
-        // se não tem elemento de valor, cria um
-        const v = document.createElement('div');
-        v.textContent = pctStr(st.eqAdj || 0);
-        v.style.opacity = '.9';
-        row.label.parentElement?.appendChild(v);
-      }
-    } else {
-      // fallback: injeta uma linha informativa
-      let info = card.querySelector('.eqadj-inline');
-      if (!info){
-        info = document.createElement('div');
-        info.className = 'eqadj-inline';
-        info.style.cssText = 'margin-top:6px; opacity:.85; font-size:12px;';
-        card.appendChild(info);
-      }
-      info.textContent = `Equity (ajustada): ${pctStr(st.eqAdj||0)}  |  BE: ${pctStr(st.potOdds||0)}`;
+  setInterval(tick, 350);
+  window.addEventListener('keydown', e => {
+    if (e.key === 'F9'){
+      visible = !visible;
+      box.style.display = visible ? 'block' : 'none';
     }
-
-    // Recomendação (mesma ação final do unificador, se existir)
-    const action = st.finalRec?.action;
-    if (action){
-      const recCard = Array.from(document.querySelectorAll('*'))
-        .find(el => /Recomendação/i.test(el.textContent||''));
-      if (recCard){
-        let btn = recCard.querySelector('button, .btn, .rec-action');
-        if (!btn){
-          btn = document.createElement('div');
-          btn.className = 'rec-action';
-          btn.style.cssText = 'margin-top:8px; padding:6px 10px; border:1px solid rgba(255,255,255,.2); border-radius:999px; display:inline-block;';
-          recCard.appendChild(btn);
-        }
-        btn.textContent = action;
-      }
-    }
-  }
-
-  // roda periodicamente para acompanhar mudanças do app
-  setInterval(syncPotOddsCard, 350);
+  });
 })(window);
