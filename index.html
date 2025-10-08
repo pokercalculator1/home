@@ -164,8 +164,82 @@
       }
     });
   </script>
+  <script>
+(function () {
+  const PC = window.PCALC || (window.PCALC = {});
+
+  // aplica estilos leves ao controle
+  const style = document.createElement('style');
+  style.textContent = `
+    .opp-inline {
+      display:inline-flex; align-items:center; gap:8px;
+      margin-left: 10px; white-space: nowrap;
+    }
+    .opp-inline input[type="number"]{
+      width:64px; padding:4px 6px; border-radius:6px; border:1px solid rgba(255,255,255,.12);
+      background:#0b1324; color:#e5e7eb; outline:0;
+    }
+    .opp-inline .lbl { opacity:.9; font-size:.95em; }
+  `;
+  document.head.appendChild(style);
+
+  function injectOppAfterSlow() {
+    const mount = document.querySelector('#pcalc-toolbar');
+    if (!mount) return;
+
+    // já existe?
+    if (mount.querySelector('#opp-count')) return;
+
+    // procura o toggle Slow Play
+    // (pode ser <input id="rsw-slow"> ou um container que o envolva)
+    const slow = mount.querySelector('#rsw-slow') || mount.querySelector('[for="rsw-slow"]') || mount.querySelector('.slowplay, .rsw-slow');
+    if (!slow) return; // toolbar ainda não montou
+
+    // cria o controle
+    const wrap = document.createElement('span');
+    wrap.className = 'opp-inline';
+    wrap.innerHTML = `
+      <span class="lbl">Vilões no pote:</span>
+      <input id="opp-count" type="number" min="1" max="9" value="${Number(PC.state?.opponents || 3)}" />
+    `;
+
+    // insere imediatamente depois do slow play
+    const anchor = slow.closest('label') || slow;
+    anchor.insertAdjacentElement('afterend', wrap);
+
+    // vincula estado
+    const inp = wrap.querySelector('#opp-count');
+    function pushOpp() {
+      const v = Math.max(1, Math.min(9, Number(inp.value||3)));
+      PC.state = PC.state || {};
+      // estes aliases são lidos pelos patches de sugestão/raise
+      PC.state.opponents = v;
+      PC.state.viloesAtivos = v;
+      document.dispatchEvent(new Event('pcalc:update'));
+    }
+    inp.addEventListener('input', pushOpp);
+    pushOpp(); // inicializa
+  }
+
+  // observa mudanças no toolbar (caso o raise.js re-renderize)
+  const obs = new MutationObserver(() => injectOppAfterSlow());
+  const start = () => {
+    const bar = document.querySelector('#pcalc-toolbar');
+    if (bar) obs.observe(bar, { childList: true, subtree: true });
+    injectOppAfterSlow();
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+})();
+</script>
+
 </body>
 </html>
+
 
 
 
