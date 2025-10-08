@@ -1041,7 +1041,7 @@
     const st = document.createElement('style');
     st.id = 'po-rec-css';
     st.textContent =
-      '.raise-potodds.card .po-rec-wrap { display: none !important; }'
+      '.raise-potodds.card .po-rec-wrap{margin-top:10px;text-align:center;border:dashed 1px}'
       + '.raise-potodds.card .po-rec-title{font-weight:600;opacity:.9;margin-bottom:6px;font-size:25px}'
       + '.raise-potodds.card .po-rec-value{display:block}';
       
