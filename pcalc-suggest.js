@@ -432,3 +432,170 @@
 
 })(window);
 /* ================================== END PATCH ================================== */
+/* ================== FINAL PATCH — Compat + Debug ================== */
+(function(g){
+  const PC = g.PCALC || (g.PCALC = {});
+  PC.__GUARDS_DEBUG = true; // coloque false para silenciar
+  const log = (...a)=>{ if(PC.__GUARDS_DEBUG) console.log('[PCALC:GUARDS]', ...a); };
+
+  // --- helpers: normaliza eqPct (aceita 0–1 ou 0–100)
+  function normEq(x){
+    let v = Number(x||0);
+    if(!isFinite(v)) return 0;
+    if(v<=1) v = v*100;
+    return Math.max(0, Math.min(100, v));
+  }
+  // rank/suit helpers (string "As" ou obj {r:14,s:'s'})
+  function rnk(c){
+    if(!c) return null;
+    if(typeof c==='string'){
+      const R=c[0].toUpperCase();
+      return ({A:14,K:13,Q:12,J:11,T:10,'9':9,'8':8,'7':7,'6':6,'5':5,'4':4,'3':3,'2':2})[R]||null;
+    }
+    if(typeof c==='object' && c.r!=null) return c.r|0;
+    return null;
+  }
+
+  function onlyRanks(cards){ return (cards||[]).map(rnk).filter(x=>x!=null).sort((a,b)=>a-b); }
+  function uniq(a){ return Array.from(new Set(a)); }
+  function street(board){
+    const n=(board||[]).length;
+    if(n<3) return 'preflop';
+    if(n===3) return 'flop';
+    if(n===4) return 'turn';
+    return 'river';
+  }
+  function hasHigh(board){ return onlyRanks(board).some(r=>r>=12); }       // Q+
+  function isConn(board){
+    const rs=uniq(onlyRanks(board)); if(rs.length<3) return false;
+    rs.sort((a,b)=>a-b);
+    let L=1,c=1; for(let i=1;i<rs.length;i++){ if(rs[i]===rs[i-1]+1){ c++; L=Math.max(L,c);} else if(rs[i]!==rs[i-1]) c=1; }
+    return L>=3;
+  }
+  function hasFD(board){
+    // 3 do mesmo naipe no flop, 4+ no turn/river
+    const n=(board||[]).length;
+    const need=(n===3?3:4);
+    const cnt={};
+    (board||[]).forEach(c=>{
+      const s = (typeof c==='string') ? c[1] : (c&&c.s); if(!s) return;
+      cnt[s]=(cnt[s]||0)+1;
+    });
+    return Object.values(cnt).some(v=>v>=need);
+  }
+  function danger(board){ return hasHigh(board)||isConn(board)||hasFD(board); }
+
+  // “par baixo vs board alto” (ex.: K5 acertou 5 em board com Q/K/A, sem dois pares/set)
+  function weakPairLowVsHigh(hand, board){
+    if(!hand||hand.length<2) return false;
+    const rs = onlyRanks(hand).sort((a,b)=>b-a); // [high, low]
+    if(rs.length<2) return false;
+    const pocket = (rs[0]===rs[1]);
+    if(pocket) return false;
+    const low = rs[1], high = rs[0];
+    const br = onlyRanks(board);
+    if(!br.some(r=>r>=12)) return false;     // sem Q/K/A
+    const lowOnBoard = br.filter(r=>r===low).length;
+    if(lowOnBoard>=2) return false;          // set
+    if(br.includes(high)) return false;      // fez top pair com a alta da mão
+    // se o low aparece exatamente 1x no board, você tem dois pares — não é caso aqui
+    if(lowOnBoard===1) return false;
+    return true; // só um par baixo (da mão), board com Q/K/A
+  }
+
+  // thresholds (idênticos aos do patch principal — ajuste aqui se quiser testar ao vivo)
+  const CFG = {
+    baseFoldEqPct: 40,
+    multiwayBonus: 10,
+    boardDangerBonus: 10,
+    weakPairFoldPct: 55,
+    riverHeroCallMin: 60
+  };
+
+  function reqEq(opp, board){
+    let req = CFG.baseFoldEqPct;
+    const players = Math.max(1, Number(opp||1));
+    if(players>=3) req += CFG.multiwayBonus;
+    if(danger(board)) req += CFG.boardDangerBonus;
+    return Math.min(80, req);
+  }
+
+  function guardDecision(eqPct0, hand, board, opp, base){
+    const eqPct = normEq(eqPct0);
+    const st = street(board);
+    if(st==='preflop') return base; // não mexe no pré
+
+    // 1) par baixo vs board alto
+    if(weakPairLowVsHigh(hand, board) && eqPct < CFG.weakPairFoldPct){
+      log('weakPairLowVsHigh → fold/checkfold', {eqPct});
+      return { title: (st==='river'?'PASSE OU DESISTA':'PASSE'),
+               detail: (base?.detail?base.detail+' · ':'')+'Par baixo em board alto.' };
+    }
+
+    // 2) exigência por contexto
+    const req = reqEq(opp, board);
+    if(eqPct < req){
+      log('eq < required → recua', {eqPct, req});
+      return { title: (st==='river'?'PASSE OU DESISTA':'PASSE'),
+               detail: (base?.detail?base.detail+' · ':'')+`Equity ${eqPct.toFixed(1)}% < requisito ${req.toFixed(1)}%.` };
+    }
+
+    // 3) river multiway anti-hero call (não temos flags de bet/raise; usamos regra segura)
+    if(st==='river' && Number(opp||1)>=3 && eqPct < CFG.riverHeroCallMin){
+      log('river multiway anti-hero → fold', {eqPct});
+      return { title: 'PASSE OU DESISTA',
+               detail: (base?.detail?base.detail+' · ':'')+'River multiway — evite hero call fraco.' };
+    }
+
+    // 4) mantém
+    if(base && typeof base==='object'){
+      return Object.assign({}, base, {
+        detail: (base.detail? base.detail+' · ' : '') + 'Guardas OK.'
+      });
+    }
+    return base || { title: 'PASSE', detail: 'Guardas: fallback.' };
+  }
+
+  // ---------- WRAP 1: suggestAction(eqPct, hand, board, opp) ----------
+  if(typeof PC.suggestAction === 'function'){
+    const _orig1 = PC.suggestAction;
+    PC.suggestAction = function(eqPct, hand, board, opp){
+      const base = _orig1.apply(this, arguments);
+      return guardDecision(eqPct, hand, board, opp, base);
+    };
+    log('wrap aplicado em PCALC.suggestAction');
+  }else{
+    log('PCALC.suggestAction não encontrado (ok se sua UI usar suggest.decide)');
+  }
+
+  // ---------- WRAP 2: suggest.decide(ctx) ----------
+  if(PC.suggest && typeof PC.suggest.decide === 'function'){
+    const _orig2 = PC.suggest.decide;
+    PC.suggest.decide = function(ctx){
+      // extrai campos comuns do seu contexto
+      const eq   = ctx?.equityPct ?? ctx?.equity ?? ctx?.eq ?? 0;   // 0–1 ou 0–100
+      const hand = ctx?.hand || ctx?.mao || ctx?.hole || [];
+      const brd  = ctx?.board || ctx?.mesa || [];
+      const opp  = ctx?.opponents ?? ctx?.viloesAtivos ?? ctx?.players ?? 1;
+      const base = _orig2.call(this, ctx);
+      const out  = guardDecision(eq, hand, brd, opp, base);
+      return out;
+    };
+    log('wrap aplicado em PCALC.suggest.decide');
+  }else{
+    log('PCALC.suggest.decide não encontrado (ok se sua UI usar suggestAction)');
+  }
+
+  // ---------- Smoke test opcional (F12 vê logs) ----------
+  // window.PCALC_SMOKE && (function(){
+  //   const hand = [{r:13,s:'s'},{r:5,s:'h'}]; // K5
+  //   const flop = ['5h','8d','Qh'];
+  //   const turn = flop.concat('7c');
+  //   const river= turn.concat('As');
+  //   log('SMOKE flop', PC.suggestAction?.(35, hand, flop, 3));
+  //   log('SMOKE turn', PC.suggestAction?.(34, hand, turn, 3));
+  //   log('SMOKE river',PC.suggestAction?.(33, hand, river,3));
+  // })();
+
+})(window);
+/* ================ END FINAL PATCH ================= */
