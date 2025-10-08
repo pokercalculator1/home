@@ -1,63 +1,67 @@
-/* eqadj-to-eqmc.js
- * Copia a % que aparece em .decision-detail (ex.: "EqAdj 53.8% em 50–70%")
- * para o valor da linha "Equity (MC)" no card "Informações do Pot Odd".
- * Não altera rótulos, não cria elementos. Só substitui o número.
- */
+// ===== patch-equidade-ajustada.js =====
+// Substitui equity bruta pela ajustada (EqAdj) em todos os painéis e cálculos de BE
+
 (function () {
-  'use strict';
-
-  // pega "53.8%" de dentro do .decision-detail (último da página)
-  function readEqAdjPctFromDecisionDetail(){
-    const items = Array.from(document.querySelectorAll('.decision-detail'));
-    if (!items.length) return null;
-    const txt = (items[items.length - 1].textContent || '').replace(/\s+/g,' ').trim();
-    const m = txt.match(/EqAdj\s+(\d+(?:\.\d+)?)%/i);
-    return m ? (m[1] + '%') : null;
+  // Função que aplica penalização de acordo com o número de vilões
+  function ajustarEquidade(eqBruta, vilaoCount) {
+    // Exemplo de penalização: -4% por vilão além do primeiro
+    const penalidade = Math.max(0, vilaoCount - 1) * 0.04;
+    const eqAjustada = Math.max(0, eqBruta * (1 - penalidade));
+    return +(eqAjustada * 100).toFixed(1); // retorna em %
   }
 
-  // localiza o card "Informações do Pot Odd"
-  function findPotOddsPanel(){
-    const nodes = document.querySelectorAll('section, .panel, .card, div');
-    for (const n of nodes){
-      const t = (n.textContent || '').replace(/\s+/g,' ').trim();
-      if (/Informações do Pot Odd/i.test(t)) return n;
-    }
-    return null;
-  }
+  // Atualiza todos os locais visuais de equity e BE
+  function atualizarEquidadeAjustada() {
+    try {
+      const eqBrutaEl = document.querySelector('#eqMC, #equityMC, #equity-mc, .eq-mc');
+      const eqAdjEl = document.querySelector('#eqAdj, #equityAdj, .eq-adj');
+      const beEl = document.querySelector('#po-be, .po-be-value');
 
-  // acha o elemento onde o **valor** de "Equity (MC)" está renderizado
-  function findEquityMCValueEl(container){
-    if (!container) return null;
-    const all = container.querySelectorAll('*');
-    for (const el of all){
-      const tx = (el.textContent || '').trim();
-      if (/^Equity\s*\(MC\)$/i.test(tx)){
-        const parent = el.closest('div,li,tr,section,article') || el.parentElement;
-        if (!parent) return null;
-        // procure um irmão/descendente com número ou %
-        const cand = Array.from(parent.querySelectorAll('span,div,strong,b')).reverse();
-        const val = cand.find(x => /^\d+(\.\d+)?%$/.test((x.textContent || '').trim()));
-        return val || null;
+      // Detecta quantos vilões há (ajuste conforme seu script principal)
+      const vilaoInput = document.querySelector('#inp-viloes, #numVilao, #vilaoCount');
+      const vilaoCount = vilaoInput ? Number(vilaoInput.value || 1) : 1;
+
+      // Captura a equidade bruta (MC)
+      let eqBruta = 0;
+      if (eqBrutaEl) {
+        const txt = eqBrutaEl.textContent.replace('%', '').trim();
+        eqBruta = parseFloat(txt) / 100;
       }
+
+      if (!eqBruta || isNaN(eqBruta)) return;
+
+      // Calcula equidade ajustada
+      const eqAjustadaPct = ajustarEquidade(eqBruta, vilaoCount);
+
+      // Substitui textos visuais
+      if (eqBrutaEl) eqBrutaEl.textContent = `${eqAjustadaPct.toFixed(1)}%`;
+      if (eqAdjEl) eqAdjEl.textContent = `${eqAjustadaPct.toFixed(1)}%`;
+
+      // Calcula e atualiza BE baseado na equidade ajustada
+      if (beEl) {
+        // Fórmula padrão de BE: PotOdds / (1 + PotOdds)
+        const potInput = document.querySelector('#inp-pot');
+        const callInput = document.querySelector('#inp-call');
+        if (potInput && callInput) {
+          const pot = Number(potInput.value || 0);
+          const call = Number(callInput.value || 0);
+          if (pot > 0 && call > 0) {
+            const potOdds = call / (pot + call);
+            const bePct = (potOdds * 100).toFixed(1);
+            beEl.textContent = `${bePct}%`;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Falha ao ajustar equidade:', err);
     }
-    return null;
   }
 
-  function tick(){
-    const eqAdjPct = readEqAdjPctFromDecisionDetail();
-    if (!eqAdjPct) return; // não faz nada se ainda não tem a % no banner
+  // Reexecuta o patch sempre que Monte Carlo recalcula
+  const observer = new MutationObserver(() => atualizarEquidadeAjustada());
+  const alvo = document.body;
+  if (alvo) observer.observe(alvo, { childList: true, subtree: true, characterData: true });
 
-    const panel = findPotOddsPanel();
-    if (!panel) return;
-
-    const valueEl = findEquityMCValueEl(panel);
-    if (!valueEl) return;
-
-    if ((valueEl.textContent || '').trim() !== eqAdjPct){
-      valueEl.textContent = eqAdjPct;
-    }
-  }
-
-  // roda leve para acompanhar atualizações da UI (sem criar nós)
-  setInterval(tick, 300);
+  // Atualiza a cada 1s também (segurança extra)
+  setInterval(atualizarEquidadeAjustada, 1000);
 })();
