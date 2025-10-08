@@ -254,3 +254,181 @@
   };
 
 })(window);
+
+
+/* ============================================================================================
+   BEGIN — PATCH: Guardas Contextuais (equity + contexto) aplicadas à sugestão SEM AÇÃO
+   - Multiway: exige mais equity pós-flop
+   - Board perigoso: altas (A/K/Q), conectividade e flush-draw
+   - Par Baixo vs Board Alto: evita “pagar por inércia” com SDV fraco
+   - River multiway bet/raise à frente: anti–hero call fraco
+   Integração: faz um wrap em PCALC.suggestAction mantendo a assinatura (eqPct, hand, board, opp)
+   ============================================================================================ */
+(function(g){
+  const PC = g.PCALC || (g.PCALC = {});
+  PC.state = PC.state || {};
+
+  // ================= Config TUNÁVEL =================
+  const CFG = {
+    baseFoldEqPct: 40,   // exigência mínima de equity (pós-flop) antes de ajustar por contexto
+    multiwayBonus: 10,   // +10pp de equity requerida quando 3+ players
+    boardDangerBonus: 10,// +10pp em board perigoso
+    weakPairFoldPct: 55, // se “par baixo vs board alto” e equity < 55% → FOLD/CHECK-FOLD
+    riverHeroCallMin: 60 // river multiway com bet/raise à frente precisa ≥60% para continuar
+  };
+
+  // ----------------- Helpers de cartas -----------------
+  function rankFromCard(c){
+    // Aceita formatos {r,s} (numérico) ou "As"
+    if(!c) return null;
+    if(typeof c === 'string'){
+      const r = c[0].toUpperCase();
+      return ({A:14,K:13,Q:12,J:11,T:10,'9':9,'8':8,'7':7,'6':6,'5':5,'4':4,'3':3,'2':2})[r]||null;
+    }
+    if(typeof c === 'object' && c.r) return c.r|0;
+    return null;
+  }
+  function suitFromCard(c){
+    if(!c) return null;
+    if(typeof c === 'string') return c[1]||null;
+    if(typeof c === 'object' && c.s) return c.s||null;
+    return null;
+  }
+  function onlyRanks(cards){
+    return (cards||[]).map(rankFromCard).filter(x=>x!=null).sort((a,b)=>a-b);
+  }
+  function uniq(arr){ return Array.from(new Set(arr)); }
+
+  function hasHighCard(board){
+    const ranks = onlyRanks(board);
+    return ranks.some(r => r>=12); // Q(12)+
+  }
+  function isConnected(board){
+    const rs = uniq(onlyRanks(board)); if(rs.length<3) return false;
+    rs.sort((a,b)=>a-b);
+    let longest=1, cur=1;
+    for(let i=1;i<rs.length;i++){
+      if(rs[i]===rs[i-1]+1){ cur++; longest=Math.max(longest,cur); }
+      else if(rs[i]!==rs[i-1]){ cur=1; }
+    }
+    return longest>=3; // conectividade relevante
+  }
+  function hasFlushDraw(board){
+    // flush draw forte quando já há 4+ do mesmo naipe (turn/river) ou 3 no flop
+    const counts = {};
+    (board||[]).forEach(c=>{
+      const s = suitFromCard(c);
+      if(!s) return; counts[s]=(counts[s]||0)+1;
+    });
+    const n = (board||[]).length;
+    const need = (n===3 ? 3 : 4);
+    return Object.values(counts).some(v=>v>=need);
+  }
+  function boardDanger(board){
+    return hasHighCard(board) || isConnected(board) || hasFlushDraw(board);
+  }
+
+  // “Par baixo vs board alto” (ex.: ter 5x em Q,7,A turn/river — sem dois pares/set)
+  function isWeakPairLowVsHighBoard(hand, board){
+    if(!hand || hand.length<2) return false;
+    const hr = onlyRanks(hand).sort((a,b)=>b-a); // ex. K5 → [13,5]
+    if(hr.length<2) return false;
+    const pairInHand = (hr[0]===hr[1]); // pocket pair
+    if(pairInHand) return false;        // não tratamos pocket pair aqui
+    const low = hr[1];                   // “baixo” (como 5 do K5)
+    const br = onlyRanks(board);
+    const boardHigh = br.some(r=>r>=12); // Q/A/K presentes?
+    if(!boardHigh) return false;
+
+    // Checar se já virou dois pares/set
+    const countLowOnBoard = br.filter(r=>r===low).length;
+    if(countLowOnBoard>=2) return false; // set de low
+    const hasOneLow = countLowOnBoard===1;
+    const hasTopPairWithHigh = br.includes(hr[0]); // fez par com a alta? (ex. caiu K e você tem K5)
+    if(hasTopPairWithHigh) return false; // não é “par baixo”, já é top pair
+
+    // Caso típico: você só tem UM par do low (com a carta da mão), board contém Q/K/A
+    // e não fez dois pares/set
+    return !pairInHand && boardHigh && !hasTopPairWithHigh && !hasOneLow; // só par de mão, SDV fraco
+  }
+
+  function streetFrom(board){
+    const n = (board||[]).length;
+    if(n<3) return 'preflop';
+    if(n===3) return 'flop';
+    if(n===4) return 'turn';
+    return 'river';
+  }
+
+  function requiredEqPctBase(opp){
+    // base pós-flop (40%) + multa multiway (10pp para 3+)
+    const players = Math.max(1, Number(opp||1));
+    let req = CFG.baseFoldEqPct;
+    if(players>=3) req += CFG.multiwayBonus;
+    return Math.min(80, req);
+  }
+
+  function applyGuards(eqPct, hand, board, opp, rec){
+    try{
+      const street = streetFrom(board||[]);
+      // 1) Par baixo vs board alto
+      if(street!=='preflop' && isWeakPairLowVsHighBoard(hand, board)){
+        if(eqPct < CFG.weakPairFoldPct){
+          const t = (street==='flop'||street==='turn') ? 'PASSE' : 'PASSE OU DESISTA';
+          return {
+            title: t,
+            detail: (rec?.detail? rec.detail+' · ' : '') + 'Par baixo em board alto: baixo showdown value.'
+          };
+        }
+      }
+      // 2) Board perigoso exige mais equity
+      let req = requiredEqPctBase(opp);
+      if(boardDanger(board)) req += CFG.boardDangerBonus;
+      req = Math.min(80, req);
+
+      if(eqPct < req){
+        // converte sugestões marginais em controle/retirada
+        const t = (street==='flop'||street==='turn') ? 'PASSE' : 'PASSE OU DESISTA';
+        return {
+          title: t,
+          detail: (rec?.detail? rec.detail+' · ' : '') + `Equity ${eqPct.toFixed(1)}% < requisito de contexto ${req.toFixed(1)}%.`
+        };
+      }
+
+      // 3) River multiway com força à frente (bet/raise) — precisamos do “contexto de aumento”.
+      // Como suggestAction não recebe flags de ação, inferimos o cenário duro: multiway no river.
+      if(street==='river' && Number(opp||1)>=3){
+        if(eqPct < CFG.riverHeroCallMin){
+          return {
+            title: 'PASSE OU DESISTA',
+            detail: (rec?.detail? rec.detail+' · ' : '') + 'River multiway — evite hero call com SDV fraco.'
+          };
+        }
+      }
+
+      // 4) Caso passe nas guardas, mantém a recomendação e anexa nota
+      if(rec && typeof rec==='object'){
+        return Object.assign({}, rec, {
+          detail: (rec.detail? rec.detail+' · ' : '') + 'Guardas OK (contexto favorável).'
+        });
+      }
+      return rec || { title: 'PASSE', detail: 'Guardas: fallback.' };
+    }catch(e){
+      return rec || { title: 'PASSE', detail: 'Guardas: fallback (erro não crítico).' };
+    }
+  }
+
+  // --------------- Wrap da função original ----------------
+  if(typeof PC.suggestAction === 'function'){
+    const _orig = PC.suggestAction;
+    PC.suggestAction = function(eqPct, hand, board, opp){
+      const base = _orig.call(this, eqPct, hand, board, opp);
+      // Só aplicamos guardas pós-flop (street >= flop). Pré-flop mantemos seu modelo.
+      const street = streetFrom(board||[]);
+      if(street==='preflop') return base;
+      return applyGuards(Number(eqPct||0), hand, board, opp, base);
+    };
+  }
+
+})(window);
+/* ================================== END PATCH ================================== */
