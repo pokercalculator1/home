@@ -177,33 +177,7 @@
     return NaN;
   }
 
-// ===== PATCH: EqAdj em vez de Equity bruta/MC =====
-function clamp01(x) {
-  x = Number(x);
-  if (Number.isNaN(x)) return 0.5;
-  if (x < 0) return 0;
-  if (x > 1 && x <= 100) return x / 100;
-  return x > 1 ? 1 : x;
-}
-
-function getEqAdjPercent() {
-  const PC = window.PC || window.PCALC || {};
-  const st = PC.state || {};
-
-  // tenta achar EqAdj no state (variaÃ§Ãµes)
-  const eqAdj =
-    st.eqAdj ?? st.EqAdj ?? st.equityAdj ?? st.eq_ajustada ??
-    st.eq_ajust ?? (st.decision && (st.decision.eqAdj ?? st.decision.EqAdj));
-
-  if (eqAdj != null) return clamp01(eqAdj);
-
-  // fallback: equity normal
-  const eqFallback = st.equityMC ?? st.equity ?? st.eq ?? st.equityPct ?? 0.5;
-  return clamp01(eqFallback);
-}
-// ===== END PATCH =====
-
-// ===== Pot Odds/DecisÃ£o base
+  // ===== Pot Odds/DecisÃ£o base
   function potOddsBE(potAtual, toCall, rakePct, rakeCap){
     potAtual = Number(potAtual||0);
     toCall   = Number(toCall||0);
@@ -676,7 +650,7 @@ function getEqAdjPercent() {
           <div>Pot (fichas)</div><div><b>${ctx.potAtual ? ctx.potAtual.toFixed(0) : 'â€”'}</b></div>
           <div>A pagar (fichas)</div><div><b>${ctx.toCall ? ctx.toCall.toFixed(0) : 'â€”'}</b></div>
           <div>BE (pot odds)</div><div><b>${result.bePct}%</b></div>
-          <div>EqAdj</div><div><b>${eqLabel}</b></div>
+          <div>Equity (MC)</div><div><b>${eqLabel}</b></div>
           ${isFinite(result.effBB) ? `<div>Efetivo (BB)</div><div><b>${result.effBB}</b></div>` : ''}
           ${result.bbBucket ? `<div>Faixa (BB)</div><div><b>${result.bbBucket}</b></div>` : ''}
           <div>RecomendaÃ§Ã£o</div>
@@ -732,7 +706,7 @@ function getEqAdjPercent() {
     return {
       potAtual: (state.overrides.potAtual != null ? state.overrides.potAtual : st.potAtual),
       toCall:   (state.overrides.toCall   != null ? state.overrides.toCall   : st.toCall),
-      equityPct:(state.overrides.equityPct!= null ? state.overrides.equityPct : getEqAdjPercent()*100),
+      equityPct:(state.overrides.equityPct!= null ? state.overrides.equityPct: st.equityPct),
       rakePct:  (state.overrides.rakePct  != null ? state.overrides.rakePct  : st.rakePct),
       rakeCap:  (state.overrides.rakeCap  != null ? state.overrides.rakeCap  : st.rakeCap),
       effStack: (state.overrides.effStack != null ? state.overrides.effStack : st.effStack),
