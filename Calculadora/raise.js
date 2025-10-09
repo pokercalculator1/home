@@ -46,10 +46,10 @@
         return isFinite(n) ? n : NaN;
       }
 
-      // 1) Tenta EqAdj do DOM (NOVA PRIORIDADE MÁXIMA)
-      var eqAdjFromDOM = extractEqAdjFromDOM();
+      // 1) Pega a equity do DOM com a nova função de prioridade
+      var eqFromDOM = getPriorityEquityFromDOM();
 
-      // 2) Tenta Win/Tie do state
+      // 2) Tenta Win/Tie do state (se DOM falhar)
       var winS = parseFlex(st[wk]);
       var tieS = parseFlex(st[tk2]);
       if (isFinite(winS) && winS > 1) winS /= 100;
@@ -57,16 +57,12 @@
       var eqFromWT = (isFinite(winS) ? winS : NaN) + (isFinite(tieS) ? tieS/2 : 0);
       if (isFinite(eqFromWT)) eqFromWT = Math.max(0, Math.min(1, eqFromWT)) * 100; else eqFromWT = NaN;
 
-      // 3) Tenta Win/Tie do DOM (fallback se EqAdj não for encontrado)
-      var eqFromDOM_WT = extractEquityFromDOM();
-
-      // 4) equityPct do state (fallback final)
+      // 3) equityPct do state (fallback final)
       var eqFromState = Number(st[ek]); if (!isFinite(eqFromState)) eqFromState = NaN;
 
-      // 5) prioridade final para determinar a equity
+      // 4) Prioridade final para determinar a equity
       var eqPct = NaN;
-      if (isFinite(eqAdjFromDOM))     eqPct = eqAdjFromDOM;
-      else if (isFinite(eqFromDOM_WT))eqPct = eqFromDOM_WT;
+      if (isFinite(eqFromDOM))        eqPct = eqFromDOM;
       else if (isFinite(eqFromWT))    eqPct = eqFromWT;
       else if (isFinite(eqFromState)) eqPct = eqFromState;
 
@@ -150,60 +146,51 @@
     return parseFlexibleNumber(m[1]);
   }
 
-  // ===== NOVAS FUNÇÕES DE LEITURA DE EQUITY =====
-
-  // NOVA FUNÇÃO: Extrai EqAdj especificamente do DOM
-  function extractEqAdjFromDOM(){
-    var nodes = Array.from(document.querySelectorAll('div,span,small,p,li,td,th'));
-    for (const node of nodes) {
+  // ===== NOVA FUNÇÃO UNIFICADA DE LEITURA DE EQUITY =====
+  function getPriorityEquityFromDOM() {
+    // PRIORIDADE 1: Buscar por "EqAdj" em qualquer lugar
+    var allNodes = Array.from(document.querySelectorAll('div,span,small,p,li,td,th'));
+    for (const node of allNodes) {
         const t = (node.textContent || '').trim();
         if (/EqAdj\s*[\d.,]+%/i.test(t)) {
             const m = t.match(/EqAdj\s*([\d.,]+)%/i);
             if (m) {
                 const eq = parseFlexibleNumber(m[1]);
-                if (isFinite(eq)) return clamp01pct(eq); // Retorna 0-100
+                if (isFinite(eq)) return clamp01pct(eq);
             }
         }
     }
-    // Tenta um seletor mais específico como fallback, comum em alguns layouts
-    const dd = document.querySelector('.decision-detail');
-    if (dd) {
-        const m = (dd.textContent||'').match(/EqAdj\s*([\d.,]+)%/i);
-        if (m) {
-          const eq = parseFlexibleNumber(m[1]);
-          if (isFinite(eq)) return clamp01pct(eq);
-        }
-    }
-    return NaN;
-  }
-  
-  // FUNÇÃO ANTIGA: Extrai equity baseada em Win/Tie (agora é um fallback)
-  function extractEquityFromDOM(){
+
+    // PRIORIDADE 2: Buscar por "Win:" e "Tie:" (equity bruta)
     var br = document.getElementById('eqBreak');
     if (br) {
       var txt = br.textContent || '';
       var win = matchPct(txt, /Win:\s*([\d.,]+)%/i);
       var tie = matchPct(txt, /Tie:\s*([\d.,]+)%/i);
       if (isFinite(win)) {
-        var eq = win + (isFinite(tie)? tie/2 : 0);
-        return clamp01pct(eq);
+        return clamp01pct(win + (isFinite(tie) ? tie/2 : 0));
       }
     }
+    
+    // Tenta encontrar em outros nós genéricos
+    var nodeWithWin = allNodes.find(n => /Win:\s*[\d.,]+%/i.test(n.textContent||''));
+    if (nodeWithWin){
+      var t = nodeWithWin.textContent || '';
+      var w2 = matchPct(t, /Win:\s*([\d.,]+)%/i);
+      var t2 = matchPct(t, /Tie:\s*([\d.,]+)%/i);
+      if (isFinite(w2)) return clamp01pct(w2 + (isFinite(t2) ? t2/2 : 0));
+    }
+    
+    // PRIORIDADE 3: Tentar pela largura da barra de progresso
     var bar = document.getElementById('eqBarWin');
     if (bar && bar.style && bar.style.width){
       var w = parseFlexibleNumber((bar.style.width||'').replace('%',''));
       if (isFinite(w)) return clamp01pct(w);
     }
-    var nodes = Array.from(document.querySelectorAll('div,span,small,p,li,td,th'));
-    var node = nodes.find(n => /Win:\s*[\d.,]+%/i.test(n.textContent||''));
-    if (node){
-      var t = node.textContent || '';
-      var w2 = matchPct(t, /Win:\s*([\d.,]+)%/i);
-      var t2 = matchPct(t, /Tie:\s*([\d.,]+)%/i);
-      if (isFinite(w2)) return clamp01pct(w2 + (isFinite(t2)? t2/2 : 0));
-    }
-    return NaN;
+    
+    return NaN; // Se nada for encontrado
   }
+
 
   // ===== Pot Odds/Decisão base
   function potOddsBE(potAtual, toCall, rakePct, rakeCap){
