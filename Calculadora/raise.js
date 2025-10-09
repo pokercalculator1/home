@@ -5,6 +5,18 @@
 // - Botão "Enviar" mostra a ação prevista.
 // - Regras por Efetivo (BB): 3 faixas (baixo/médio/alto) com ações configuráveis (checáveis) e limites custom (low/high BB).
 (function (g) {
+  // ===== PARÂMETROS DE PUNIÇÃO (REALIZAÇÃO) ======
+  var COEF = {
+    pos_IP: 1.00,
+    pos_OOP: 0.92,
+    spr_hi: 0.90,     // SPR > 6
+    spr_mid_min: 0.94,  // alvo em SPR=6
+    bet_mid: 0.98,      // 0.33 < beta <= 0.66
+    bet_big: 0.95,      // beta > 0.66
+    multi_per_opp: 0.015, // penalidade por vilão extra
+    multi_floor: 0.85
+  };
+
   // ===== DEFAULTS
   var DEFAULTS = {
     mountSelector: '#pcalc-toolbar',
@@ -23,7 +35,7 @@
     heroStackKey: 'heroStack',
     villainStackKey: 'villainStack',
 
-    // ======= readState com prioridade: EqAdj > DOM Win/Tie > state Win/Tie > equityPct =======
+    // ======= readState com prioridade: Cálculo EqAdj > DOM EqAdj > DOM Win/Tie > state Win/Tie > equityPct =======
     readState: function () {
       var PC = g.PC || g.PCALC || {};
       var st = PC.state || {};
@@ -46,10 +58,10 @@
         return isFinite(n) ? n : NaN;
       }
 
-      // 1) Pega a equity do DOM com a nova função de prioridade
-      var eqFromDOM = getPriorityEquityFromDOM();
+      // 1) Pega a equity com a nova função de prioridade (cálculo > DOM)
+      var eqFromPriority = getPriorityEquity();
 
-      // 2) Tenta Win/Tie do state (se DOM falhar)
+      // 2) Tenta Win/Tie do state (se DOM/cálculo falhar)
       var winS = parseFlex(st[wk]);
       var tieS = parseFlex(st[tk2]);
       if (isFinite(winS) && winS > 1) winS /= 100;
@@ -62,7 +74,7 @@
 
       // 4) Prioridade final para determinar a equity
       var eqPct = NaN;
-      if (isFinite(eqFromDOM))        eqPct = eqFromDOM;
+      if (isFinite(eqFromPriority))   eqPct = eqFromPriority;
       else if (isFinite(eqFromWT))    eqPct = eqFromWT;
       else if (isFinite(eqFromState)) eqPct = eqFromState;
 
@@ -98,6 +110,7 @@
     elements: {},
     injectDecision: false,     // switch ON/OFF
     slowPlay: false,           // toggle slow play para >80%
+    heroPosition: 'OOP',       // Posição do herói: 'IP' ou 'OOP'
     lastPotOdds: null,
     _cfg: null,
     overrides: { potAtual: undefined, toCall: undefined, equityPct: undefined, rakePct: undefined, rakeCap: undefined, effStack: undefined, bb: undefined },
@@ -129,6 +142,7 @@
   // ===== Utils
   function $(sel, root){ return (root||document).querySelector(sel); }
   function el(tag, cls){ var x=document.createElement(tag); if(cls) x.className=cls; return x; }
+  function clamp01(x) { return Math.max(0, Math.min(1, x)); }
   function clamp01pct(p){ return Math.max(0, Math.min(100, +Number(p).toFixed(1))); }
   function parseFlexibleNumber(raw){
     if(raw==null) return NaN;
@@ -146,9 +160,59 @@
     return parseFlexibleNumber(m[1]);
   }
 
-  // ===== NOVA FUNÇÃO UNIFICADA DE LEITURA DE EQUITY =====
-  function getPriorityEquityFromDOM() {
-    // PRIORIDADE 1: Buscar por "EqAdj" em qualquer lugar
+  // ===== NOVA ESTRUTURA DE FUNÇÕES DE EQUITY =====
+
+  // Função para calcular EqAdj diretamente, baseada na sua fórmula
+  function calculateAdjustedEquity() {
+    // 1. Checa se a função global de cálculo existe
+    if (typeof g.MW !== 'object' || typeof g.MW.adjustedEquity !== 'function') {
+      return NaN;
+    }
+
+    // 2. Coleta os dados necessários do estado global (PC.state)
+    var PC = g.PC || g.PCALC || {};
+    var st = PC.state || {};
+    
+    // 2a. Calcula a equity bruta (Monte Carlo) a partir de win/tie
+    var winS = parseFlexibleNumber(st[DEFAULTS.winKey]);
+    var tieS = parseFlexibleNumber(st[DEFAULTS.tieKey]);
+    if (!isFinite(winS)) return NaN; // Precisa pelo menos de 'win' para calcular
+
+    if (winS > 1) winS /= 100;
+    if (isFinite(tieS) && tieS > 1) tieS /= 100;
+    
+    var equityMC = (winS || 0) + (isFinite(tieS) ? tieS / 2 : 0);
+    equityMC *= 100; // A fórmula provavelmente espera um valor de 0 a 100
+
+    // 2b. Pega o número de oponentes (suposição de chaves 'opponents' ou 'opps')
+    var opps = (st.opponents != null ? Number(st.opponents) : (st.opps != null ? Number(st.opps) : 1));
+    if (!isFinite(opps) || opps < 1) opps = 1;
+
+    // 2c. Pega a "umidade" do board (suposição de chave 'wet' ou 'boardWetness')
+    var wet = (st.wet != null ? st.wet : st.boardWetness);
+    
+    // 3. Executa o cálculo
+    try {
+      var eqAdj = g.MW.adjustedEquity(equityMC, opps, wet);
+      if (isFinite(eqAdj)) {
+        return clamp01pct(eqAdj); // Retorna o valor ajustado e normalizado
+      }
+    } catch (e) {
+      console.warn('[raise] Erro ao calcular EqAdj:', e);
+    }
+    
+    return NaN;
+  }
+  
+  // Função unificada que busca a melhor equity disponível, com prioridades
+  function getPriorityEquity() {
+    // PRIORIDADE 1: Tentar calcular a EqAdj diretamente.
+    var calculatedEqAdj = calculateAdjustedEquity();
+    if (isFinite(calculatedEqAdj)) {
+      return calculatedEqAdj;
+    }
+
+    // PRIORIDADE 2: Se o cálculo falhar, buscar por "EqAdj" no texto do DOM.
     var allNodes = Array.from(document.querySelectorAll('div,span,small,p,li,td,th'));
     for (const node of allNodes) {
         const t = (node.textContent || '').trim();
@@ -161,7 +225,7 @@
         }
     }
 
-    // PRIORIDADE 2: Buscar por "Win:" e "Tie:" (equity bruta)
+    // PRIORIDADE 3: Se ainda falhar, buscar por "Win:" e "Tie:" (equity bruta).
     var br = document.getElementById('eqBreak');
     if (br) {
       var txt = br.textContent || '';
@@ -171,8 +235,6 @@
         return clamp01pct(win + (isFinite(tie) ? tie/2 : 0));
       }
     }
-    
-    // Tenta encontrar em outros nós genéricos
     var nodeWithWin = allNodes.find(n => /Win:\s*[\d.,]+%/i.test(n.textContent||''));
     if (nodeWithWin){
       var t = nodeWithWin.textContent || '';
@@ -181,7 +243,7 @@
       if (isFinite(w2)) return clamp01pct(w2 + (isFinite(t2) ? t2/2 : 0));
     }
     
-    // PRIORIDADE 3: Tentar pela largura da barra de progresso
+    // PRIORIDADE 4: Tentar pela largura da barra de progresso.
     var bar = document.getElementById('eqBarWin');
     if (bar && bar.style && bar.style.width){
       var w = parseFlexibleNumber((bar.style.width||'').replace('%',''));
@@ -189,6 +251,47 @@
     }
     
     return NaN; // Se nada for encontrado
+  }
+
+  // ===== LÓGICA DE PUNIÇÃO (REALIZAÇÃO) =====
+  function estimateSPR(eff, pot, call){
+    const denom = (pot||0)+(call||0);
+    if (!isFinite(eff) || eff<=0 || !Number.isFinite(denom) || denom<=0) return NaN;
+    return eff/denom;
+  }
+  function betFrac(pot, call){
+    const denom=(pot||0)+(call||0);
+    return denom>0 ? call/denom : NaN;
+  }
+  function realizationFactor({pos, spr, beta, opps}){
+    // posição
+    const Rpos = (pos==='IP') ? COEF.pos_IP : COEF.pos_OOP;
+
+    // SPR
+    let Rspr = 1.0;
+    if (Number.isFinite(spr)){
+      if (spr<=2) Rspr = 1.00;
+      else if (spr<=6){
+        const t = (spr-2)/(6-2);
+        Rspr = 1.00 - (1.00-COEF.spr_mid_min)*t; // 1 -> 0.94
+      } else {
+        Rspr = COEF.spr_hi; // 0.90
+      }
+    }
+
+    // tamanho da aposta (beta = call/(pot+call))
+    let Rbet = 1.00;
+    if (Number.isFinite(beta)){
+      if (beta<=0.33) Rbet = 1.00;
+      else if (beta<=0.66) Rbet = COEF.bet_mid;  // 0.98
+      else Rbet = COEF.bet_big;                  // 0.95
+    }
+
+    // multiway extra
+    const extra = Math.max(0, (opps|0)-1);
+    const Rmulti = Math.max(COEF.multi_floor, 1 - COEF.multi_per_opp*extra);
+
+    return clamp01(Rpos * Rspr * Rbet * Rmulti);
   }
 
 
@@ -491,8 +594,17 @@
     var spSl   = el('span','slider');
     spRsw.appendChild(spCb); spRsw.appendChild(spSl);
     spWrap.appendChild(spLbl); spWrap.appendChild(spRsw);
+    
+    // (5) Toggle Posição (NOVO)
+    var posWrap = el('div','field');
+    var posLbl  = el('span','fld-label'); posLbl.id = 'pos-label';
+    var posRsw  = el('label','rsw');
+    var posCb   = document.createElement('input'); posCb.type='checkbox'; posCb.id='rsw-pos';
+    var posSl   = el('span','slider');
+    posRsw.appendChild(posCb); posRsw.appendChild(posSl);
+    posWrap.appendChild(posLbl); posWrap.appendChild(posRsw);
 
-    // (5) Texto informativo solicitado (logo após o botão)
+    // (6) Texto informativo
     var infoTxt = el('div'); 
     infoTxt.id = 'eqStatus';
     infoTxt.className = 'mut';
@@ -506,16 +618,19 @@
     bar.appendChild(pots.bbWrap);
     bar.appendChild(sendBtn);
     bar.appendChild(spWrap);
+    bar.appendChild(posWrap); // Adicionado à barra
     bar.appendChild(infoTxt);
     mount.appendChild(bar);
 
-    // (6) Bloco: Regras por Efetivo (BB)
+    // (7) Bloco: Regras por Efetivo (BB)
     var policyBox = buildRangePolicyControls();
     mount.appendChild(policyBox);
 
     // Estado inicial dos switches
     injCb.checked = !!state.injectDecision;
     spCb.checked  = !!state.slowPlay;
+    posCb.checked = state.heroPosition === 'IP';
+    posLbl.textContent = state.heroPosition === 'IP' ? 'Posição (IP)' : 'Posição (OOP)';
 
     // Eventos
     injCb.addEventListener('change', function(){
@@ -525,6 +640,14 @@
     spCb.addEventListener('change', function(){
       state.slowPlay = !!spCb.checked;
       if (state._cfg) {
+        renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
+        updateSendBtnLabel();
+      }
+    });
+    posCb.addEventListener('change', function(){
+      state.heroPosition = !!posCb.checked ? 'IP' : 'OOP';
+      posLbl.textContent = state.heroPosition === 'IP' ? 'Posição (IP)' : 'Posição (OOP)';
+       if (state._cfg) {
         renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
         updateSendBtnLabel();
       }
@@ -552,7 +675,7 @@
     });
     sendBtn.addEventListener('click', onEnviar);
 
-    return { injCb: injCb, slowCb: spCb, potInput: pots.potInput, callInput: pots.callInput, effInput: pots.effInput, bbInput: pots.bbInput, sendBtn: sendBtn };
+    return { injCb: injCb, slowCb: spCb, posCb: posCb, potInput: pots.potInput, callInput: pots.callInput, effInput: pots.effInput, bbInput: pots.bbInput, sendBtn: sendBtn };
   }
 
   function setInjectDecision(flag, opts){
@@ -597,13 +720,13 @@
       result.recTag === 'fold' ? 'bad'  : 'good';
     var glow = (result.recTag !== 'wait' && result.recTag !== 'fold');
 
-    var eqLabel = isFinite(result.equityPct) ? (result.equityPct + '%') : 'Aguardando cartas…';
+    var eqLabel = isFinite(result.punishedEquityPct) ? (result.punishedEquityPct.toFixed(1) + '%') : 'Aguardando…';
 
     host.innerHTML = `
       <div class="decision ${glow ? 'glow' : ''}">
         <div class="decision-title ${cls}">${result.rec}</div>
         <div class="decision-detail">
-          BE ${result.bePct}% | EQ ${eqLabel} &nbsp;•&nbsp;
+          BE ${result.bePct}% | EQ Punida ${eqLabel} &nbsp;•&nbsp;
           Pot ${Number(ctx.potAtual||0).toFixed(0)} | A pagar ${Number(ctx.toCall||0).toFixed(0)}
           ${result.effBB ? ` · Efetivo ${result.effBB} BB` : ''}
           ${result.bbBucket ? ` · Faixa ${result.bbBucket}` : ''}
@@ -652,7 +775,9 @@
     var result = computeDecision(ctx);
     state.lastPotOdds = result;
 
-    var eqLabel = isFinite(result.equityPct) ? (result.equityPct + '%') : 'Aguardando cartas…';
+    var originalEqLabel = isFinite(result.originalEquityPct) ? (result.originalEquityPct.toFixed(1) + '%') : 'Aguardando…';
+    var punishedEqLabel = isFinite(result.punishedEquityPct) ? (result.punishedEquityPct.toFixed(1) + '%') : 'Aguardando…';
+    var realizationLabel = isFinite(result.realizationFactor) ? ((result.realizationFactor * 100).toFixed(1) + '%') : '—';
     var recLabel = result.rec || 'Aguardando';
     var pillColor =
       result.recTag === 'wait' ? '#f59e0b' :
@@ -665,7 +790,9 @@
           <div>Pot (fichas)</div><div><b>${ctx.potAtual ? ctx.potAtual.toFixed(0) : '—'}</b></div>
           <div>A pagar (fichas)</div><div><b>${ctx.toCall ? ctx.toCall.toFixed(0) : '—'}</b></div>
           <div>BE (pot odds)</div><div><b>${result.bePct}%</b></div>
-          <div>Equity (EqAdj)</div><div><b>${eqLabel}</b></div>
+          <div style="opacity:0.7">Equity (EqAdj)</div><div style="opacity:0.7"><b>${originalEqLabel}</b></div>
+          <div>Fator Punição R</div><div><b>${realizationLabel}</b></div>
+          <div>Equity Punida</div><div><b>${punishedEqLabel}</b></div>
           ${isFinite(result.effBB) ? `<div>Efetivo (BB)</div><div><b>${result.effBB}</b></div>` : ''}
           ${result.bbBucket ? `<div>Faixa (BB)</div><div><b>${result.bbBucket}</b></div>` : ''}
           <div>Recomendação</div>
@@ -687,7 +814,7 @@
   function decideVsRaise(potAtual, toCall, equityPct, rakePct, rakeCap){
     var r = potOddsBE(potAtual, toCall, rakePct, rakeCap);
     var bePct = r.bePct;
-    var eq    = equityPct; // pode ser NaN
+    var eq    = equityPct; // pode ser NaN, e já deve ser a equity punida
     var choice = decideByRanges(eq, bePct, !!state.slowPlay);
 
     return {
@@ -708,10 +835,31 @@
     var equity   = (ctx.equityPct!= null ? Number(ctx.equityPct) : NaN);
     var rakePct  = Number(ctx.rakePct  || 0);
     var rakeCap  = (ctx.rakeCap===Infinity || ctx.rakeCap==null) ? Infinity : Number(ctx.rakeCap);
+    
+    // --- LÓGICA DE PUNIÇÃO ---
+    var PC = g.PC || g.PCALC || {};
+    var st = PC.state || {};
+    var opps = (st.opponents != null ? Number(st.opponents) : (st.opps != null ? Number(st.opps) : 1));
+    if (!isFinite(opps) || opps < 1) opps = 1;
+    
+    var pos = state.heroPosition || 'OOP';
+    var effStack = Number(ctx.effStack || NaN);
+    var spr = estimateSPR(effStack, potAtual, toCall);
+    var beta = betFrac(potAtual, toCall);
 
-    var base = decideVsRaise(potAtual, toCall, equity, rakePct, rakeCap);
+    var R = realizationFactor({pos, spr, beta, opps});
+    var eqPunPct = isFinite(equity) ? equity * R : NaN;
+    // --- FIM DA LÓGICA ---
 
-    // aplica regra por Efetivo (BB)
+    // Usa a equity punida para a decisão
+    var base = decideVsRaise(potAtual, toCall, eqPunPct, rakePct, rakeCap);
+    
+    // Adiciona os novos valores ao resultado para poder exibi-los
+    base.realizationFactor = R;
+    base.punishedEquityPct = eqPunPct;
+    base.originalEquityPct = equity;
+
+    // Aplica regra por Efetivo (BB)
     var res = applyRangePolicy(base, ctx, state.rangePolicy);
     return res;
   }
@@ -1166,4 +1314,5 @@
     if(++tries>40) clearInterval(t);
   },250);
 })();
+
 
