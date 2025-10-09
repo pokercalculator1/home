@@ -5,6 +5,44 @@
 // - Botão "Enviar" mostra a ação prevista.
 // - Regras por Efetivo (BB): 3 faixas (baixo/médio/alto) com ações configuráveis (checáveis) e limites custom (low/high BB).
 (function (g) {
+  // ===== INÍCIO: FUNÇÕES INTEGRADAS DO MULTIWAY.JS =====
+  const MW_CFG = { ALPHA: 0.08, BETA: 0.5, MULTIWAY_FLOOR: 0.5 };
+  const RANK_MAP = { '2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'T':10,'J':11,'Q':12,'K':13,'A':14 };
+  function parseCard2(str){ if(!str||str.length<2) return null; const r=str[0].toUpperCase(), s=str[1].toLowerCase(); return {r,rank:RANK_MAP[r],suit:s}; }
+  function mw_clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+  function boardWetnessScore(flop){
+    try{
+      if(!Array.isArray(flop)||flop.length<3) return 0;
+      const c = flop.map(parseCard2).filter(Boolean); if(c.length<3) return 0;
+      const ranks = c.map(x=>x.rank).sort((a,b)=>a-b);
+      const suits = c.map(x=>x.suit);
+      const distinct = new Set(ranks).size;
+      const suitCount = suits.reduce((m,s)=>(m[s]=(m[s]||0)+1,m),{});
+      const counts = Object.values(suitCount);
+      const mono = counts.includes(3), two = counts.includes(2);
+      let score = 0;
+      if (mono) score+=35; else if (two) score+=20;
+      const g1=ranks[1]-ranks[0], g2=ranks[2]-ranks[1], maxG=Math.max(g1,g2);
+      const seq = (g1===1 && g2===1), oneTwo=( [g1,g2].sort().join()==="1,2" );
+      if (seq) score+=25; else if (oneTwo) score+=18; else if (maxG>=3) score+=0;
+      const need=new Set();
+      for(let add=2; add<=14; add++){ const arr=[...ranks,add].sort((a,b)=>a-b); for(let i=0;i<2;i++){ const w=arr.slice(i,i+4); const span=w[3]-w[0]; if(span<=3){ need.add(add); break; } } }
+      const n=need.size; if(n>=8) score+=20; else if(n>=5) score+=12; else if(n>=3) score+=6;
+      const paired = (distinct<=2); if(paired) score-=10;
+      const broad = ranks.filter(r=>r>=10).length; if(broad===3) score+=10;
+      const lowConn = (!seq && ranks[2]<=9 && maxG===1); if(lowConn) score+=6;
+      return mw_clamp(score,0,100);
+    }catch{return 0;}
+  }
+  function adjustedEquity(eq, opps, wetScore, A=MW_CFG.ALPHA, B=MW_CFG.BETA, FLOOR=MW_CFG.MULTIWAY_FLOOR){
+    if (!(eq>=0)) return 0; // eq é de 0 a 1
+    const multi = Math.max(FLOOR, 1 - A*Math.max(0,(opps||1)-1));
+    const wet = 1 - B * Math.max(0, Math.min(1, (wetScore||0)/100));
+    return Math.max(0, Math.min(1, eq*multi*wet));
+  }
+  // ===== FIM: FUNÇÕES INTEGRADAS DO MULTIWAY.JS =====
+
+
   // ===== DEFAULTS
   var DEFAULTS = {
     mountSelector: '#pcalc-toolbar',
@@ -17,6 +55,8 @@
     equityKey: 'equityPct', // % pronta (fallback)
     winKey: 'win',          // 0..1 ou 0..100
     tieKey: 'tie',
+    oppsKey: 'opps',        // <<-- NOVA CHAVE
+    boardKey: 'board',      // <<-- NOVA CHAVE
 
     // stacks (opcionais no PC.state)
     effStackKey: 'effStack',
@@ -33,6 +73,8 @@
       var tk  = DEFAULTS.toCallKey  || 'toCall';
       var wk  = DEFAULTS.winKey     || 'win';
       var tk2 = DEFAULTS.tieKey     || 'tie';
+      var ok  = DEFAULTS.oppsKey    || 'opps';   // <<-- NOVA CHAVE
+      var bk  = DEFAULTS.boardKey   || 'board';  // <<-- NOVA CHAVE
 
       function parseFlex(x){
         if(x==null) return NaN;
@@ -45,31 +87,41 @@
         var n = parseFloat(s);
         return isFinite(n) ? n : NaN;
       }
-      // 1) tenta Win/Tie do state
-      var winS = parseFlex(st[wk]);
-      var tieS = parseFlex(st[tk2]);
-      if (isFinite(winS) && winS > 1) winS /= 100;
-      if (isFinite(tieS) && tieS > 1) tieS /= 100;
-      var eqFromWT = (isFinite(winS) ? winS : NaN) + (isFinite(tieS) ? tieS/2 : 0);
-      if (isFinite(eqFromWT)) eqFromWT = Math.max(0, Math.min(1, eqFromWT)) * 100; else eqFromWT = NaN;
 
-      // 2) tenta Win/Tie do DOM
-      var eqFromDOM = (function(){
-        if (typeof extractEquityFromDOM === 'function') {
-          var v = extractEquityFromDOM(); // 0..100
-          if (isFinite(v)) return v;
-        }
-        return NaN;
+      // --- LÓGICA DE EQUIDADE MODIFICADA ---
+      // 1) Pega a equidade "bruta" de todas as fontes possíveis
+      var rawEqFromWT = (function(){
+        var winS = parseFlex(st[wk]);
+        var tieS = parseFlex(st[tk2]);
+        if (isFinite(winS) && winS > 1) winS /= 100;
+        if (isFinite(tieS) && tieS > 1) tieS /= 100;
+        var eq = (isFinite(winS) ? winS : NaN) + (isFinite(tieS) ? tieS/2 : 0);
+        return isFinite(eq) ? Math.max(0, Math.min(1, eq)) * 100 : NaN;
       })();
 
-      // 3) equityPct do state (fallback)
-      var eqFromState = Number(st[ek]); if (!isFinite(eqFromState)) eqFromState = NaN;
+      var rawEqFromDOM = (typeof extractEquityFromDOM === 'function') ? extractEquityFromDOM(true) : NaN;
+      var rawEqFromState = Number(st[ek]); if (!isFinite(rawEqFromState)) rawEqFromState = NaN;
 
-      // 4) prioridade — se nada for válido, deixamos NaN para "Aguardando cartas..."
-      var eqPct = NaN;
-      if (isFinite(eqFromDOM))        eqPct = eqFromDOM;
-      else if (isFinite(eqFromWT))    eqPct = eqFromWT;
-      else if (isFinite(eqFromState)) eqPct = eqFromState;
+      // 2) Define a prioridade da equidade bruta
+      var rawEqPct = NaN;
+      if (isFinite(rawEqFromDOM))        rawEqPct = rawEqFromDOM;
+      else if (isFinite(rawEqFromWT))    rawEqPct = rawEqFromWT;
+      else if (isFinite(rawEqFromState)) rawEqPct = rawEqFromState;
+      
+      // 3) Busca dados para o ajuste e aplica a penalização
+      var eqPct = rawEqPct;
+      if (isFinite(rawEqPct)) {
+        var opps = Number(st[ok]);
+        var board = st[bk];
+        // Só ajusta se tiver oponentes e board válidos
+        if (isFinite(opps) && opps >= 1 && Array.isArray(board) && board.length >= 3) {
+          var wetScore = boardWetnessScore(board);
+          var rawEq01 = rawEqPct / 100;
+          var adjustedEq01 = adjustedEquity(rawEq01, opps, wetScore);
+          eqPct = adjustedEq01 * 100;
+        }
+      }
+      // --- FIM DA LÓGICA DE EQUIDADE MODIFICADA ---
 
       // pot/toCall (fichas)
       function num(x){ var n=Number(x); return isFinite(n)?n:NaN; }
@@ -150,7 +202,8 @@
     if (!m) return NaN;
     return parseFlexibleNumber(m[1]);
   }
-  function extractEquityFromDOM(){
+  // Modificado para retornar a equidade bruta, o ajuste será feito no readState
+  function extractEquityFromDOM(returnRaw){
     var br = document.getElementById('eqBreak');
     if (br) {
       var txt = br.textContent || '';
@@ -158,7 +211,7 @@
       var tie = matchPct(txt, /Tie:\s*([\d.,]+)%/i);
       if (isFinite(win)) {
         var eq = win + (isFinite(tie)? tie/2 : 0);
-        return clamp01pct(eq);
+        return clamp01pct(eq); // Retorna a eq bruta (0-100)
       }
     }
     var bar = document.getElementById('eqBarWin');
@@ -582,7 +635,7 @@
       result.recTag === 'fold' ? 'bad'  : 'good';
     var glow = (result.recTag !== 'wait' && result.recTag !== 'fold');
 
-    var eqLabel = isFinite(result.equityPct) ? (result.equityPct + '%') : 'Aguardando cartas…';
+    var eqLabel = isFinite(result.equityPct) ? (result.equityPct.toFixed(1) + '% (ajustada)') : 'Aguardando cartas…';
 
     host.innerHTML = `
       <div class="decision ${glow ? 'glow' : ''}">
@@ -637,7 +690,7 @@
     var result = computeDecision(ctx);
     state.lastPotOdds = result;
 
-    var eqLabel = isFinite(result.equityPct) ? (result.equityPct + '%') : 'Aguardando cartas…';
+    var eqLabel = isFinite(result.equityPct) ? (result.equityPct.toFixed(1) + '%') : 'Aguardando cartas…';
     var recLabel = result.rec || 'Aguardando';
     var pillColor =
       result.recTag === 'wait' ? '#f59e0b' :
@@ -650,7 +703,7 @@
           <div>Pot (fichas)</div><div><b>${ctx.potAtual ? ctx.potAtual.toFixed(0) : '—'}</b></div>
           <div>A pagar (fichas)</div><div><b>${ctx.toCall ? ctx.toCall.toFixed(0) : '—'}</b></div>
           <div>BE (pot odds)</div><div><b>${result.bePct}%</b></div>
-          <div>Equity (MC)</div><div><b>${eqLabel}</b></div>
+          <div>Equity (Ajustada)</div><div><b>${eqLabel}</b></div>
           ${isFinite(result.effBB) ? `<div>Efetivo (BB)</div><div><b>${result.effBB}</b></div>` : ''}
           ${result.bbBucket ? `<div>Faixa (BB)</div><div><b>${result.bbBucket}</b></div>` : ''}
           <div>Recomendação</div>
@@ -1154,4 +1207,3 @@
     if(++tries>40) clearInterval(t);
   },250);
 })();
-
