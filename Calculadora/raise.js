@@ -5,54 +5,6 @@
 // - Botão "Enviar" mostra a ação prevista.
 // - Regras por Efetivo (BB): 3 faixas (baixo/médio/alto) com ações configuráveis (checáveis) e limites custom (low/high BB).
 (function (g) {
-
-  // ===== PATCH: Helpers para EqAdj (punição multiway) — integradas diretamente =====
-  var EQADJ_CFG = { ALPHA: 0.08, BETA: 0.50, MULTIWAY_FLOOR: 0.50 }; // mesmos defaults do multiway.js
-  function _getPC(){ return (g.PCALC || g.PC || {}); }
-  function _getState(){ var PC=_getPC(); return (PC.state || {}); }
-  function getOpponents(){
-    var st = _getState();
-    var n = Number(st.oponentes ?? st.opponents ?? st.viloes ?? st.nViloes ?? 1);
-    return (isFinite(n) && n>=1) ? n : 1;
-  }
-  function getFlop(){
-    var st = _getState();
-    var f = st.flop || st.boardFlop || st.board || st.flopCards || null;
-    if (!f && Array.isArray(st.boardAll)) f = st.boardAll.slice(0,3);
-    return Array.isArray(f) ? f : null;
-  }
-  function getWetScore(flop){
-    try{
-      var MW = _getPC().Multiway;
-      if (MW && typeof MW.boardWetnessScore === 'function') {
-        return Number(MW.boardWetnessScore(flop||[])) || 0;
-      }
-    }catch(_){}
-    return 0; // fallback conservador
-  }
-  function applyEqAdj(eqPct){
-    if (!isFinite(eqPct)) return NaN;
-    var eq = Math.max(0, Math.min(1, eqPct/100)); // 0..1
-    var opps = getOpponents();
-    var wet  = getWetScore(getFlop()); // 0..100
-
-    // Preferir biblioteca oficial se presente
-    try{
-      var MW = _getPC().Multiway;
-      if (MW && typeof MW.adjustedEquity === 'function') {
-        var adj = MW.adjustedEquity(eq, opps, wet);
-        return +(Math.max(0, Math.min(1, adj)) * 100).toFixed(1);
-      }
-    }catch(_){}
-
-    // Fallback: mesma fórmula do multiway.js
-    var A = EQADJ_CFG.ALPHA, B = EQADJ_CFG.BETA, FLOOR = EQADJ_CFG.MULTIWAY_FLOOR;
-    var multi = Math.max(FLOOR, 1 - A*Math.max(0,(opps||1)-1));
-    var wetK  = 1 - B * Math.max(0, Math.min(1, (wet||0)/100));
-    var adjEq = Math.max(0, Math.min(1, eq * multi * wetK));
-    return +(adjEq*100).toFixed(1);
-  }
-
   // ===== DEFAULTS
   var DEFAULTS = {
     mountSelector: '#pcalc-toolbar',
@@ -133,14 +85,10 @@
         if (isFinite(hs) && isFinite(vs)) effStack = Math.min(hs, vs);
       }
 
-      // ===== PATCH: converte Equity (MC) -> EqAdj (punição multiway) antes de propagar
-      var eqAdjPct = isFinite(eqPct) ? applyEqAdj(+eqPct.toFixed(1)) : NaN;
-
       return {
         potAtual: potAtual,
         toCall: toCall,
-        // A PARTIR DAQUI, TODO FLUXO USA A EQUITY AJUSTADA
-        equityPct: isFinite(eqAdjPct) ? eqAdjPct : NaN,
+        equityPct: isFinite(eqPct) ? +eqPct.toFixed(1) : NaN,
         rakePct: num(st.rakePct) || 0,
         rakeCap: (st.rakeCap != null ? Number(st.rakeCap) : Infinity),
         effStack: isFinite(effStack) ? effStack : NaN
@@ -1206,3 +1154,4 @@
     if(++tries>40) clearInterval(t);
   },250);
 })();
+
