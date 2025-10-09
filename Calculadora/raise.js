@@ -67,12 +67,13 @@
 
       // 4) prioridade â€” se nada for vÃ¡lido, deixamos NaN para "Aguardando cartas..."
       var eqAdjFromState = (function(){
-        var PC = g.PC || g.PCALC || {}; var st2 = PC.state || {};
-        var v = st2.eqAdj ?? st2.EqAdj ?? st2.equityAdj ?? st2.eq_ajustada ?? st2.eq_ajust;
-        if (v == null && st2.decision) v = st2.decision.eqAdj ?? st2.decision.EqAdj;
-        if (v == null) return NaN; v = Number(v);
-        if (!isFinite(v)) return NaN; if (v<=1) v = v*100; return Math.max(0, Math.min(100, +v.toFixed(1)));
-      })();
+  var PC = g.PC || g.PCALC || {}; var st2 = PC.state || {};
+  var v = st2.eqAdj ?? st2.EqAdj ?? st2.equityAdj ?? st2.eq_ajustada ?? st2.eq_ajust;
+  if (v == null && st2.decision) v = st2.decision.eqAdj ?? st2.decision.EqAdj;
+  if (v == null) return NaN; v = Number(v);
+  if (!isFinite(v)) return NaN; if (v === 0) return NaN; // evita '' -> 0
+  if (v <= 1) v = v*100; return Math.max(0, Math.min(100, +v.toFixed(1)));
+})();
       var eqAdjFromDOM = (typeof extractEqAdjFromDOM==='function') ? extractEqAdjFromDOM() : NaN;
       var eqPct = NaN;
       // Prioridade: EqAdj do state > EqAdj do DOM > Equity do DOM (Win/Tie) > equityPct do state
@@ -81,6 +82,12 @@
       else if (isFinite(eqFromDOM))      eqPct = eqFromDOM;
       else if (isFinite(eqFromWT))       eqPct = eqFromWT;
       else if (isFinite(eqFromState))    eqPct = eqFromState;
+// Guard extra: se eqPct ficou 0 por valor vazio no state, tenta fallback vÃ¡lido
+if (eqPct === 0) {
+  if (isFinite(eqFromWT) && eqFromWT>0) eqPct = eqFromWT;
+  else if (isFinite(eqFromDOM) && eqFromDOM>0) eqPct = eqFromDOM;
+  else if (isFinite(eqFromState) && eqFromState>0) eqPct = eqFromState;
+}
 // Se EqAdj nÃ£o existir, aplique puniÃ§Ã£o "estilo EqAdj" Ã  equity escolhida (se veio de DOM/WT/state)
 if (!isFinite(eqAdjFromState)) {
   if (isFinite(eqPct)) eqPct = adjustEquityLikeEqAdj(eqPct);
@@ -234,7 +241,14 @@ function getEqAdjPercent() {
     st.eqAdj ?? st.EqAdj ?? st.equityAdj ?? st.eq_ajustada ??
     st.eq_ajust ?? (st.decision && (st.decision.eqAdj ?? st.decision.EqAdj));
 
-  if (eqAdj != null) return clamp01(eqAdj);
+  if (eqAdj != null) {
+  var _n = Number(eqAdj);
+  if (!isFinite(_n) || _n === 0) {
+    // evita '' ou 0 do state
+  } else {
+    return clamp01(_n);
+  }
+}
 
   // fallback: equity normal
   const eqFallback = st.equityMC ?? st.equity ?? st.eq ?? st.equityPct ?? 0.5;
