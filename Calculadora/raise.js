@@ -1,5 +1,5 @@
 // raise.js — Pot Odds + chave de decisão com botão "Enviar" (Slow Play, Botão dinâmico e Regras por Efetivo em BB)
-// - Equity agora vem do EqAdj (capturado do DOM) com prioridade; se não houver, cai no fallback antigo.
+// - Equity "Aguardando cartas…" até ler valor real (nunca usa 50% padrão).
 // - 30–50%: pot odds só para decidir PAGAR. <30%: Desista. >=50%: apostar por valor (sem depender de pot odds).
 // - Slow Play opcional para >80% equity.
 // - Botão "Enviar" mostra a ação prevista.
@@ -23,7 +23,7 @@
     heroStackKey: 'heroStack',
     villainStackKey: 'villainStack',
 
-    // ======= readState com prioridade: EqAdj (DOM) > DOM Win/Tie > state Win/Tie > equityPct =======
+    // ======= readState com prioridade: DOM Win/Tie > state Win/Tie > equityPct =======
     readState: function () {
       var PC = g.PC || g.PCALC || {};
       var st = PC.state || {};
@@ -45,17 +45,7 @@
         var n = parseFloat(s);
         return isFinite(n) ? n : NaN;
       }
-
-      // 0) Tenta pegar EqAdj diretamente do DOM (nova prioridade)
-      var eqFromEqAdjDOM = (function(){
-        if (typeof extractEqAdjFromDOM === 'function') {
-          var v = extractEqAdjFromDOM(); // 0..100
-          if (isFinite(v)) return v;
-        }
-        return NaN;
-      })();
-
-      // 1) tenta Win/Tie do state (fallback antigo)
+      // 1) tenta Win/Tie do state
       var winS = parseFlex(st[wk]);
       var tieS = parseFlex(st[tk2]);
       if (isFinite(winS) && winS > 1) winS /= 100;
@@ -63,7 +53,7 @@
       var eqFromWT = (isFinite(winS) ? winS : NaN) + (isFinite(tieS) ? tieS/2 : 0);
       if (isFinite(eqFromWT)) eqFromWT = Math.max(0, Math.min(1, eqFromWT)) * 100; else eqFromWT = NaN;
 
-      // 2) tenta Win/Tie do DOM (fallback antigo)
+      // 2) tenta Win/Tie do DOM
       var eqFromDOM = (function(){
         if (typeof extractEquityFromDOM === 'function') {
           var v = extractEquityFromDOM(); // 0..100
@@ -72,13 +62,12 @@
         return NaN;
       })();
 
-      // 3) equityPct do state (fallback final)
+      // 3) equityPct do state (fallback)
       var eqFromState = Number(st[ek]); if (!isFinite(eqFromState)) eqFromState = NaN;
 
-      // 4) prioridade — agora EqAdj DOM manda
+      // 4) prioridade — se nada for válido, deixamos NaN para "Aguardando cartas..."
       var eqPct = NaN;
-      if (isFinite(eqFromEqAdjDOM))   eqPct = eqFromEqAdjDOM;
-      else if (isFinite(eqFromDOM))   eqPct = eqFromDOM;
+      if (isFinite(eqFromDOM))        eqPct = eqFromDOM;
       else if (isFinite(eqFromWT))    eqPct = eqFromWT;
       else if (isFinite(eqFromState)) eqPct = eqFromState;
 
@@ -161,32 +150,6 @@
     if (!m) return NaN;
     return parseFlexibleNumber(m[1]);
   }
-
-  // ===== NOVO: EqAdj do DOM (prioridade)
-  function extractEqAdjFromDOM(){
-    // procura um elemento com "EqAdj NN,NN%"
-    var nodes = Array.from(document.querySelectorAll('div,span,small,p,li'));
-    for (var i=0; i<nodes.length; i++){
-      var t = (nodes[i].textContent||'').trim();
-      var m = t.match(/EqAdj\s*([\d.,]+)%/i);
-      if (m){
-        var v = parseFlexibleNumber(m[1]);
-        if (isFinite(v)) return clamp01pct(v);
-      }
-    }
-    // fallback: decision-detail
-    var dd = document.querySelector('.decision-detail');
-    if (dd){
-      var m2 = (dd.textContent||'').match(/EqAdj\s*([\d.,]+)%/i);
-      if (m2){
-        var v2 = parseFlexibleNumber(m2[1]);
-        if (isFinite(v2)) return clamp01pct(v2);
-      }
-    }
-    return NaN;
-  }
-
-  // ===== Antigo: Equity por Win/Tie (mantido como fallback)
   function extractEquityFromDOM(){
     var br = document.getElementById('eqBreak');
     if (br) {
@@ -666,7 +629,7 @@
     } catch(_) {}
   }
 
-  // ===== Render do card compacto (agora mostra EqAdj)
+  // ===== Render do card compacto
   function renderPotOddsUI(ctx, cfg){
     var out = $(cfg.suggestSelector);
     if(!out) return;
@@ -687,7 +650,7 @@
           <div>Pot (fichas)</div><div><b>${ctx.potAtual ? ctx.potAtual.toFixed(0) : '—'}</b></div>
           <div>A pagar (fichas)</div><div><b>${ctx.toCall ? ctx.toCall.toFixed(0) : '—'}</b></div>
           <div>BE (pot odds)</div><div><b>${result.bePct}%</b></div>
-          <div>Equity (EqAdj)</div><div><b>${eqLabel}</b></div>
+          <div>Equity (MC)</div><div><b>${eqLabel}</b></div>
           ${isFinite(result.effBB) ? `<div>Efetivo (BB)</div><div><b>${result.effBB}</b></div>` : ''}
           ${result.bbBucket ? `<div>Faixa (BB)</div><div><b>${result.bbBucket}</b></div>` : ''}
           <div>Recomendação</div>
@@ -709,7 +672,7 @@
   function decideVsRaise(potAtual, toCall, equityPct, rakePct, rakeCap){
     var r = potOddsBE(potAtual, toCall, rakePct, rakeCap);
     var bePct = r.bePct;
-    var eq    = equityPct; // EqAdj (0..100)
+    var eq    = equityPct; // pode ser NaN
     var choice = decideByRanges(eq, bePct, !!state.slowPlay);
 
     return {
@@ -727,7 +690,7 @@
   function computeDecision(ctx){
     var potAtual = Number(ctx.potAtual || 0);
     var toCall   = Number(ctx.toCall   || 0);
-    var equity   = (ctx.equityPct!= null ? Number(ctx.equityPct) : NaN); // já é EqAdj
+    var equity   = (ctx.equityPct!= null ? Number(ctx.equityPct) : NaN);
     var rakePct  = Number(ctx.rakePct  || 0);
     var rakeCap  = (ctx.rakeCap===Infinity || ctx.rakeCap==null) ? Infinity : Number(ctx.rakeCap);
 
@@ -805,8 +768,7 @@
     stopHeartbeat();
     state.pollTimer = setInterval(function(){
       if (!state._cfg) return;
-      // assinatura inclui EqAdj (se houver) + seleção
-      var eq = extractEqAdjFromDOM();
+      var eq = extractEquityFromDOM();
       var eqKey = isFinite(eq)? eq.toFixed(2) : 'NA';
       var PC = g.PC || g.PCALC || {};
       var sel = (PC.state && Array.isArray(PC.state.selected)) ? PC.state.selected.join(',') : '';
@@ -905,12 +867,13 @@
 
 })(window);
 
-// ===== PATCHS DE LAYOUT / POSICIONAMENTO (mantidos) =====
+// ===== PATCH: Enviar (.btn.warn) + Frase ANTES do "Houve Ação?" + eqStatus após "↻ Recalcular" =====
 (function(){
   function q(s, r){ return (r||document).querySelector(s); }
   function moveBefore(node, ref){ if(node && ref && ref.parentNode){ ref.parentNode.insertBefore(node, ref); } }
   function moveAfter(node, ref){ if(node && ref && ref.parentNode){ ref.insertAdjacentElement('afterend', node); } }
 
+  // 1) CSS do botão e da frase
   (function ensureCSS(){
     if (q('#raise-style-btn-warn')) return;
     var st = document.createElement('style');
@@ -923,14 +886,17 @@
     document.head.appendChild(st);
   })();
 
+  // 2) Botão Enviar com .btn.warn
   function styleEnviar(){
     var btn = q('#btn-raise-send');
     if (btn){ btn.classList.add('btn','warn'); }
   }
 
+  // 3) Remover mensagens informativas antigas (ex.: depois do Slow Play)
   function removeOldInfo(){
     var old = q('#raise-info-msg');
     if (old && old.parentNode) old.parentNode.removeChild(old);
+    // Se tiver sobrado algum duplicado com o mesmo texto, remove também
     var dups = document.querySelectorAll('.raise-info');
     dups.forEach(function(el){
       if (el.id !== 'pre-houve-info' && /Ative se houver Apostas ou Aumento/i.test(el.textContent||'')){
@@ -939,8 +905,9 @@
     });
   }
 
+  // 4) Criar a frase ANTES do "Houve Ação?"
   function ensurePreHouveInfo(){
-    var inj = q('#rsw-inject');
+    var inj = q('#rsw-inject');        // checkbox do "Houve Ação ?"
     if (!inj) return;
     var injWrap = inj.closest('.field') || inj.parentElement || inj;
 
@@ -951,6 +918,7 @@
       info.className = 'raise-info';
       info.textContent = 'Ative se houver Apostas ou Aumento, para Calcular Pot Odds e Tomar a Melhor Decisão!';
 
+      // Imita tipografia da .eqStatus (se existir), sem usar a classe
       var eqs = q('.eqStatus');
       if (eqs){
         var cs = getComputedStyle(eqs);
@@ -961,16 +929,19 @@
         info.style.fontWeight = '600';
       }
     }
+    // posiciona IMEDIATAMENTE ANTES do bloco "Houve Ação ?"
     if (injWrap && info.nextElementSibling !== injWrap){
       moveBefore(info, injWrap);
     }
   }
 
+  // 5) Posicionar o #eqStatus sempre DEPOIS do botão "↻ Recalcular"
   function keepEqStatusAfterRecalc(){
     var eqStatus = document.getElementById('eqStatus');
     if (!eqStatus) return;
-    var recalcBtn = q('#btnEqCalc');
+    var recalcBtn = q('#btnEqCalc'); // id que você informou
     if (!recalcBtn){
+      // esconde até a âncora existir (evita “nascer” em lugar errado)
       eqStatus.style.display = 'none';
       eqStatus.dataset.waitAnchor = '1';
       return;
@@ -992,9 +963,11 @@
     keepEqStatusAfterRecalc();
   }
 
+  // Observa mudanças para manter a ordem/posições
   var mo = new MutationObserver(run);
   mo.observe(document.documentElement, { childList:true, subtree:true });
 
+  // Boot + alguns ticks
   run();
   var tries = 0;
   var t = setInterval(function(){
@@ -1002,7 +975,6 @@
     if (++tries > 40) clearInterval(t);
   }, 250);
 })();
-
 // ========== PATCH: Card Pot Odds com "Recomendação" em bloco central ==========
 (function(){
   function q(s,r){return (r||document).querySelector(s);}
@@ -1012,27 +984,34 @@
     const card = host.querySelector('.raise-potodds.card');
     if(!card) return;
 
+    // 1) Título -> "Informações do Pot Odd"
     const titleEl = card.firstElementChild;
     if (titleEl && /Pot Odds/i.test(titleEl.textContent||'')) {
       titleEl.textContent = 'Informações do Pot Odd';
     }
 
+    // 2) Pega o container em grid (é o segundo filho do card)
     const grid = card.children[1];
     if (!grid) return;
 
+    // Já transformado? então não repete
     if (card.querySelector('.po-rec-wrap')) return;
 
+    // 3) Últimos 2 itens da grid são "Recomendação" + valor
     const cells = Array.from(grid.children);
     if (cells.length < 2) return;
 
     const labelEl = cells[cells.length - 2];
     const valueEl = cells[cells.length - 1];
 
+    // Confirma que é "Recomendação"
     if (!/Recomendação/i.test((labelEl.textContent||'').trim())) return;
 
+    // 4) Remove esses 2 da grid
     grid.removeChild(labelEl);
     grid.removeChild(valueEl);
 
+    // 5) Cria bloco centralizado para a recomendação
     const wrap = document.createElement('div');
     wrap.className = 'po-rec-wrap';
     wrap.innerHTML = `
@@ -1040,18 +1019,23 @@
       <div class="po-rec-value"></div>
     `;
 
+    // move o span #po-rec (se existir) para dentro do bloco
     const pill = valueEl.querySelector('#po-rec');
     const valueSlot = wrap.querySelector('.po-rec-value');
     if (pill) {
       valueSlot.appendChild(pill);
+      // garante que o badge fique centralizado
       pill.style.display = 'inline-block';
     } else {
+      // fallback: se não achou o #po-rec, leva o conteúdo bruto
       valueSlot.appendChild(valueEl);
     }
 
+    // 6) insere o bloco no final do card
     card.appendChild(wrap);
   }
 
+  // CSS do bloco de recomendação
   (function ensureCSS(){
     if (q('#po-rec-css')) return;
     const st = document.createElement('style');
@@ -1063,96 +1047,166 @@
     document.head.appendChild(st);
   })();
 
+  // Observa mudanças no #pcalc-sugestao para re-aplicar quando re-renderizar
   const mo = new MutationObserver(restyleCard);
   mo.observe(document.documentElement, {childList:true, subtree:true});
 
+  // boot + pequenos ticks para garantir na primeira montagem
   restyleCard();
   let tries = 0;
   const t = setInterval(()=>{
     restyleCard();
-    if (++tries > 40) clearInterval(t);
+    if (++tries > 40) clearInterval(t); // ~10s
   }, 250);
 })();
 
-// ===== PATCH: mostrar "Recomendação" (po-rec-wrap) só quando "Houve Ação?" estiver ligada =====
-(function(){
-  function q(s,r){return (r||document).querySelector(s);}
-  function ensureCSS(){
-    if (q('#po-rec-css')) return;
-    const st=document.createElement('style');
-    st.id='po-rec-css';
-    st.textContent =
-      '.raise-potodds.card .po-rec-wrap{margin-top:10px;text-align:center}'
-      + '.raise-potodds.card .po-rec-title{font-weight:600;opacity:.9;margin-bottom:6px}'
-      + '.raise-potodds.card .po-rec-value{display:block}';
-    document.head.appendChild(st);
-  }
+// NOVO CÓDIGO INSERIDO ABAIXO
+(()=>{
+  // =============== Helpers ===============
+  const num = (v)=>{
+    if (v==null) return NaN;
+    if (typeof v==='number') return v;
+    // aceita "1.234,56" ou "1234.56"
+    const s = String(v).trim()
+      .replace(/\s+/g,'')
+      .replace(/\.(?=\d{3}(?:\D|$))/g,'') // remove separador de milhar com ponto
+      .replace(/,(?=\d{2}(?:\D|$))/g,'.'); // vírgula decimal -> ponto
+    return parseFloat(s);
+  };
 
-  function restyleCard(){
-    const host = q('#pcalc-sugestao'); if(!host) return;
-    const card = host.querySelector('.raise-potodds.card'); if(!card) return;
+  const pct = (x)=> isFinite(x) ? (x*100).toFixed(2)+'%' : '—';
+  const sel = (q)=> document.querySelector(q);
 
-    const titleEl = card.firstElementChild;
-    if (titleEl && /Pot Odds/i.test(titleEl.textContent||'')) titleEl.textContent = 'Informações do Pot Odd';
-
-    const grid = card.children[1]; if(!grid) return;
-
-    if (card.querySelector('.po-rec-wrap')) return;
-
-    const cells = Array.from(grid.children);
-    if (cells.length < 2) return;
-    const labelEl = cells[cells.length-2];
-    const valueEl = cells[cells.length-1];
-    if (!/Recomendação/i.test((labelEl.textContent||'').trim())) return;
-
-    grid.removeChild(labelEl);
-    grid.removeChild(valueEl);
-
-    const wrap = document.createElement('div');
-    wrap.className = 'po-rec-wrap';
-    wrap.innerHTML = `
-      <div class="po-rec-title">Recomendação</div>
-      <div class="po-rec-value"></div>
-    `;
-    const pill = valueEl.querySelector('#po-rec');
-    const slot = wrap.querySelector('.po-rec-value');
-    if (pill){
-      pill.style.display = 'inline-block';
-      slot.appendChild(pill);
-    }else{
-      slot.appendChild(valueEl);
+  // =============== 1) Capturar EqAdj do DOM ===============
+  // Procura um elemento com texto contendo "EqAdj"
+  const all = Array.from(document.querySelectorAll('div,span,p,li'));
+  let eqAdjPct = NaN, eqTextEl = null;
+  for (const el of all){
+    const t = (el.textContent||'').trim();
+    if (/EqAdj\s*[\d.,]+%/i.test(t)){
+      const m = t.match(/EqAdj\s*([\d.,]+)%/i);
+      if (m){
+        eqAdjPct = num(m[1]) / 100;
+        eqTextEl = el;
+        break;
+      }
     }
-    card.appendChild(wrap);
   }
 
-  function isInjectOn(){
-    const cb = q('#rsw-inject');
-    return !!(cb && cb.checked);
+  // fallback: tenta um seletor típico que você citou
+  if (!isFinite(eqAdjPct)){
+    const dd = sel('.decision-detail');
+    if (dd){
+      const m = (dd.textContent||'').match(/EqAdj\s*([\d.,]+)%/i);
+      if (m) eqAdjPct = num(m[1]) / 100;
+      eqTextEl = dd;
+    }
   }
 
-  function updateRecVisibility(){
-    const wrap = q('#pcalc-sugestao .po-rec-wrap');
-    if (!wrap) return;
-    wrap.style.display = isInjectOn() ? '' : 'none';
+  // =============== 2) Ler Pot e Call ===============
+  let pot = num(sel('#inp-pot')?.value);
+  let call = num(sel('#inp-call')?.value);
+
+  if (!isFinite(pot) || pot<0){
+    pot = num(prompt('Valor do POT (fichas):', '0'));
+  }
+  if (!isFinite(call) || call<0){
+    call = num(prompt('Valor A PAGAR (fichas):', '0'));
   }
 
-  function run(){
-    ensureCSS();
-    restyleCard();
-    updateRecVisibility();
+  // =============== 3) Calcular BE e decisão com EqAdj ===============
+  const be = (pot+call)>0 ? (call/(pot+call)) : NaN;
+  const okEq = isFinite(eqAdjPct);
+  const decisao = (okEq && isFinite(be))
+    ? (eqAdjPct >= be ? 'CALL / PAGUE' : 'FOLD / DESISTA')
+    : '—';
+
+  // =============== 4) Log no console ===============
+  console.clear?.();
+  console.log('%c[EqAdj x BE] Resultado',
+    'background:#22304a;color:#fff;padding:4px 8px;border-radius:4px;');
+  console.table([{
+    'EqAdj': pct(eqAdjPct),
+    'Pot (fichas)': isFinite(pot)?pot:'—',
+    'A pagar (fichas)': isFinite(call)?call:'—',
+    'BE (call/(pot+call))': pct(be),
+    'Decisão (EqAdj vs BE)': decisao
+  }]);
+
+  if (!okEq){
+    console.warn('Não consegui ler a EqAdj do DOM. Verifique se existe um texto como "EqAdj 41.2% ...".');
   }
 
-  const mo = new MutationObserver(run);
-  mo.observe(document.documentElement, { childList:true, subtree:true });
+  // =============== 5) Modal visual ===============
+  const old = document.getElementById('eqadj-be-modal');
+  if (old) old.remove();
 
-  document.addEventListener('change', (e)=>{
-    if (e.target && e.target.id === 'rsw-inject') updateRecVisibility();
-  });
+  const css = `
+  #eqadj-be-modal{
+    position: fixed; inset: auto 16px 16px auto; z-index: 999999;
+    width: 360px; max-width: 90vw;
+    background: #0b1324; color: #e5e7eb; border:1px solid #22304a;
+    border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.45);
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+  }
+  #eqadj-be-modal header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 12px; border-bottom:1px solid #22304a; font-weight:600;
+  }
+  #eqadj-be-modal .body{ padding:12px; line-height:1.35 }
+  #eqadj-be-modal .row{
+    display:flex; justify-content:space-between; margin:6px 0; font-size:14px;
+  }
+  #eqadj-be-modal .k{opacity:.75}
+  #eqadj-be-modal .v{font-weight:600}
+  #eqadj-be-modal .pill{
+    display:inline-block; padding:4px 10px; border-radius:999px; border:1px solid rgba(16,185,129,.35);
+    background: rgba(16,185,129,.12); color:#e5e7eb; font-weight:700;
+  }
+  #eqadj-be-modal .pill.bad{
+    border-color: rgba(239,68,68,.35); background: rgba(239,68,68,.12);
+  }
+  #eqadj-be-modal .footer{ padding:10px 12px; border-top:1px solid #22304a; text-align:right }
+  #eqadj-be-modal button{
+    background:#182235; color:#e5e7eb; border:1px solid #2c3b57; border-radius:8px;
+    padding:6px 10px; cursor:pointer;
+  }
+  #eqadj-be-modal button:hover{ filter:brightness(1.1) }
+  `;
 
-  run();
-  let tries=0;
-  const t=setInterval(()=>{
-    run();
-    if(++tries>40) clearInterval(t);
-  },250);
+  const wrap = document.createElement('div');
+  wrap.id = 'eqadj-be-modal';
+  wrap.innerHTML = `
+    <style>${css}</style>
+    <header>
+      <div>EqAdj × BE (teste)</div>
+      <button id="eqadj-be-close" title="Fechar">✕</button>
+    </header>
+    <div class="body">
+      <div class="row"><div class="k">EqAdj</div><div class="v">${pct(eqAdjPct)}</div></div>
+      <div class="row"><div class="k">Pot</div><div class="v">${isFinite(pot)?pot:'—'}</div></div>
+      <div class="row"><div class="k">A pagar</div><div class="v">${isFinite(call)?call:'—'}</div></div>
+      <div class="row"><div class="k">BE = call/(pot+call)</div><div class="v">${pct(be)}</div></div>
+      <div style="margin-top:10px">
+        <span class="pill ${ (okEq && isFinite(be) && eqAdjPct<be) ? 'bad':'' }">
+          ${decisao}
+        </span>
+      </div>
+    </div>
+    <div class="footer">
+      <button id="eqadj-be-copy">Copiar para clipboard</button>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+  document.getElementById('eqadj-be-close').onclick = ()=> wrap.remove();
+  document.getElementById('eqadj-be-copy').onclick = ()=>{
+    const txt = `EqAdj: ${pct(eqAdjPct)} | Pot: ${isFinite(pot)?pot:'—'} | A pagar: ${isFinite(call)?call:'—'} | BE: ${pct(be)} | Decisão: ${decisao}`;
+    navigator.clipboard?.writeText(txt).then(()=>alert('Copiado!')).catch(()=>alert(txt));
+  };
+
+  // Dica visual: contorna o elemento de origem onde achamos a EqAdj
+  if (eqTextEl){
+    eqTextEl.style.outline = '2px dashed rgba(16,185,129,.6)';
+    setTimeout(()=>{ try{eqTextEl.style.outline=''}catch(e){} }, 2000);
+  }
 })();
