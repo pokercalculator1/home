@@ -66,10 +66,26 @@
       var eqFromState = Number(st[ek]); if (!isFinite(eqFromState)) eqFromState = NaN;
 
       // 4) prioridade â€” se nada for vÃ¡lido, deixamos NaN para "Aguardando cartas..."
+      var eqAdjFromState = (function(){
+        var PC = g.PC || g.PCALC || {}; var st2 = PC.state || {};
+        var v = st2.eqAdj ?? st2.EqAdj ?? st2.equityAdj ?? st2.eq_ajustada ?? st2.eq_ajust;
+        if (v == null && st2.decision) v = st2.decision.eqAdj ?? st2.decision.EqAdj;
+        if (v == null) return NaN; v = Number(v);
+        if (!isFinite(v)) return NaN; if (v<=1) v = v*100; return Math.max(0, Math.min(100, +v.toFixed(1)));
+      })();
+      var eqAdjFromDOM = (typeof extractEqAdjFromDOM==='function') ? extractEqAdjFromDOM() : NaN;
       var eqPct = NaN;
-      if (isFinite(eqFromDOM))        eqPct = eqFromDOM;
-      else if (isFinite(eqFromWT))    eqPct = eqFromWT;
-      else if (isFinite(eqFromState)) eqPct = eqFromState;
+      // Prioridade: EqAdj do state > EqAdj do DOM > Equity do DOM (Win/Tie) > equityPct do state
+      if (isFinite(eqAdjFromState))      eqPct = eqAdjFromState;
+      else if (isFinite(eqAdjFromDOM))   eqPct = eqAdjFromDOM;
+      else if (isFinite(eqFromDOM))      eqPct = eqFromDOM;
+      else if (isFinite(eqFromWT))       eqPct = eqFromWT;
+      else if (isFinite(eqFromState))    eqPct = eqFromState;
+// Se EqAdj nÃ£o existir, aplique puniÃ§Ã£o "estilo EqAdj" Ã  equity escolhida (se veio de DOM/WT/state)
+if (!isFinite(eqAdjFromState)) {
+  if (isFinite(eqPct)) eqPct = adjustEquityLikeEqAdj(eqPct);
+}
+
 
       // pot/toCall (fichas)
       function num(x){ var n=Number(x); return isFinite(n)?n:NaN; }
@@ -160,6 +176,29 @@
         var eq = win + (isFinite(tie)? tie/2 : 0);
         return clamp01pct(eq);
       }
+
+  // ===== PATCH: capturar EqAdj do DOM (ex.: "EqAdj 53.8%") =====
+  function extractEqAdjFromDOM(){
+    // Procura explÃ­citos "EqAdj 53.8%" ou "Equidade Ajustada 53.8%"
+    var selNodes = Array.from(document.querySelectorAll('div,span,small,p,li,td,th'));
+    for (var i=0;i<selNodes.length;i++){
+      var txt = (selNodes[i].textContent||'').trim();
+      if (!txt) continue;
+      var m = txt.match(/EqAdj\s*([\d.,]+)%/i) || txt.match(/Equidade\s*Ajustad[ao]\s*([\d.,]+)%/i);
+      if (m){
+        // converte para nÃºmero
+        var s = m[1].replace('%','').replace(/\s+/g,'');
+        var hasDot = s.includes('.'), hasComma = s.includes(',');
+        if (hasDot && hasComma){
+          if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g,'').replace(',', '.');
+          else s = s.replace(/,/g,'');
+        } else if (hasComma){ s = s.replace(',', '.'); }
+        var n = parseFloat(s);
+        if (isFinite(n)) return Math.max(0, Math.min(100, +n.toFixed(1)));
+      }
+    }
+    return NaN;
+  }
     }
     var bar = document.getElementById('eqBarWin');
     if (bar && bar.style && bar.style.width){
@@ -177,7 +216,87 @@
     return NaN;
   }
 
-  // ===== Pot Odds/DecisÃ£o base
+// ===== PATCH: EqAdj em vez de Equity bruta/MC =====
+function clamp01(x) {
+  x = Number(x);
+  if (Number.isNaN(x)) return 0.5;
+  if (x < 0) return 0;
+  if (x > 1 && x <= 100) return x / 100;
+  return x > 1 ? 1 : x;
+}
+
+function getEqAdjPercent() {
+  const PC = window.PC || window.PCALC || {};
+  const st = PC.state || {};
+
+  // tenta achar EqAdj no state (variaÃ§Ãµes)
+  const eqAdj =
+    st.eqAdj ?? st.EqAdj ?? st.equityAdj ?? st.eq_ajustada ??
+    st.eq_ajust ?? (st.decision && (st.decision.eqAdj ?? st.decision.EqAdj));
+
+  if (eqAdj != null) return clamp01(eqAdj);
+
+  // fallback: equity normal
+  const eqFallback = st.equityMC ?? st.equity ?? st.eq ?? st.equityPct ?? 0.5;
+  return clamp01(eqFallback);
+}
+// ===== END PATCH =====
+
+// ===== PATCH v3: Punir Equity (MC) com mesma lÃ³gica de EqAdj quando EqAdj nÃ£o estiver disponÃ­vel =====
+var EQADJ_CFG = {
+  enabled: true,        // ativa puniÃ§Ã£o quando EqAdj nÃ£o existe
+  perVillain: 0.03,     // 3% de puniÃ§Ã£o por vilÃ£o adicional (alÃ©m de 1 oponente)
+  cap: 0.25             // atÃ© 25% de reduÃ§Ã£o mÃ¡xima
+};
+
+/**
+ * LÃª nÃºmero de vilÃµes do PC.state em vÃ¡rias chaves comuns.
+ * Se nÃ£o achar, assume 1 vilÃ£o (heads-up) para evitar puniÃ§Ã£o indevida.
+ */
+function getVillainCountFromState() {
+  var PC = window.PC || window.PCALC || {};
+  var st = PC.state || {};
+  var v =
+    Number(st.villains) || Number(st.opponents) || Number(st.nVillains) ||
+    Number(st.callers) || Number(st.numOpponents) || NaN;
+  if (!isFinite(v)) {
+    var tot = Number(st.playersTotal || st.totalPlayers || st.players || NaN);
+    if (isFinite(tot) && tot >= 2) v = Math.max(1, tot - 1);
+  }
+  if (!isFinite(v) || v <= 0) v = 1;
+  return Math.min(8, Math.max(1, Math.round(v))); // clamp 1..8
+}
+
+/**
+ * Aplica puniÃ§Ã£o "estilo EqAdj" em uma equity em % (0..100).
+ * Ex.: com perVillain=3% e 3 vilÃµes (4-handed), penaliza 3%*(3) = 9% da equity.
+ */
+function adjustEquityLikeEqAdj(eqPct, customCfg) {
+  eqPct = Number(eqPct);
+  if (!isFinite(eqPct)) return eqPct;
+  var cfg = Object.assign({}, EQADJ_CFG, (customCfg||{}));
+
+  if (!cfg.enabled) return eqPct;
+
+  // Permite overrides vindos do state (ex.: PC.state.eqAdjWeights.perVillain)
+  try {
+    var PC = window.PC || window.PCALC || {};
+    var st = PC.state || {};
+    if (st.eqAdjWeights && typeof st.eqAdjWeights === 'object') {
+      if (isFinite(st.eqAdjWeights.perVillain)) cfg.perVillain = Number(st.eqAdjWeights.perVillain);
+      if (isFinite(st.eqAdjWeights.cap)) cfg.cap = Number(st.eqAdjWeights.cap);
+    }
+  } catch(_) {}
+
+  var villains = getVillainCountFromState(); // 1 = heads-up (sem puniÃ§Ã£o adicional)
+  var extras = Math.max(0, villains - 1);
+  var penaltyFrac = Math.min(cfg.cap, Math.max(0, cfg.perVillain * extras)); // ex.: 0.09 para 3 extras
+  var eqAdj = eqPct * (1 - penaltyFrac);
+  return +(Math.max(0, Math.min(100, eqAdj))).toFixed(1);
+}
+// ===== END PATCH v3 =====
+
+// ===== Pot Odds/DecisÃ£o base
   function potOddsBE(potAtual, toCall, rakePct, rakeCap){
     potAtual = Number(potAtual||0);
     toCall   = Number(toCall||0);
@@ -650,7 +769,7 @@
           <div>Pot (fichas)</div><div><b>${ctx.potAtual ? ctx.potAtual.toFixed(0) : 'â€”'}</b></div>
           <div>A pagar (fichas)</div><div><b>${ctx.toCall ? ctx.toCall.toFixed(0) : 'â€”'}</b></div>
           <div>BE (pot odds)</div><div><b>${result.bePct}%</b></div>
-          <div>Equity (MC)</div><div><b>${eqLabel}</b></div>
+          <div>EqAdj</div><div><b>${eqLabel}</b></div>
           ${isFinite(result.effBB) ? `<div>Efetivo (BB)</div><div><b>${result.effBB}</b></div>` : ''}
           ${result.bbBucket ? `<div>Faixa (BB)</div><div><b>${result.bbBucket}</b></div>` : ''}
           <div>RecomendaÃ§Ã£o</div>
@@ -706,7 +825,7 @@
     return {
       potAtual: (state.overrides.potAtual != null ? state.overrides.potAtual : st.potAtual),
       toCall:   (state.overrides.toCall   != null ? state.overrides.toCall   : st.toCall),
-      equityPct:(state.overrides.equityPct!= null ? state.overrides.equityPct: st.equityPct),
+      equityPct:(state.overrides.equityPct!= null ? state.overrides.equityPct : getEqAdjPercent()*100),
       rakePct:  (state.overrides.rakePct  != null ? state.overrides.rakePct  : st.rakePct),
       rakeCap:  (state.overrides.rakeCap  != null ? state.overrides.rakeCap  : st.rakeCap),
       effStack: (state.overrides.effStack != null ? state.overrides.effStack : st.effStack),
@@ -768,7 +887,8 @@
     stopHeartbeat();
     state.pollTimer = setInterval(function(){
       if (!state._cfg) return;
-      var eq = extractEquityFromDOM();
+      var eqA = (typeof extractEqAdjFromDOM==='function') ? extractEqAdjFromDOM() : NaN;
+      var eq = isFinite(eqA) ? eqA : extractEquityFromDOM();
       var eqKey = isFinite(eq)? eq.toFixed(2) : 'NA';
       var PC = g.PC || g.PCALC || {};
       var sel = (PC.state && Array.isArray(PC.state.selected)) ? PC.state.selected.join(',') : '';
