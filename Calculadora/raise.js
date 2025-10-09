@@ -1,9 +1,9 @@
-// raise.js â€” Pot Odds + chave de decisÃ£o com botÃ£o "Enviar" (Slow Play, BotÃ£o dinÃ¢mico e Regras por Efetivo em BB)
-// - Equity "Aguardando cartasâ€¦" atÃ© ler valor real (nunca usa 50% padrÃ£o).
-// - 30â€“50%: pot odds sÃ³ para decidir PAGAR. <30%: Desista. >=50%: apostar por valor (sem depender de pot odds).
+// raise.js — Pot Odds + chave de decisão com botão "Enviar" (Slow Play, Botão dinâmico e Regras por Efetivo em BB)
+// - Equity "Aguardando cartas…" até ler valor real (nunca usa 50% padrão).
+// - 30–50%: pot odds só para decidir PAGAR. <30%: Desista. >=50%: apostar por valor (sem depender de pot odds).
 // - Slow Play opcional para >80% equity.
-// - BotÃ£o "Enviar" mostra a aÃ§Ã£o prevista.
-// - Regras por Efetivo (BB): 3 faixas (baixo/mÃ©dio/alto) com aÃ§Ãµes configurÃ¡veis (checÃ¡veis) e limites custom (low/high BB).
+// - Botão "Enviar" mostra a ação prevista.
+// - Regras por Efetivo (BB): 3 faixas (baixo/médio/alto) com ações configuráveis (checáveis) e limites custom (low/high BB).
 (function (g) {
   // ===== DEFAULTS
   var DEFAULTS = {
@@ -65,7 +65,7 @@
       // 3) equityPct do state (fallback)
       var eqFromState = Number(st[ek]); if (!isFinite(eqFromState)) eqFromState = NaN;
 
-      // 4) prioridade â€” se nada for vÃ¡lido, deixamos NaN para "Aguardando cartas..."
+      // 4) prioridade — se nada for válido, deixamos NaN para "Aguardando cartas..."
       var eqPct = NaN;
       if (isFinite(eqFromDOM))        eqPct = eqFromDOM;
       else if (isFinite(eqFromWT))    eqPct = eqFromWT;
@@ -116,13 +116,13 @@
       tLow: 20,          // limite baixo (BB)
       tHigh: 60,         // limite alto (BB)
       buckets: {
-        low:  { enabled: true,  action: 'Aposte 80 Ã¡ 100% (shove ok)' },
-        mid:  { enabled: true,  action: 'Aposte 50 Ã¡ 75%' },
-        high: { enabled: true,  action: 'Aposte 40 Ã¡ 60% (ou Slow Play)' }
+        low:  { enabled: true,  action: 'Aposte 80 á 100% (shove ok)' },
+        mid:  { enabled: true,  action: 'Aposte 50 á 75%' },
+        high: { enabled: true,  action: 'Aposte 40 á 60% (ou Slow Play)' }
       }
     },
 
-    // reattach dinÃ¢mico + controle de nÃ³s atuais
+    // reattach dinâmico + controle de nós atuais
     domNodes: { eqBreakEl: null, eqBarEl: null, suggestOutEl: null },
     domObs:   { eqBreak: null, eqBar: null, suggestOut: null, body: null },
 
@@ -177,7 +177,7 @@
     return NaN;
   }
 
-  // ===== Pot Odds/DecisÃ£o base
+  // ===== Pot Odds/Decisão base
   function potOddsBE(potAtual, toCall, rakePct, rakeCap){
     potAtual = Number(potAtual||0);
     toCall   = Number(toCall||0);
@@ -190,10 +190,10 @@
     return { be: be, bePct: +(be*100).toFixed(1), potFinal: potFinal, potFinalEfetivo: potFinalEfetivo, rake: rake };
   }
 
-  // ===== HeurÃ­stica principal por faixas (slow play opcional)
+  // ===== Heurística principal por faixas (slow play opcional)
   function decideByRanges(eqPct, bePct, slowPlay){
     if (!isFinite(eqPct)) {
-      return { rec:'Aguardando', detail:'Aguardando cartasâ€¦', tag:'wait' };
+      return { rec:'Aguardando', detail:'Aguardando cartas…', tag:'wait' };
     }
     var hasPotOdds = eqPct >= bePct;
 
@@ -202,20 +202,20 @@
     }
     if (eqPct < 50) {
       return hasPotOdds
-        ? { rec:'Pague a aposta', detail:'30â€“49% de equity com pot odds', tag:'call' }
-        : { rec:'Desista',        detail:'30â€“50% de equity sem pot odds', tag:'fold' };
+        ? { rec:'Pague a aposta', detail:'30–49% de equity com pot odds', tag:'call' }
+        : { rec:'Desista',        detail:'30–50% de equity sem pot odds', tag:'fold' };
     }
     if (eqPct < 70) {
-      return { rec:'Aposte 50 Ã¡ 75% do pote', detail:'50â€“69% de equity. Aposte por valor.', tag:'value_bet_medium' };
+      return { rec:'Aposte 50 á 75% do pote', detail:'50–69% de equity. Aposte por valor.', tag:'value_bet_medium' };
     }
     if (eqPct <= 80) {
-      return { rec:'Aposte 75 Ã¡ 100% do pote', detail:'70â€“80% de equity. Maximize o valor.', tag:'value_bet_strong' };
+      return { rec:'Aposte 75 á 100% do pote', detail:'70–80% de equity. Maximize o valor.', tag:'value_bet_strong' };
     }
     // >80%
     if (slowPlay) {
-      return { rec:'Slow Play: Aposte 33% do Pote ou Passe', detail:'>80% de equity. Induza blefes em board seco ou vs vilÃ£o agressivo.', tag:'slow_play' };
+      return { rec:'Slow Play: Aposte 33% do Pote ou Passe', detail:'>80% de equity. Induza blefes em board seco ou vs vilão agressivo.', tag:'slow_play' };
     }
-    return { rec:'Aposte Pote ou All-in', detail:'>80% de equity. Extraia valor mÃ¡ximo.', tag:'nuts_value' };
+    return { rec:'Aposte Pote ou All-in', detail:'>80% de equity. Extraia valor máximo.', tag:'nuts_value' };
   }
 
   // ===== Regras por Efetivo (BB)
@@ -228,10 +228,10 @@
 
   function optionsHTML(selected){
     var opts = [
-      'Aposte 40â€“60%',
-      'Aposte 50â€“75%',
-      'Aposte 75â€“100%',
-      'Aposte 80â€“100% (shove ok)',
+      'Aposte 40–60%',
+      'Aposte 50–75%',
+      'Aposte 75–100%',
+      'Aposte 80–100% (shove ok)',
       'Aposte grande / All-in',
       'Slow Play: passe / 33%',
       'Pague a aposta',
@@ -242,10 +242,10 @@
 
   function mapActionStringToRec(str){
     switch (str){
-      case 'Aposte 40â€“60%':               return { rec:'Aposte 40â€“60% do pote', tag:'value_bet_light' };
-      case 'Aposte 50â€“75%':               return { rec:'Aposte 50â€“75% do pote', tag:'value_bet_medium' };
-      case 'Aposte 75â€“100%':              return { rec:'Aposte 75â€“100% do pote', tag:'value_bet_strong' };
-      case 'Aposte 80â€“100% (shove ok)':   return { rec:'Aposte 80â€“100% (shove ok)', tag:'value_bet_push' };
+      case 'Aposte 40–60%':               return { rec:'Aposte 40–60% do pote', tag:'value_bet_light' };
+      case 'Aposte 50–75%':               return { rec:'Aposte 50–75% do pote', tag:'value_bet_medium' };
+      case 'Aposte 75–100%':              return { rec:'Aposte 75–100% do pote', tag:'value_bet_strong' };
+      case 'Aposte 80–100% (shove ok)':   return { rec:'Aposte 80–100% (shove ok)', tag:'value_bet_push' };
       case 'Aposte grande / All-in':      return { rec:'Aposte grande / All-in', tag:'nuts_value' };
       case 'Slow Play: passe / 33%':      return { rec:'Slow Play: passe / 33% do pote', tag:'slow_play' };
       case 'Pague a aposta':              return { rec:'Pague a aposta', tag:'call' };
@@ -254,7 +254,7 @@
     }
   }
 
-  // aplica polÃ­tica por efetivo apenas para equity >=50%
+  // aplica política por efetivo apenas para equity >=50%
   function applyRangePolicy(result, ctx, policy){
     var out = Object.assign({}, result);
     var bb = Number(policy && policy.bb || ctx.bb || NaN);
@@ -279,16 +279,16 @@
     out.bbBucket = bucket;
     if (!mapped) return out;
 
-    // SÃ³ sobrescreve a recomendaÃ§Ã£o textual; mantÃ©m BE/Equity/potes
+    // Só sobrescreve a recomendação textual; mantém BE/Equity/potes
     out.rec = mapped.rec;
     out.recTag = mapped.tag;
     var detailBase = out.recDetail || '';
-    var bucketPt = bucket==='low'?'baixo':(bucket==='mid'?'mÃ©dio':'alto');
-    out.recDetail = (detailBase? detailBase+' Â· ':'') + `Regra BB: ${bucketPt} (${effBB} BB)`;
+    var bucketPt = bucket==='low'?'baixo':(bucket==='mid'?'médio':'alto');
+    out.recDetail = (detailBase? detailBase+' · ':'') + `Regra BB: ${bucketPt} (${effBB} BB)`;
     return out;
   }
 
-  // ===== TTS helpers â€” fala apenas quando houver decisÃ£o (nÃ£o no "Aguardando")
+  // ===== TTS helpers — fala apenas quando houver decisão (não no "Aguardando")
   function ttsEnabled(){
     return !!(g.TTS && g.TTS.state && g.TTS.state.enabled && 'speechSynthesis' in g);
   }
@@ -302,12 +302,12 @@
     return isFinite(p) && p > 0 && isFinite(c) && c > 0;
   }
   function ttsRaise(result){
-    if (result.recTag === 'wait') return; // nÃ£o falar aguardando
-    var phrase = 'SugestÃ£o: ' + result.rec + '.';
+    if (result.recTag === 'wait') return; // não falar aguardando
+    var phrase = 'Sugestão: ' + result.rec + '.';
     ttsSayNow(phrase);
   }
 
-  // ===== Estilos (switch + botÃ£o Enviar + slow play + policy)
+  // ===== Estilos (switch + botão Enviar + slow play + policy)
   function ensureCSS(){
     if ($('#raise-css-hook')) return;
     var css = ''
@@ -337,7 +337,7 @@
     document.head.appendChild(style);
   }
 
-  // ===== UI - inputs bÃ¡sicos
+  // ===== UI - inputs básicos
   function buildPotInputs(initialPot, initialCall, initialEff, initialBB){
     var potWrap = el('div','field');
     var potLbl  = el('span','fld-label'); potLbl.textContent='Pot (fichas):';
@@ -372,7 +372,7 @@
     return { potWrap, callWrap, effWrap, bbWrap, potInput: potInp, callInput: callInp, effInput: effInp, bbInput: bbInp };
   }
 
-  // ===== UI - bloco de polÃ­tica por efetivo (BB)
+  // ===== UI - bloco de política por efetivo (BB)
   function buildRangePolicyControls(){
     var box = el('div','range-box');
     box.innerHTML = `
@@ -391,7 +391,7 @@
         </select>
       </div>
       <div class="range-row">
-        <label><input id="rp-mid-en" type="checkbox" ${state.rangePolicy.buckets.mid.enabled?'checked':''}> MÃ©dio (lowâ€“high)</label>
+        <label><input id="rp-mid-en" type="checkbox" ${state.rangePolicy.buckets.mid.enabled?'checked':''}> Médio (low–high)</label>
         <select id="rp-mid-act" class="sel">
           ${optionsHTML(state.rangePolicy.buckets.mid.action)}
         </select>
@@ -451,10 +451,10 @@
 
     var bar = el('div', 'raise-bar');
 
-    // (1) Switch: Houve AÃ§Ã£o ?
+    // (1) Switch: Houve Ação ?
     var injWrap = el('div','field');
     var injLbl  = el('span','fld-label'); 
-    injLbl.textContent = 'Houve AÃ§Ã£o ?';
+    injLbl.textContent = 'Houve Ação ?';
     var injRsw  = el('label','rsw');
     var injCb   = document.createElement('input'); injCb.type='checkbox'; injCb.id='rsw-inject';
     var injSl   = el('span','slider');
@@ -465,7 +465,7 @@
     var st0 = cfg.readState();
     var pots= buildPotInputs(st0.potAtual, st0.toCall, st0.effStack, state.rangePolicy.bb);
 
-    // (3) BotÃ£o Enviar
+    // (3) Botão Enviar
     var sendBtn = el('button','raise-send-btn'); sendBtn.id='btn-raise-send'; sendBtn.type='button'; sendBtn.textContent='Enviar';
 
     // (4) Toggle Slow Play
@@ -477,11 +477,11 @@
     spRsw.appendChild(spCb); spRsw.appendChild(spSl);
     spWrap.appendChild(spLbl); spWrap.appendChild(spRsw);
 
-    // (5) Texto informativo solicitado (logo apÃ³s o botÃ£o)
+    // (5) Texto informativo solicitado (logo após o botão)
     var infoTxt = el('div'); 
     infoTxt.id = 'eqStatus';
     infoTxt.className = 'mut';
-    infoTxt.textContent = 'Ative se houver Apostas ou Aumento, para Calcular Pot Odds e Tomar a Melhor DecisÃ£o!';
+    infoTxt.textContent = 'Ative se houver Apostas ou Aumento, para Calcular Pot Odds e Tomar a Melhor Decisão!';
 
     // Montagem
     bar.appendChild(injWrap);
@@ -554,7 +554,7 @@
     }
   }
 
-  // ===== Label dinÃ¢mico do botÃ£o "Enviar"
+  // ===== Label dinâmico do botão "Enviar"
   function updateSendBtnLabel(){
     var btn = state.elements && state.elements.sendBtn;
     if (!btn || !state._cfg) return;
@@ -564,11 +564,11 @@
       return;
     }
     var res = computeDecision(ctx);
-    if (res && res.rec) btn.textContent = 'Enviar â€” ' + res.rec;
+    if (res && res.rec) btn.textContent = 'Enviar — ' + res.rec;
     else btn.textContent = 'Enviar';
   }
 
-  // ===== InjeÃ§Ã£o no bloco principal
+  // ===== Injeção no bloco principal
   function injectDecisionIntoMain(result, ctx){
     var host = document.getElementById('suggestOut');
     if (!host) return;
@@ -582,17 +582,17 @@
       result.recTag === 'fold' ? 'bad'  : 'good';
     var glow = (result.recTag !== 'wait' && result.recTag !== 'fold');
 
-    var eqLabel = isFinite(result.equityPct) ? (result.equityPct + '%') : 'Aguardando cartasâ€¦';
+    var eqLabel = isFinite(result.equityPct) ? (result.equityPct + '%') : 'Aguardando cartas…';
 
     host.innerHTML = `
       <div class="decision ${glow ? 'glow' : ''}">
         <div class="decision-title ${cls}">${result.rec}</div>
         <div class="decision-detail">
-          BE ${result.bePct}% | EQ ${eqLabel} &nbsp;â€¢&nbsp;
+          BE ${result.bePct}% | EQ ${eqLabel} &nbsp;•&nbsp;
           Pot ${Number(ctx.potAtual||0).toFixed(0)} | A pagar ${Number(ctx.toCall||0).toFixed(0)}
-          ${result.effBB ? ` Â· Efetivo ${result.effBB} BB` : ''}
-          ${result.bbBucket ? ` Â· Faixa ${result.bbBucket}` : ''}
-          ${result.recDetail ? ' Â· ' + result.recDetail : ''}
+          ${result.effBB ? ` · Efetivo ${result.effBB} BB` : ''}
+          ${result.bbBucket ? ` · Faixa ${result.bbBucket}` : ''}
+          ${result.recDetail ? ' · ' + result.recDetail : ''}
         </div>
       </div>
     `;
@@ -605,7 +605,7 @@
     state.lastSuggestSnapshot = null;
   }
 
-  // ===== BotÃ£o Enviar
+  // ===== Botão Enviar
   function onEnviar(){
     if (!state.injectDecision || !state._cfg) return;
     var ctx = buildCtxFromCurrent(state._cfg);
@@ -621,7 +621,7 @@
     try {
       if (state.elements.potInput)  state.elements.potInput.value  = '';
       if (state.elements.callInput) state.elements.callInput.value = '';
-      // nÃ£o limpamos efetivo/BB por serem "constantes" da mesa
+      // não limpamos efetivo/BB por serem "constantes" da mesa
       state.overrides.potAtual = 0;
       state.overrides.toCall   = 0;
       if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
@@ -637,7 +637,7 @@
     var result = computeDecision(ctx);
     state.lastPotOdds = result;
 
-    var eqLabel = isFinite(result.equityPct) ? (result.equityPct + '%') : 'Aguardando cartasâ€¦';
+    var eqLabel = isFinite(result.equityPct) ? (result.equityPct + '%') : 'Aguardando cartas…';
     var recLabel = result.rec || 'Aguardando';
     var pillColor =
       result.recTag === 'wait' ? '#f59e0b' :
@@ -645,15 +645,15 @@
 
     out.innerHTML = `
       <div class="raise-potodds card">
-        <div style="font-weight:700;margin-bottom:6px">InformaÃ§Ãµes do Pot Odd</div>
+        <div style="font-weight:700;margin-bottom:6px">Informações do Pot Odd</div>
         <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
-          <div>Pot (fichas)</div><div><b>${ctx.potAtual ? ctx.potAtual.toFixed(0) : 'â€”'}</b></div>
-          <div>A pagar (fichas)</div><div><b>${ctx.toCall ? ctx.toCall.toFixed(0) : 'â€”'}</b></div>
+          <div>Pot (fichas)</div><div><b>${ctx.potAtual ? ctx.potAtual.toFixed(0) : '—'}</b></div>
+          <div>A pagar (fichas)</div><div><b>${ctx.toCall ? ctx.toCall.toFixed(0) : '—'}</b></div>
           <div>BE (pot odds)</div><div><b>${result.bePct}%</b></div>
           <div>Equity (MC)</div><div><b>${eqLabel}</b></div>
           ${isFinite(result.effBB) ? `<div>Efetivo (BB)</div><div><b>${result.effBB}</b></div>` : ''}
           ${result.bbBucket ? `<div>Faixa (BB)</div><div><b>${result.bbBucket}</b></div>` : ''}
-          <div>RecomendaÃ§Ã£o</div>
+          <div>Recomendação</div>
           <div><span id="po-rec" style="padding:2px 8px;border-radius:999px;border:1px solid #22304a">${recLabel}</span></div>
         </div>
       </div>`;
@@ -664,11 +664,11 @@
       pill.style.color = '#e5e7eb';
     }
 
-    // Atualiza label do botÃ£o junto com o card
+    // Atualiza label do botão junto com o card
     updateSendBtnLabel();
   }
 
-  // ===== Decide + aplica polÃ­tica por efetivo
+  // ===== Decide + aplica política por efetivo
   function decideVsRaise(potAtual, toCall, equityPct, rakePct, rakeCap){
     var r = potOddsBE(potAtual, toCall, rakePct, rakeCap);
     var bePct = r.bePct;
@@ -719,7 +719,7 @@
     renderPotOddsUI(ctx, cfg);
   }
 
-  // ===== Reattach dinÃ¢mico + Heartbeat =====
+  // ===== Reattach dinâmico + Heartbeat =====
   function attachObserverTo(targetEl, kind){
     if (!g.MutationObserver || !targetEl) return;
     if (kind==='eqBreak' && state.domNodes.eqBreakEl !== targetEl && state.domObs.eqBreak){
@@ -867,13 +867,13 @@
 
 })(window);
 
-// ===== PATCH: Enviar (.btn.warn) + Frase ANTES do "Houve AÃ§Ã£o?" + eqStatus apÃ³s "â†» Recalcular" =====
+// ===== PATCH: Enviar (.btn.warn) + Frase ANTES do "Houve Ação?" + eqStatus após "↻ Recalcular" =====
 (function(){
   function q(s, r){ return (r||document).querySelector(s); }
   function moveBefore(node, ref){ if(node && ref && ref.parentNode){ ref.parentNode.insertBefore(node, ref); } }
   function moveAfter(node, ref){ if(node && ref && ref.parentNode){ ref.insertAdjacentElement('afterend', node); } }
 
-  // 1) CSS do botÃ£o e da frase
+  // 1) CSS do botão e da frase
   (function ensureCSS(){
     if (q('#raise-style-btn-warn')) return;
     var st = document.createElement('style');
@@ -886,7 +886,7 @@
     document.head.appendChild(st);
   })();
 
-  // 2) BotÃ£o Enviar com .btn.warn
+  // 2) Botão Enviar com .btn.warn
   function styleEnviar(){
     var btn = q('#btn-raise-send');
     if (btn){ btn.classList.add('btn','warn'); }
@@ -896,7 +896,7 @@
   function removeOldInfo(){
     var old = q('#raise-info-msg');
     if (old && old.parentNode) old.parentNode.removeChild(old);
-    // Se tiver sobrado algum duplicado com o mesmo texto, remove tambÃ©m
+    // Se tiver sobrado algum duplicado com o mesmo texto, remove também
     var dups = document.querySelectorAll('.raise-info');
     dups.forEach(function(el){
       if (el.id !== 'pre-houve-info' && /Ative se houver Apostas ou Aumento/i.test(el.textContent||'')){
@@ -905,9 +905,9 @@
     });
   }
 
-  // 4) Criar a frase ANTES do "Houve AÃ§Ã£o?"
+  // 4) Criar a frase ANTES do "Houve Ação?"
   function ensurePreHouveInfo(){
-    var inj = q('#rsw-inject');        // checkbox do "Houve AÃ§Ã£o ?"
+    var inj = q('#rsw-inject');        // checkbox do "Houve Ação ?"
     if (!inj) return;
     var injWrap = inj.closest('.field') || inj.parentElement || inj;
 
@@ -916,7 +916,7 @@
       info = document.createElement('div');
       info.id = 'pre-houve-info';
       info.className = 'raise-info';
-      info.textContent = 'Ative se houver Apostas ou Aumento, para Calcular Pot Odds e Tomar a Melhor DecisÃ£o!';
+      info.textContent = 'Ative se houver Apostas ou Aumento, para Calcular Pot Odds e Tomar a Melhor Decisão!';
 
       // Imita tipografia da .eqStatus (se existir), sem usar a classe
       var eqs = q('.eqStatus');
@@ -929,19 +929,19 @@
         info.style.fontWeight = '600';
       }
     }
-    // posiciona IMEDIATAMENTE ANTES do bloco "Houve AÃ§Ã£o ?"
+    // posiciona IMEDIATAMENTE ANTES do bloco "Houve Ação ?"
     if (injWrap && info.nextElementSibling !== injWrap){
       moveBefore(info, injWrap);
     }
   }
 
-  // 5) Posicionar o #eqStatus sempre DEPOIS do botÃ£o "â†» Recalcular"
+  // 5) Posicionar o #eqStatus sempre DEPOIS do botão "↻ Recalcular"
   function keepEqStatusAfterRecalc(){
     var eqStatus = document.getElementById('eqStatus');
     if (!eqStatus) return;
-    var recalcBtn = q('#btnEqCalc'); // id que vocÃª informou
+    var recalcBtn = q('#btnEqCalc'); // id que você informou
     if (!recalcBtn){
-      // esconde atÃ© a Ã¢ncora existir (evita â€œnascerâ€ em lugar errado)
+      // esconde até a âncora existir (evita “nascer” em lugar errado)
       eqStatus.style.display = 'none';
       eqStatus.dataset.waitAnchor = '1';
       return;
@@ -963,7 +963,7 @@
     keepEqStatusAfterRecalc();
   }
 
-  // Observa mudanÃ§as para manter a ordem/posiÃ§Ãµes
+  // Observa mudanças para manter a ordem/posições
   var mo = new MutationObserver(run);
   mo.observe(document.documentElement, { childList:true, subtree:true });
 
@@ -975,7 +975,7 @@
     if (++tries > 40) clearInterval(t);
   }, 250);
 })();
-// ========== PATCH: Card Pot Odds com "RecomendaÃ§Ã£o" em bloco central ==========
+// ========== PATCH: Card Pot Odds com "Recomendação" em bloco central ==========
 (function(){
   function q(s,r){return (r||document).querySelector(s);}
   function restyleCard(){
@@ -984,38 +984,38 @@
     const card = host.querySelector('.raise-potodds.card');
     if(!card) return;
 
-    // 1) TÃ­tulo -> "InformaÃ§Ãµes do Pot Odd"
+    // 1) Título -> "Informações do Pot Odd"
     const titleEl = card.firstElementChild;
     if (titleEl && /Pot Odds/i.test(titleEl.textContent||'')) {
-      titleEl.textContent = 'InformaÃ§Ãµes do Pot Odd';
+      titleEl.textContent = 'Informações do Pot Odd';
     }
 
-    // 2) Pega o container em grid (Ã© o segundo filho do card)
+    // 2) Pega o container em grid (é o segundo filho do card)
     const grid = card.children[1];
     if (!grid) return;
 
-    // JÃ¡ transformado? entÃ£o nÃ£o repete
+    // Já transformado? então não repete
     if (card.querySelector('.po-rec-wrap')) return;
 
-    // 3) Ãšltimos 2 itens da grid sÃ£o "RecomendaÃ§Ã£o" + valor
+    // 3) Últimos 2 itens da grid são "Recomendação" + valor
     const cells = Array.from(grid.children);
     if (cells.length < 2) return;
 
     const labelEl = cells[cells.length - 2];
     const valueEl = cells[cells.length - 1];
 
-    // Confirma que Ã© "RecomendaÃ§Ã£o"
-    if (!/RecomendaÃ§Ã£o/i.test((labelEl.textContent||'').trim())) return;
+    // Confirma que é "Recomendação"
+    if (!/Recomendação/i.test((labelEl.textContent||'').trim())) return;
 
     // 4) Remove esses 2 da grid
     grid.removeChild(labelEl);
     grid.removeChild(valueEl);
 
-    // 5) Cria bloco centralizado para a recomendaÃ§Ã£o
+    // 5) Cria bloco centralizado para a recomendação
     const wrap = document.createElement('div');
     wrap.className = 'po-rec-wrap';
     wrap.innerHTML = `
-      <div class="po-rec-title">RecomendaÃ§Ã£o</div>
+      <div class="po-rec-title">Recomendação</div>
       <div class="po-rec-value"></div>
     `;
 
@@ -1027,7 +1027,7 @@
       // garante que o badge fique centralizado
       pill.style.display = 'inline-block';
     } else {
-      // fallback: se nÃ£o achou o #po-rec, leva o conteÃºdo bruto
+      // fallback: se não achou o #po-rec, leva o conteúdo bruto
       valueSlot.appendChild(valueEl);
     }
 
@@ -1035,7 +1035,7 @@
     card.appendChild(wrap);
   }
 
-  // CSS do bloco de recomendaÃ§Ã£o
+  // CSS do bloco de recomendação
   (function ensureCSS(){
     if (q('#po-rec-css')) return;
     const st = document.createElement('style');
@@ -1044,11 +1044,10 @@
       '.raise-potodds.card .po-rec-wrap{margin-top:10px;text-align:center;border:dashed 1px}'
       + '.raise-potodds.card .po-rec-title{font-weight:600;opacity:.9;margin-bottom:6px;font-size:25px}'
       + '.raise-potodds.card .po-rec-value{display:block}';
-      
     document.head.appendChild(st);
   })();
 
-  // Observa mudanÃ§as no #pcalc-sugestao para re-aplicar quando re-renderizar
+  // Observa mudanças no #pcalc-sugestao para re-aplicar quando re-renderizar
   const mo = new MutationObserver(restyleCard);
   mo.observe(document.documentElement, {childList:true, subtree:true});
 
@@ -1061,7 +1060,7 @@
   }, 250);
 })();
 
-// ===== PATCH: mostrar "RecomendaÃ§Ã£o" (po-rec-wrap) sÃ³ quando "Houve AÃ§Ã£o?" estiver ligada =====
+// ===== PATCH: mostrar "Recomendação" (po-rec-wrap) só quando "Houve Ação?" estiver ligada =====
 (function(){
   function q(s,r){return (r||document).querySelector(s);}
   function ensureCSS(){
@@ -1075,27 +1074,27 @@
     document.head.appendChild(st);
   }
 
-  // Reestrutura o card (move "RecomendaÃ§Ã£o" pra bloco central) â€” idempotente
+  // Reestrutura o card (move "Recomendação" pra bloco central) — idempotente
   function restyleCard(){
     const host = q('#pcalc-sugestao'); if(!host) return;
     const card = host.querySelector('.raise-potodds.card'); if(!card) return;
 
-    // TÃ­tulo amigÃ¡vel
+    // Título amigável
     const titleEl = card.firstElementChild;
-    if (titleEl && /Pot Odds/i.test(titleEl.textContent||'')) titleEl.textContent = 'InformaÃ§Ãµes do Pot Odd';
+    if (titleEl && /Pot Odds/i.test(titleEl.textContent||'')) titleEl.textContent = 'Informações do Pot Odd';
 
-    // Layout em grid Ã© o 2Âº filho do card
+    // Layout em grid é o 2º filho do card
     const grid = card.children[1]; if(!grid) return;
 
-    // Se jÃ¡ existe o bloco, sÃ³ sincroniza visibilidade depois
+    // Se já existe o bloco, só sincroniza visibilidade depois
     if (card.querySelector('.po-rec-wrap')) return;
 
-    // Procura o par "RecomendaÃ§Ã£o" + valor (Ãºltimas duas cÃ©lulas)
+    // Procura o par "Recomendação" + valor (últimas duas células)
     const cells = Array.from(grid.children);
     if (cells.length < 2) return;
     const labelEl = cells[cells.length-2];
     const valueEl = cells[cells.length-1];
-    if (!/RecomendaÃ§Ã£o/i.test((labelEl.textContent||'').trim())) return;
+    if (!/Recomendação/i.test((labelEl.textContent||'').trim())) return;
 
     // Remove do grid
     grid.removeChild(labelEl);
@@ -1105,17 +1104,17 @@
     const wrap = document.createElement('div');
     wrap.className = 'po-rec-wrap';
     wrap.innerHTML = `
-      <div class="po-rec-title">RecomendaÃ§Ã£o</div>
+      <div class="po-rec-title">Recomendação</div>
       <div class="po-rec-value"></div>
     `;
-    // Move a pÃ­lula #po-rec para dentro do bloco
+    // Move a pílula #po-rec para dentro do bloco
     const pill = valueEl.querySelector('#po-rec');
     const slot = wrap.querySelector('.po-rec-value');
     if (pill){
       pill.style.display = 'inline-block';
       slot.appendChild(pill);
     }else{
-      // fallback: leva conteÃºdo bruto
+      // fallback: leva conteúdo bruto
       slot.appendChild(valueEl);
     }
     card.appendChild(wrap);
@@ -1126,7 +1125,7 @@
     return !!(cb && cb.checked);
   }
 
-  // Mostra/oculta o bloco conforme a chave "Houve AÃ§Ã£o?"
+  // Mostra/oculta o bloco conforme a chave "Houve Ação?"
   function updateRecVisibility(){
     const wrap = q('#pcalc-sugestao .po-rec-wrap');
     if (!wrap) return;
@@ -1139,7 +1138,7 @@
     updateRecVisibility();
   }
 
-  // Observa mudanÃ§as de UI e o toggle da chavinha
+  // Observa mudanças de UI e o toggle da chavinha
   const mo = new MutationObserver(run);
   mo.observe(document.documentElement, { childList:true, subtree:true });
 
@@ -1155,3 +1154,4 @@
     if(++tries>40) clearInterval(t);
   },250);
 })();
+
