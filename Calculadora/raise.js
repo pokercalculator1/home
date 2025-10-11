@@ -1,7 +1,6 @@
-// raise.js — Pot Odds + chave de decisão com botão "OK" (Lógica de Efetivo em BB removida)
-// - Equity "Aguardando cartas…" até ler valor real (nunca usa 50% padrão).
-// - 30–50%: pot odds só para decidir PAGAR. <30%: Desista. >=50%: apostar por valor (sem depender de pot odds).
-// - Slow Play opcional para >80% equity.
+// raise.js — Pot Odds + chave de decisão com botão "OK" (versão simplificada)
+// - Equity "Aguardando cartas…" até ler valor real.
+// - 30–50%: pot odds só para decidir PAGAR. <30%: Desista. >=50%: apostar por valor.
 (function (g) {
   // ===== DEFAULTS
   var DEFAULTS = {
@@ -15,11 +14,6 @@
     equityKey: 'equityPct', // % pronta (fallback)
     winKey: 'win',          // 0..1 ou 0..100
     tieKey: 'tie',
-
-    // stacks (opcionais no PC.state)
-    effStackKey: 'effStack',
-    heroStackKey: 'heroStack',
-    villainStackKey: 'villainStack',
 
     // ======= readState com prioridade: DOM Win/Tie > state Win/Tie > equityPct =======
     readState: function () {
@@ -74,22 +68,12 @@
       var potAtual = num(st[pk]); if(!isFinite(potAtual)) potAtual=0;
       var toCall   = num(st[tk]); if(!isFinite(toCall))   toCall=0;
 
-      // efetivo (stack efetivo em fichas)
-      var effStack = NaN;
-      if (st[DEFAULTS.effStackKey] != null) effStack = num(st[DEFAULTS.effStackKey]);
-      if (!isFinite(effStack)) {
-        var hs = num(st[DEFAULTS.heroStackKey]);
-        var vs = num(st[DEFAULTS.villainStackKey]);
-        if (isFinite(hs) && isFinite(vs)) effStack = Math.min(hs, vs);
-      }
-
       return {
         potAtual: potAtual,
         toCall: toCall,
         equityPct: isFinite(eqPct) ? +eqPct.toFixed(1) : NaN,
         rakePct: num(st.rakePct) || 0,
-        rakeCap: (st.rakeCap != null ? Number(st.rakeCap) : Infinity),
-        effStack: isFinite(effStack) ? effStack : NaN
+        rakeCap: (st.rakeCap != null ? Number(st.rakeCap) : Infinity)
       };
     },
     onUpdateText: null
@@ -100,10 +84,9 @@
     mounted: false,
     elements: {},
     injectDecision: false,     // switch ON/OFF
-    slowPlay: false,           // toggle slow play para >80%
     lastPotOdds: null,
     _cfg: null,
-    overrides: { potAtual: undefined, toCall: undefined, equityPct: undefined, rakePct: undefined, rakeCap: undefined, effStack: undefined, bb: undefined },
+    overrides: { potAtual: undefined, toCall: undefined, equityPct: undefined, rakePct: undefined, rakeCap: undefined },
     observers: [],
     lastSuggestSnapshot: null,
 
@@ -175,8 +158,8 @@
     return { be: be, bePct: +(be*100).toFixed(1), potFinal: potFinal, potFinalEfetivo: potFinalEfetivo, rake: rake };
   }
 
-  // ===== Heurística principal por faixas (slow play opcional)
-  function decideByRanges(eqPct, bePct, slowPlay){
+  // ===== Heurística principal por faixas
+  function decideByRanges(eqPct, bePct){
     if (!isFinite(eqPct)) {
       return { rec:'Aguardando', detail:'Aguardando cartas…', tag:'wait' };
     }
@@ -197,13 +180,10 @@
       return { rec:'Aposte 75 á 100% do pote', detail:'70–80% de equity. Maximize o valor.', tag:'value_bet_strong' };
     }
     // >80%
-    if (slowPlay) {
-      return { rec:'Slow Play: Aposte 33% do Pote ou Passe', detail:'>80% de equity. Induza blefes em board seco ou vs vilão agressivo.', tag:'slow_play' };
-    }
     return { rec:'Aposte Pote ou All-in', detail:'>80% de equity. Extraia valor máximo.', tag:'nuts_value' };
   }
 
-  // ===== TTS helpers — fala apenas quando houver decisão (não no "Aguardando")
+  // ===== TTS helpers
   function ttsEnabled(){
     return !!(g.TTS && g.TTS.state && g.TTS.state.enabled && 'speechSynthesis' in g);
   }
@@ -217,12 +197,12 @@
     return isFinite(p) && p > 0 && isFinite(c) && c > 0;
   }
   function ttsRaise(result){
-    if (result.recTag === 'wait') return; // não falar aguardando
+    if (result.recTag === 'wait') return;
     var phrase = 'Sugestão: ' + result.rec + '.';
     ttsSayNow(phrase);
   }
 
-  // ===== Estilos (switch + botão Enviar + slow play)
+  // ===== Estilos
   function ensureCSS(){
     if ($('#raise-css-hook')) return;
     var css = ''
@@ -249,7 +229,7 @@
   }
 
   // ===== UI - inputs básicos
-  function buildPotInputs(initialPot, initialCall, initialEff, initialBB){
+  function buildPotInputs(initialPot, initialCall){
     var potWrap = el('div','field');
     var potLbl  = el('span','fld-label'); potLbl.textContent='Pot (fichas):';
     var potInpW = el('div','input-modern'); potInpW.innerHTML='<input id="inp-pot" type="number" step="1" min="0" placeholder="ex: 1200">';
@@ -260,27 +240,13 @@
     var callInpW = el('div','input-modern'); callInpW.innerHTML='<input id="inp-call" type="number" step="1" min="0" placeholder="ex: 400">';
     callWrap.appendChild(callLbl); callWrap.appendChild(callInpW);
 
-    var effWrap = el('div','field');
-    var effLbl  = el('span','fld-label'); effLbl.textContent='Efetivo:';
-    var effInpW = el('div','input-modern'); effInpW.innerHTML='<input id="inp-eff" type="number" step="1" min="0" placeholder="ex: 5000">';
-    effWrap.appendChild(effLbl); effWrap.appendChild(effInpW);
-
-    var bbWrap = el('div','field');
-    var bbLbl  = el('span','fld-label'); bbLbl.textContent='BB:';
-    var bbInpW = el('div','input-modern'); bbInpW.innerHTML='<input id="inp-bb" type="number" step="1" min="1" placeholder="ex: 100">';
-    bbWrap.appendChild(bbLbl); bbWrap.appendChild(bbInpW);
-
     var potInp  = potInpW.querySelector('input');
     var callInp = callInpW.querySelector('input');
-    var effInp  = effInpW.querySelector('input');
-    var bbInp   = bbInpW.querySelector('input');
 
     if (isFinite(initialPot) && initialPot>0) potInp.value = String(initialPot);
     if (isFinite(initialCall) && initialCall>0) callInp.value = String(initialCall);
-    if (isFinite(initialEff) && initialEff>0)  effInp.value  = String(initialEff);
-    if (isFinite(initialBB)  && initialBB>0)   bbInp.value   = String(initialBB);
 
-    return { potWrap, callWrap, effWrap, bbWrap, potInput: potInp, callInput: callInp, effInput: effInp, bbInput: bbInp };
+    return { potWrap, callWrap, potInput: potInp, callInput: callInp };
   }
 
   // ===== RENDER DOS CONTROLES
@@ -300,23 +266,14 @@
     injRsw.appendChild(injCb); injRsw.appendChild(injSl);
     injWrap.appendChild(injLbl); injWrap.appendChild(injRsw);
 
-    // (2) Pot/A pagar/Efetivo/BB
+    // (2) Pot/A pagar
     var st0 = cfg.readState();
-    var pots= buildPotInputs(st0.potAtual, st0.toCall, st0.effStack, state.overrides.bb);
+    var pots= buildPotInputs(st0.potAtual, st0.toCall);
 
-    // (3) Botão OK (antigo Enviar)
+    // (3) Botão OK
     var sendBtn = el('button','raise-send-btn'); sendBtn.id='btn-raise-send'; sendBtn.type='button'; sendBtn.textContent='OK';
 
-    // (4) Toggle Slow Play
-    var spWrap = el('div','field');
-    var spLbl  = el('span','fld-label'); spLbl.textContent = 'Slow Play';
-    var spRsw  = el('label','rsw');
-    var spCb   = document.createElement('input'); spCb.type='checkbox'; spCb.id='rsw-slow';
-    var spSl   = el('span','slider');
-    spRsw.appendChild(spCb); spRsw.appendChild(spSl);
-    spWrap.appendChild(spLbl); spWrap.appendChild(spRsw);
-
-    // (5) Texto informativo
+    // (4) Texto informativo
     var infoTxt = el('div'); 
     infoTxt.id = 'eqStatus';
     infoTxt.className = 'mut';
@@ -326,28 +283,17 @@
     bar.appendChild(injWrap);
     bar.appendChild(pots.potWrap);
     bar.appendChild(pots.callWrap);
-    bar.appendChild(pots.effWrap);
-    bar.appendChild(pots.bbWrap);
     bar.appendChild(sendBtn);
-    bar.appendChild(spWrap);
     bar.appendChild(infoTxt);
     mount.appendChild(bar);
 
     // Estado inicial dos switches
     injCb.checked = !!state.injectDecision;
-    spCb.checked  = !!state.slowPlay;
 
     // Eventos
     injCb.addEventListener('change', function(){
       setInjectDecision(!!injCb.checked, { source:'user', restore:true });
       updateSendBtnLabel();
-    });
-    spCb.addEventListener('change', function(){
-      state.slowPlay = !!spCb.checked;
-      if (state._cfg) {
-        renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
-        updateSendBtnLabel();
-      }
     });
     if (pots.potInput) pots.potInput.addEventListener('input', function(){
       var v = Number(pots.potInput.value||0);
@@ -359,19 +305,9 @@
       state.overrides.toCall = isFinite(v)?v:0;
       if (state._cfg) { renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg); updateSendBtnLabel(); }
     });
-    if (pots.effInput) pots.effInput.addEventListener('input', function(){
-      var v = Number(pots.effInput.value||0);
-      state.overrides.effStack = isFinite(v)?v:undefined;
-      if (state._cfg) { renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg); updateSendBtnLabel(); }
-    });
-    if (pots.bbInput) pots.bbInput.addEventListener('input', function(){
-      var v = Number(pots.bbInput.value||0);
-      state.overrides.bb = isFinite(v)?v:undefined;
-      if (state._cfg) { renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg); updateSendBtnLabel(); }
-    });
     sendBtn.addEventListener('click', onEnviar);
 
-    return { injCb: injCb, slowCb: spCb, potInput: pots.potInput, callInput: pots.callInput, effInput: pots.effInput, bbInput: pots.bbInput, sendBtn: sendBtn };
+    return { injCb: injCb, potInput: pots.potInput, callInput: pots.callInput, sendBtn: sendBtn };
   }
 
   function setInjectDecision(flag, opts){
@@ -424,7 +360,6 @@
         <div class="decision-detail">
           BE ${result.bePct}% | EQ ${eqLabel} &nbsp;•&nbsp;
           Pot ${Number(ctx.potAtual||0).toFixed(0)} | A pagar ${Number(ctx.toCall||0).toFixed(0)}
-          ${result.effBB ? ` · Efetivo ${result.effBB} BB` : ''}
           ${result.recDetail ? ' · ' + result.recDetail : ''}
         </div>
       </div>
@@ -454,7 +389,6 @@
     try {
       if (state.elements.potInput)  state.elements.potInput.value  = '';
       if (state.elements.callInput) state.elements.callInput.value = '';
-      // não limpamos efetivo/BB por serem "constantes" da mesa
       state.overrides.potAtual = 0;
       state.overrides.toCall   = 0;
       if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
@@ -484,7 +418,6 @@
           <div>A pagar (fichas)</div><div><b>${ctx.toCall ? ctx.toCall.toFixed(0) : '—'}</b></div>
           <div>BE (pot odds)</div><div><b>${result.bePct}%</b></div>
           <div>Equity (MC)</div><div><b>${eqLabel}</b></div>
-          ${isFinite(result.effBB) ? `<div>Efetivo (BB)</div><div><b>${result.effBB}</b></div>` : ''}
           <div>Recomendação</div>
           <div><span id="po-rec" style="padding:2px 8px;border-radius:999px;border:1px solid #22304a">${recLabel}</span></div>
         </div>
@@ -505,7 +438,7 @@
     var r = potOddsBE(potAtual, toCall, rakePct, rakeCap);
     var bePct = r.bePct;
     var eq    = equityPct; // pode ser NaN
-    var choice = decideByRanges(eq, bePct, !!state.slowPlay);
+    var choice = decideByRanges(eq, bePct);
 
     return {
       bePct: bePct,
@@ -527,14 +460,6 @@
     var rakeCap  = (ctx.rakeCap===Infinity || ctx.rakeCap==null) ? Infinity : Number(ctx.rakeCap);
 
     var base = decideVsRaise(potAtual, toCall, equity, rakePct, rakeCap);
-
-    // Adiciona o cálculo de effBB que foi removido da política de range
-    var effStack = Number(ctx.effStack || NaN);
-    var bb = Number(ctx.bb || NaN);
-    if (isFinite(effStack) && effStack > 0 && isFinite(bb) && bb > 0) {
-        base.effBB = +(effStack / bb).toFixed(1);
-    }
-    
     return base;
   }
 
@@ -545,9 +470,7 @@
       toCall:   (state.overrides.toCall   != null ? state.overrides.toCall   : st.toCall),
       equityPct:(state.overrides.equityPct!= null ? state.overrides.equityPct: st.equityPct),
       rakePct:  (state.overrides.rakePct  != null ? state.overrides.rakePct  : st.rakePct),
-      rakeCap:  (state.overrides.rakeCap  != null ? state.overrides.rakeCap  : st.rakeCap),
-      effStack: (state.overrides.effStack != null ? state.overrides.effStack : st.effStack),
-      bb:       (state.overrides.bb != null ? state.overrides.bb : NaN)
+      rakeCap:  (state.overrides.rakeCap  != null ? state.overrides.rakeCap  : st.rakeCap)
     };
   }
 
@@ -679,17 +602,11 @@
       if ('useDecisionInjection' in patch) {
         setInjectDecision(!!patch.useDecisionInjection, { source:'code', restore:false });
       }
-      if ('slowPlay' in patch) {
-        state.slowPlay = !!patch.slowPlay;
-        if (state.elements.slowCb) state.elements.slowCb.checked = state.slowPlay;
-      }
       if ('potAtual'  in patch) state.overrides.potAtual  = (patch.potAtual==null?undefined:Number(patch.potAtual));
       if ('toCall'    in patch) state.overrides.toCall    = (patch.toCall==null?undefined:Number(patch.toCall));
       if ('equityPct' in patch) state.overrides.equityPct = (patch.equityPct==null?undefined:Number(patch.equityPct));
       if ('rakePct'   in patch) state.overrides.rakePct   = (patch.rakePct==null?undefined:Number(patch.rakePct));
       if ('rakeCap'   in patch) state.overrides.rakeCap   = (patch.rakeCap==null?undefined:Number(patch.rakeCap));
-      if ('effStack'  in patch) state.overrides.effStack  = (patch.effStack==null?undefined:Number(patch.effStack));
-      if ('bb'        in patch) { state.overrides.bb = (patch.bb==null?undefined:Number(patch.bb)); }
 
       if (state._cfg) renderPotOddsUI(buildCtxFromCurrent(state._cfg), state._cfg);
       updateSendBtnLabel();
