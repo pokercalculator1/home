@@ -1,5 +1,5 @@
 (() => {
-  // ================== PATCH: usar a 2ª .body (lado direito) ==================
+  // ================== PATCH:=================
   const q  = (s, r=document) => r.querySelector(s);
   const qq = (s, r=document) => Array.from(r.querySelectorAll(s));
 
