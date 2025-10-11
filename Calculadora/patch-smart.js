@@ -1,146 +1,148 @@
 // PATCH: "Houve Ação?" controla visibilidade + Botão Enviar para ação original e força o texto "OK"
-// VERSÃO FINAL 2: Corrige o TTS para voltar a funcionar e ler apenas a linha de recomendação.
+// VERSÃO FINAL 4: A barra de ferramentas só aparece após a seleção das 2 cartas do herói.
 (function () {
-  function $(s, r){ return (r||document).querySelector(s); }
-  function setDisp(el, show){ if (!el) return; el.style.display = show ? '' : 'none'; }
+    function $(s, r) { return (r || document).querySelector(s); }
+    function setDisp(el, show) { if (!el) return; el.style.display = show ? '' : 'none'; }
 
-  // --- Funções de TTS ---
-  function ttsEnabled(){
-    try { return !!(window.TTS && window.TTS.state && window.TTS.state.enabled && 'speechSynthesis' in window); }
-    catch(_) { return false; }
-  }
-  function ttsSay(text){
-    if (!text || text === '—' || text === 'Sem dados suficientes') return;
-    if (!ttsEnabled()) return;
-    try { speechSynthesis.cancel(); } catch(_){}
-    try { window.TTS.speak(text); } catch(_){}
-  }
+    // --- Funções de TTS e Leitura (sem alterações) ---
+    function ttsSay(text) {
+        if (!text || text === '—' || text === 'Sem dados suficientes') return;
+        try {
+            if (window.TTS && window.TTS.state && window.TTS.state.enabled) {
+                speechSynthesis.cancel();
+                window.TTS.speak(text);
+            }
+        } catch (e) {}
+    }
+    function getSRPText() {
+        const label = $('#srp-label');
+        return label ? label.textContent.trim() : '';
+    }
+    let srpObserver = null;
+    function ensureSRPObserver() {
+        if (srpObserver) return;
+        const box = $('#srp-box');
+        if (!box || !window.MutationObserver) return;
+        srpObserver = new MutationObserver(() => {
+            const cb = $('#rsw-inject');
+            if (cb && cb.checked) {
+                const txt = getSRPText();
+                if (txt) ttsSay('Sugestão: ' + txt + '.');
+            }
+        });
+        srpObserver.observe(box, { childList: true, subtree: true, characterData: true });
+    }
 
-  // --- FUNÇÃO getSRPText CORRIGIDA ---
-  // Agora ela busca APENAS o texto dentro do #srp-label
-  function getSRPText(){
-    const label = $('#srp-label');
-    return label ? label.textContent.trim() : '';
-  }
+    // --- Lógica Principal de Controle da Interface ---
+    function applyState(checked) {
+        setDisp($('#smart-rec-host'), checked);
+        setDisp($('#pcalc-sugestao'), !checked); // Esconde o painel Smart, mostra o original
+        setDisp($('#suggestOut'), !checked);
 
-  // Observa mudanças no #srp-box para falar sempre que atualizar
-  let srpObserver = null;
-  function ensureSRPObserver(){
-    if (srpObserver) return;
-    const box = $('#srp-box');
-    if (!box || !window.MutationObserver) return;
-    srpObserver = new MutationObserver(() => {
-      const cb = $('#rsw-inject');
-      if (cb && cb.checked) {
-        const txt = getSRPText();
-        if (txt) ttsSay('Sugestão: ' + txt + '.');
-      }
-    });
-    srpObserver.observe(box, { childList:true, subtree:true, characterData:true });
-    console.log('[patch] Vigia do TTS ativado.');
-  }
-
-  // --- FUNÇÃO applyState CORRIGIDA ---
-  // A lógica do TTS foi restaurada aqui
-  function applyState(checked){
-    setDisp($('#smart-rec-host'), checked);
-    setDisp($('#pcalc-sugestao'), false);
-    setDisp($('#suggestOut'), !checked);
-
-    if (checked) {
-      // Garante que o "vigia" do TTS seja ativado ao ligar a chave
-      ensureSRPObserver();
-      // Tenta ler a sugestão inicial (se já houver uma)
-      setTimeout(() => {
-        const txt = getSRPText();
-        if (txt) ttsSay('Sugestão: ' + txt + '.');
-      }, 250); // Um pequeno delay para dar tempo do painel carregar
-    }
-  }
-  
-  // --- LÓGICA CENTRAL DE RESET (sem alterações) ---
-  function forceBeDisplayToZero() {
-    try {
-      const potOddsContainer = $('#pcalc-sugestao .raise-potodds.card');
-      if (!potOddsContainer) return;
-      const labels = Array.from(potOddsContainer.querySelectorAll(':scope div'));
-      for (const label of labels) {
-        if ((label.textContent || '').trim().toLowerCase() === 'be (pot odds)') {
-          const valDiv = label.nextElementSibling;
-          if (valDiv) {
-            const bTag = valDiv.querySelector('b');
-            if (bTag && bTag.textContent !== '0.0%') bTag.textContent = '0.0%';
-          }
-          break; 
+        if (checked) {
+            ensureSRPObserver();
+            setTimeout(() => {
+                const txt = getSRPText();
+                if (txt) ttsSay('Sugestão: ' + txt + '.');
+            }, 250);
         }
-      }
-    } catch (e) {}
-  }
-  function resetAndTurnOff() {
-    const potInput = $('#inp-pot');
-    const callInput = $('#inp-call');
-    if (potInput) potInput.value = '';
-    if (callInput) callInput.value = '';
-    const cb = $('#rsw-inject');
-    if (cb) cb.checked = false;
-    applyState(false);
-    forceBeDisplayToZero();
-  }
+    }
 
-  function bind(){
-    const cb = $('#rsw-inject');
-    if (cb && !cb._srpBound){
-      cb.addEventListener('change', () => {
-        const isChecked = !!cb.checked;
-        applyState(isChecked);
+    function forceBeDisplayToZero() {
+        try {
+            const potOddsContainer = $('#pcalc-sugestao .raise-potodds.card');
+            if (!potOddsContainer) return;
+            const labels = Array.from(potOddsContainer.querySelectorAll(':scope div'));
+            for (const label of labels) {
+                if ((label.textContent || '').trim().toLowerCase() === 'be (pot odds)') {
+                    const valDiv = label.nextElementSibling;
+                    if (valDiv) {
+                        const bTag = valDiv.querySelector('b');
+                        if (bTag && bTag.textContent !== '0.0%') bTag.textContent = '0.0%';
+                    }
+                    break;
+                }
+            }
+        } catch (e) {}
+    }
+
+    function resetAndTurnOff() {
         const potInput = $('#inp-pot');
         const callInput = $('#inp-call');
-        if (isChecked) {
-          if (potInput) potInput.value = '0';
-          if (callInput) callInput.value = '0';
-          forceBeDisplayToZero(); 
-        } else {
-          if (potInput) potInput.value = '';
-          if (callInput) callInput.value = '';
-          forceBeDisplayToZero();
+        if (potInput) potInput.value = '';
+        if (callInput) callInput.value = '';
+        const cb = $('#rsw-inject');
+        if (cb) cb.checked = false;
+        applyState(false);
+        forceBeDisplayToZero();
+    }
+
+    // ================== NOVA LÓGICA CENTRAL ==================
+    // "Vigia" que monitora as cartas do herói para mostrar/esconder a barra de ferramentas
+    let cardWatcherActive = false;
+    function watchHeroCardsAndToggleToolbar() {
+        if (cardWatcherActive) return;
+
+        const card0 = $('#h0');
+        const card1 = $('#h1');
+        const toolbar = $('#pcalc-toolbar');
+
+        if (!card0 || !card1 || !toolbar) return; // Aguarda os elementos existirem
+
+        const checkCardsAndToggle = () => {
+            const bothCardsFilled = card0.classList.contains('filled') && card1.classList.contains('filled');
+            setDisp(toolbar, bothCardsFilled);
+        };
+
+        const observer = new MutationObserver(checkCardsAndToggle);
+        observer.observe(card0, { attributes: true, attributeFilter: ['class'] });
+        observer.observe(card1, { attributes: true, attributeFilter: ['class'] });
+
+        // Estado inicial
+        checkCardsAndToggle();
+        cardWatcherActive = true;
+        console.log('[patch] Vigia das cartas do herói ativado.');
+    }
+    // ==========================================================
+
+    function bind() {
+        // Ativa o novo vigia de cartas
+        watchHeroCardsAndToggleToolbar();
+
+        const cb = $('#rsw-inject');
+        if (cb && !cb._srpBound) {
+            cb.addEventListener('change', () => {
+                const isChecked = !!cb.checked;
+                applyState(isChecked);
+                const potInput = $('#inp-pot');
+                const callInput = $('#inp-call');
+                if (isChecked) {
+                    if (potInput) potInput.value = '0';
+                    if (callInput) callInput.value = '0';
+                    forceBeDisplayToZero();
+                } else {
+                    if (potInput) potInput.value = '';
+                    if (callInput) callInput.value = '';
+                    forceBeDisplayToZero();
+                }
+            });
+            cb._srpBound = true;
         }
-      });
-      cb._srpBound = true;
-    }
 
-    const sendBtn = $('#btn-raise-send');
-    if (sendBtn) {
-        if (!sendBtn._sendBound) {
-            sendBtn.addEventListener('click', (event) => {
-                event.preventDefault();
-                event.stopImmediatePropagation();
+        const sendBtn = $('#btn-raise-send');
+        if (sendBtn && !sendBtn._sendBound) {
+            sendBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopImmediatePropagation();
                 resetAndTurnOff();
-            }, true);
-            sendBtn._sendBound = true;
-        }
-        if (!sendBtn._textObserverBound) {
-            const observer = new MutationObserver(() => {
-                if (sendBtn.textContent !== 'OK') sendBtn.textContent = 'OK';
-            });
-            observer.observe(sendBtn, { childList: true });
-            sendBtn.textContent = 'OK';
-            sendBtn._textObserverBound = true;
-        }
-    }
-  }
+            }, true);
+            sendBtn._sendBound = true;
+        }
+    }
 
-  // --- INICIALIZAÇÃO DO SCRIPT ---
-  resetAndTurnOff();
-  bind();
-
-  const mo = new MutationObserver(() => { bind(); });
-  mo.observe(document.documentElement, { childList:true, subtree:true });
-
-  let tries = 0;
-  const t = setInterval(() => {
-    bind();
-    if (++tries > 40) clearInterval(t);
-  }, 250);
-
-  console.log('[patch] TTS corrigido e ciclo de uso completo.');
+    // --- INICIALIZAÇÃO DO SCRIPT ---
+    resetAndTurnOff();
+    bind();
+    const mo = new MutationObserver(() => bind());
+    mo.observe(document.documentElement, { childList: true, subtree: true });
 })();
