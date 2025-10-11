@@ -388,7 +388,7 @@
     function snapshot(){
       const be = readBE();
 
-      // ================== MODIFICAÇÃO COMEÇA AQUI ==================
+      // ================== MODIFICAÇÃO DO CÁLCULO (INÍCIO) ==================
       // Se o BE não for um número válido ou for zero, paramos tudo.
       if (!isFinite(be) || be <= 0) {
         // Retornamos um objeto "vazio" para limpar o painel.
@@ -398,7 +398,7 @@
           fBoard: 1, fMulti: 1, eqSmart: NaN, immune: false
         };
       }
-      // ================== MODIFICAÇÃO TERMINA AQUI ==================
+      // ================== MODIFICAÇÃO DO CÁLCULO (FIM) ==================
 
       const eq = readEquityMC();
       const pot = readPot();
