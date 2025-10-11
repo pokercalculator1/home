@@ -1,5 +1,5 @@
 // PATCH: "Houve Ação?" controla visibilidade + Botão Enviar para ação original e força o texto "OK"
-// VERSÃO FINAL 4: A barra de ferramentas só aparece após a seleção das 2 cartas do herói.
+// VERSÃO FINAL 5: Restaura o "vigia" que força o texto do botão a ser sempre "OK".
 (function () {
     function $(s, r) { return (r || document).querySelector(s); }
     function setDisp(el, show) { if (!el) return; el.style.display = show ? '' : 'none'; }
@@ -36,7 +36,7 @@
     // --- Lógica Principal de Controle da Interface ---
     function applyState(checked) {
         setDisp($('#smart-rec-host'), checked);
-        setDisp($('#pcalc-sugestao'), !checked); // Esconde o painel Smart, mostra o original
+        setDisp($('#pcalc-sugestao'), !checked);
         setDisp($('#suggestOut'), !checked);
 
         if (checked) {
@@ -77,17 +77,13 @@
         forceBeDisplayToZero();
     }
 
-    // ================== NOVA LÓGICA CENTRAL ==================
-    // "Vigia" que monitora as cartas do herói para mostrar/esconder a barra de ferramentas
     let cardWatcherActive = false;
     function watchHeroCardsAndToggleToolbar() {
         if (cardWatcherActive) return;
-
         const card0 = $('#h0');
         const card1 = $('#h1');
         const toolbar = $('#pcalc-toolbar');
-
-        if (!card0 || !card1 || !toolbar) return; // Aguarda os elementos existirem
+        if (!card0 || !card1 || !toolbar) return;
 
         const checkCardsAndToggle = () => {
             const bothCardsFilled = card0.classList.contains('filled') && card1.classList.contains('filled');
@@ -98,15 +94,12 @@
         observer.observe(card0, { attributes: true, attributeFilter: ['class'] });
         observer.observe(card1, { attributes: true, attributeFilter: ['class'] });
 
-        // Estado inicial
         checkCardsAndToggle();
         cardWatcherActive = true;
         console.log('[patch] Vigia das cartas do herói ativado.');
     }
-    // ==========================================================
 
     function bind() {
-        // Ativa o novo vigia de cartas
         watchHeroCardsAndToggleToolbar();
 
         const cb = $('#rsw-inject');
@@ -130,13 +123,31 @@
         }
 
         const sendBtn = $('#btn-raise-send');
-        if (sendBtn && !sendBtn._sendBound) {
-            sendBtn.addEventListener('click', (event) => {
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                resetAndTurnOff();
-            }, true);
-            sendBtn._sendBound = true;
+        if (sendBtn) {
+            // Parte 1: Intercepta o clique (sem alterações)
+            if (!sendBtn._sendBound) {
+                sendBtn.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    resetAndTurnOff();
+                }, true);
+                sendBtn._sendBound = true;
+            }
+
+            // ================== CÓDIGO RESTAURADO ==================
+            // Parte 2: Força o texto do botão a ser sempre "OK"
+            if (!sendBtn._textObserverBound) {
+                const observer = new MutationObserver(() => {
+                    if (sendBtn.textContent !== 'OK') {
+                        sendBtn.textContent = 'OK';
+                    }
+                });
+                observer.observe(sendBtn, { childList: true, characterData: true });
+                sendBtn.textContent = 'OK'; // Força o texto inicial
+                sendBtn._textObserverBound = true;
+                console.log('[patch] Vigia do texto do botão OK restaurado.');
+            }
+            // =======================================================
         }
     }
 
