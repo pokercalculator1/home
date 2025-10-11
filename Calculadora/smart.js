@@ -1,5 +1,5 @@
 (() => {
-  // ================== PATCH:==================
+  // ================== PATCH: usar a 2ª .body (lado direito) ==================
   const q  = (s, r=document) => r.querySelector(s);
   const qq = (s, r=document) => Array.from(r.querySelectorAll(s));
 
@@ -346,27 +346,28 @@
       p.id = 'smart-rec-panel';
       p.style.cssText = 'background:#0b1324;color:#e5e7eb;border:1px solid #22304a;border-radius:12px;padding:14px 16px;min-width:280px;box-shadow:0 8px 22px rgba(0,0,0,.25);font:14px/1.3 system-ui,Segoe UI,Roboto,Helvetica,Arial;';
 
+      // HTML reformatado para garantir que não haja espaços extras que quebrem o layout
       p.innerHTML = `
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-          <strong style="font-size:15px">Recomendação (Smart)</strong>
-          <span id="srp-status" style="margin-left:auto;opacity:.8;font-size:12px">—</span>
-        </div>
-        <div id="srp-box" style="background:transparent;padding:8px 10px;border-radius:8px;margin-bottom:10px">
-          <div id="srp-label" style="font-weight:700">—</div>
-          <div style="opacity:.9;margin-top:4px">Equity Smart = Equity(MC) × fatores (board, multiway). <small>(imune em mãos ~nuts)</small></div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr auto;gap:6px 10px">
-          <div>Equity (MC)</div><div><b id="srp-eq">—</b></div>
-          <div>BE (pot odds)</div><div><b id="srp-be">—</b></div>
-          <div>Equity Smart</div><div><b id="srp-smart">—</b></div>
-          <div>Fator Board</div><div><span id="srp-fb">—</span> <span id="srp-bt" style="margin-left:6px;padding:2px 8px;border:1px solid rgba(16,185,129,.35);border-radius:999px;font-size:1.5vh"></span></div>
-          <div>Fator Multiway</div><div><span id="srp-fm">—</span> <span id="srp-vil" style="margin-left:6px;padding:2px 8px;border:1px solid rgba(16,185,129,.35);border-radius:999px;font-size:1.5vh"></span></div>
-        </div>
-        <div style="margin-top:8px;display:grid;grid-template-columns:1fr auto;gap:6px 10px">
-          <div>Pot</div><div id="srp-pot">—</div>
-          <div>A pagar</div><div id="srp-call">—</div>
-        </div>
-      `;
+<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+<strong style="font-size:15px">Recomendação (Smart)</strong>
+<span id="srp-status" style="margin-left:auto;opacity:.8;font-size:12px">—</span>
+</div>
+<div id="srp-box" style="background:transparent;padding:8px 10px;border-radius:8px;margin-bottom:10px">
+<div id="srp-label" style="font-weight:700">—</div>
+<div style="opacity:.9;margin-top:4px">Equity Smart = Equity(MC) × fatores (board, multiway). <small>(imune em mãos ~nuts)</small></div>
+</div>
+<div style="display:grid;grid-template-columns:1fr auto;gap:6px 10px">
+<div>Equity (MC)</div><div><b id="srp-eq">—</b></div>
+<div>BE (pot odds)</div><div><b id="srp-be">—</b></div>
+<div>Equity Smart</div><div><b id="srp-smart">—</b></div>
+<div>Fator Board</div><div><span id="srp-fb">—</span> <span id="srp-bt" style="margin-left:6px;padding:2px 8px;border:1px solid rgba(16,185,129,.35);border-radius:999px;font-size:1.5vh"></span></div>
+<div>Fator Multiway</div><div><span id="srp-fm">—</span> <span id="srp-vil" style="margin-left:6px;padding:2px 8px;border:1px solid rgba(16,185,129,.35);border-radius:999px;font-size:1.5vh"></span></div>
+</div>
+<div style="margin-top:8px;display:grid;grid-template-columns:1fr auto;gap:6px 10px">
+<div>Pot</div><div id="srp-pot">—</div>
+<div>A pagar</div><div id="srp-call">—</div>
+</div>
+      `.trim();
       host.appendChild(p);
     }
 
