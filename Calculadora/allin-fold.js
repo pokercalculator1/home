@@ -51,6 +51,9 @@
       document.body.classList.remove('aif-lock-toolbar');
       const card = $('#aif-card'); if (card) card.classList.remove('aif-active');
       try { speechSynthesis.cancel(); } catch(_){}
+      if (AIF_ND_OBS){ try{AIF_ND_OBS.disconnect();}catch(_){}; AIF_ND_OBS = null; }
+      if (AIF_ANCHOR && AIF_ANCHOR.parentNode){ AIF_ANCHOR.parentNode.removeChild(AIF_ANCHOR); }
+      AIF_ANCHOR = null;
     }
   };
   window.__AIF = AIF;
@@ -71,9 +74,6 @@
     .aif-slider:before { content:""; position:absolute; height:20px; width:20px; left:3px; top:3px; background:#e5e7eb; border-radius:999px; transition:.2s ease; }
     .aif-switch input:checked + .aif-slider { background:#991b1b; box-shadow:inset 0 0 0 2px #f87171; }
     .aif-switch input:checked + .aif-slider:before { transform:translateX(22px); }
-
-    body.aif-lock-toolbar #pcalc-toolbar { display:none !important; }
-    body.aif-lock-toolbar .decision:not(.aif-decision) { display:none !important; }
 
     .decision.aif-decision {
       border:1px solid #ef4444; border-radius:10px; padding:10px 12px; background:#1b0a0a;
@@ -118,9 +118,71 @@
     card.classList.toggle('aif-active', wasOn);
   }
 
-  // ===== TTS (fala apenas "sugestão aposte tudo" / "sugestão desista") =====
+  // ===== helpers de posicionamento/escopo =====
+  function getRightBody() {
+    const bodies = $$('.body');
+    return bodies[1] || document.body;
+  }
+  function findNativeDecision(){
+    const rb = getRightBody();
+    const cand = rb.querySelector('.decision:not(.aif-decision)');
+    return cand || null;
+  }
+
+  // ===== Âncora invisível antes da .decision nativa =====
+  let AIF_ANCHOR = null;
+  let AIF_ND_OBS = null;
+
+  function ensureAnchor(cb){
+    const rb = getRightBody();
+    const nd = findNativeDecision();
+    if (nd){
+      if (!AIF_ANCHOR){
+        AIF_ANCHOR = document.createElement('div');
+        AIF_ANCHOR.id = 'aif-anchor';
+        AIF_ANCHOR.style.display = 'none';
+        nd.parentNode.insertBefore(AIF_ANCHOR, nd); // ANTES da nativa
+      }
+      if (typeof cb === 'function') cb(AIF_ANCHOR);
+      return;
+    }
+    if (AIF_ND_OBS) return;
+    AIF_ND_OBS = new MutationObserver(() => {
+      const nd2 = findNativeDecision();
+      if (nd2){
+        if (!AIF_ANCHOR){
+          AIF_ANCHOR = document.createElement('div');
+          AIF_ANCHOR.id = 'aif-anchor';
+          AIF_ANCHOR.style.display = 'none';
+          nd2.parentNode.insertBefore(AIF_ANCHOR, nd2);
+        }
+        try { AIF_ND_OBS.disconnect(); } catch(_){}
+        AIF_ND_OBS = null;
+        if (typeof cb === 'function') cb(AIF_ANCHOR);
+      }
+    });
+    AIF_ND_OBS.observe(rb, {childList:true, subtree:true});
+  }
+
+  function hideNativeDecision(){
+    const nd = findNativeDecision();
+    if (nd){
+      nd.setAttribute('data-aif-hidden','1');
+      nd.style.setProperty('display','none','important');
+    }
+  }
+  function showNativeDecision(){
+    const nd = findNativeDecision();
+    if (nd){
+      nd.style.removeProperty('display');
+      nd.removeAttribute('data-aif-hidden');
+    }
+  }
+  function removeAIFDecision(){ $$('.decision.aif-decision').forEach(el => el.remove()); }
+
+  // ===== TTS (fala curta) =====
   let lastSpokenKey = null;
-  function speakSuggestion(kind){ // kind: 'allin' | 'fold'
+  function speakSuggestion(kind){
     try{
       const phrase = kind === 'allin' ? 'sugestão , aposte tudo' : 'sugestão , desista';
       if (phrase === lastSpokenKey) return;
@@ -136,7 +198,7 @@
     }catch(_){}
   }
 
-  // ===== Suited-aware: leitura de cartas com naipe =====
+  // ===== Suited-aware leitura das cartas =====
   const ORDER = 'AKQJT98765432';
   const SUIT_RE = /[♠♥♦♣]/;
   const SUIT_MAP = { '♠':'s', '♥':'h', '♦':'d', '♣':'c' };
@@ -151,10 +213,9 @@
     const suit = sm ? SUIT_MAP[sm[0]] : null;
     return { rank, suit };
   }
-
   function canonicalCombo(c1, c2){
     if (!c1 || !c2) return null;
-    if (c1.rank === c2.rank) return c1.rank + c2.rank; // par: TT
+    if (c1.rank === c2.rank) return c1.rank + c2.rank;
     const rA = ORDER.indexOf(c1.rank);
     const rB = ORDER.indexOf(c2.rank);
     const [hi, lo] = (rA <= rB) ? [c1, c2] : [c2, c1];
@@ -162,13 +223,11 @@
     const suffix = suitedKnown ? (hi.suit === lo.suit ? 's' : 'o') : '';
     return hi.rank + lo.rank + suffix; // AKs / AKo / AK
   }
-
   function readHoleComboStrict(){
     const c1 = parseSlotCard($('#h0'));
     const c2 = parseSlotCard($('#h1'));
     return canonicalCombo(c1, c2);
   }
-
   function hasTwoCards(){ return !!readHoleComboStrict(); }
 
   // ===== Equity =====
@@ -187,7 +246,6 @@
     return m ? parseFloat(m[1].replace(',','.')) : NaN;
   }
 
-  // ===== helper: verifica range com fallback se combo veio sem "s/o"
   function inPushRange(combo){
     if (!combo) return false;
     if (CFG.pushHands.has(combo)) return true;
@@ -201,7 +259,7 @@
 
   // ===== Decisão =====
   function decide(){
-    const combo = readHoleComboStrict();   // AKs / AKo / TT / (AK se naipe desconhecido)
+    const combo = readHoleComboStrict();
     const eq    = readEquityPct();
 
     if (inPushRange(combo)) {
@@ -213,83 +271,9 @@
     return { pick:'fold', reason:`equity ${isFinite(eq)?eq.toFixed(1)+'%':'indisponível'}`, combo, eq };
   }
 
-  // ===== Esconder/mostrar decisões nativas =====
-  function hideNative(){
-    const sels = [
-      '.decision', '.decision.glow', '.decision.good', '.decision.warn', '.decision.ok',
-      '#smart-rec-host .decision', '#pcalc-sugestao .decision', '#srp-box .decision',
-      '.raise-suggest', '.suggestOut', '.pcalc-sugestao'
-    ];
-    sels.forEach(sel => {
-      $$(sel).forEach(node => {
-        if (!node.classList.contains('aif-decision')) {
-          node.setAttribute('data-aif-hidden','1');
-          node.style.setProperty('display','none','important');
-        }
-      });
-    });
-  }
-  function showNative(){
-    $$('[data-aif-hidden="1"]').forEach(n => { n.removeAttribute('data-aif-hidden'); n.style.removeProperty('display'); });
-  }
-
-  function removeAIFDecision(){ $$('.decision.aif-decision').forEach(el => el.remove()); }
-
-  function mountPoint(){
-    return $$('.body')[1] || $('#srp-box') || $('#pcalc-sugestao') || document.body;
-  }
-
-  // ===== Render (com cartão neutro quando sem cartas) =====
-  function render(force=false){
-    if (!document.body.classList.contains('aif-lock-toolbar')) return;
-    hideNative();
-
-    const comboPresent = hasTwoCards();
-
-    if (!comboPresent){
-      const sigKey = 'nocards';
-      if (!force && sigKey === AIF.lastSig) return;
-      AIF.lastSig = sigKey;
-
-      removeAIFDecision();
-      const box = document.createElement('div');
-      box.className = 'decision aif-decision';
-      box.innerHTML = `
-        <div class="decision-title ok">AGUARDANDO CARTAS</div>
-        <div class="decision-detail">Selecione suas cartas para gerar a recomendação do modo tudo ou nada.</div>
-      `;
-      const mp = mountPoint();
-      if (mp.firstChild) mp.insertBefore(box, mp.firstChild); else mp.appendChild(box);
-      // Sem TTS neste estado
-      return;
-    }
-
-    // fluxo normal (com cartas)
-    const st  = decide();
-    const sig = `${st.pick}|${st.combo||'NA'}|${isFinite(st.eq)?st.eq.toFixed(1):'NA'}`;
-    if (!force && sig === AIF.lastSig) return;
-    AIF.lastSig = sig;
-
-    removeAIFDecision();
-    const box = document.createElement('div');
-    box.className = 'decision aif-decision';
-
-    if (st.pick === 'allin'){
-      box.innerHTML = `<div class="decision-title ok">APOSTE TUDO</div>
-        <div class="decision-detail">Modo tudo ou nada — ${st.reason}.</div>`;
-      speakSuggestion('allin');
-    } else {
-      box.innerHTML = `<div class="decision-title warn">DESISTA</div>
-        <div class="decision-detail">Modo tudo ou nada — ${st.reason}.</div>`;
-      speakSuggestion('fold');
-    }
-
-    const mp = mountPoint();
-    if (mp.firstChild) mp.insertBefore(box, mp.firstChild); else mp.appendChild(box);
-  }
-
-  // ===== Toolbar lock =====
+  // ===== Toolbar lock + política de visibilidade =====
   let tbGuard = null;
+
   function lockToolbar(on){
     const tb = $('#pcalc-toolbar'); if (!tb) return;
     if (on){
@@ -303,8 +287,63 @@
       document.body.classList.remove('aif-lock-toolbar');
       if (tbGuard) { try{tbGuard.disconnect();}catch(_){} }
       tbGuard = null;
-      tb.style.removeProperty('display');
+      // <<< não libera automaticamente: respeita regra "precisa ter cartas"
+      setToolbarVisibility();
     }
+  }
+
+  // NOVO: Só mostra toolbar quando MODO OFF e há 2 cartas
+  function setToolbarVisibility(){
+    const tb = $('#pcalc-toolbar'); if (!tb) return;
+    const modeOn = document.body.classList.contains('aif-lock-toolbar');
+    const show = !modeOn && hasTwoCards();
+    if (show){
+      tb.style.removeProperty('display');
+    } else {
+      tb.style.display = 'none';
+    }
+  }
+
+  // ===== Render: só quando existir anchor (garante posição) =====
+  function render(force=false){
+    if (!document.body.classList.contains('aif-lock-toolbar')) return;
+
+    ensureAnchor(() => {
+      const comboPresent = hasTwoCards();
+
+      const st  = comboPresent ? decide() : null;
+      const sig = comboPresent
+        ? `${st.pick}|${st.combo||'NA'}|${isFinite(st.eq)?st.eq.toFixed(1):'NA'}`
+        : 'nocards';
+
+      if (!force && sig === AIF.lastSig) return;
+      AIF.lastSig = sig;
+
+      removeAIFDecision();
+
+      const box = document.createElement('div');
+      box.className = 'decision aif-decision';
+
+      if (!comboPresent){
+        box.innerHTML = `
+          <div class="decision-title ok">AGUARDANDO CARTAS</div>
+          <div class="decision-detail">Selecione suas cartas para gerar a recomendação do modo tudo ou nada.</div>
+        `;
+      } else if (st.pick === 'allin'){
+        box.innerHTML = `<div class="decision-title ok">APOSTE TUDO</div>
+          <div class="decision-detail">Modo tudo ou nada — ${st.reason}.</div>`;
+        speakSuggestion('allin');
+      } else {
+        box.innerHTML = `<div class="decision-title warn">DESISTA</div>
+          <div class="decision-detail">Modo tudo ou nada — ${st.reason}.</div>`;
+        speakSuggestion('fold');
+      }
+
+      if (AIF_ANCHOR && AIF_ANCHOR.parentNode){
+        AIF_ANCHOR.parentNode.insertBefore(box, AIF_ANCHOR.nextSibling);
+        hideNativeDecision();
+      }
+    });
   }
 
   // ===== Toggle =====
@@ -316,40 +355,67 @@
     toggle.checked = !!on;
     card && card.classList.toggle('aif-active', !!on);
     lockToolbar(!!on);
+
     if (on){
-      if (speak) { try{ speechSynthesis.cancel(); }catch(_){}
+      if (speak) {
+        try{ speechSynthesis.cancel(); }catch(_){}
         const s = speechSynthesis, u = new SpeechSynthesisUtterance('Modo tudo ou nada ativado');
         const v = s.getVoices().find(v=>/pt(-|_)br/i.test(v.lang)) || s.getVoices().find(v=>/^pt/i.test(v.lang));
         if (v) u.voice=v; u.rate=1; u.pitch=1; u.volume=1; s.speak(u);
       }
-      render(true);
+      ensureAnchor(() => { render(true); });
     } else {
       removeAIFDecision();
-      showNative();
+      showNativeDecision();
       AIF.lastSig = null;
       try { speechSynthesis.cancel(); } catch(_){}
       lastSpokenKey = null;
+
+      if (AIF_ND_OBS){ try{AIF_ND_OBS.disconnect();}catch(_){}; AIF_ND_OBS = null; }
+      if (AIF_ANCHOR && AIF_ANCHOR.parentNode){ AIF_ANCHOR.parentNode.removeChild(AIF_ANCHOR); }
+      AIF_ANCHOR = null;
+
+      // aplica política de visibilidade da toolbar ao desligar
+      setToolbarVisibility();
     }
   }
   toggle.addEventListener('change', () => setON(toggle.checked));
 
-  // ===== Painel sempre visível (sem desligar ao faltar cartas) =====
+  // ===== Painel do toggle sempre visível =====
   function updateCardVisibility(){
     if (!wrap) return;
-    wrap.style.removeProperty('display'); // sempre visível
+    wrap.style.removeProperty('display');
   }
 
-  // ===== Loops =====
+  // ===== Loop: render do AIF quando ON =====
   const idRender = setInterval(() => {
     if (document.body && document.body.classList.contains('aif-lock-toolbar')) render(false);
   }, CFG.pollMs);
   AIF.timers.push(idRender);
 
-  // (Sem necessidade do loop de visibilidade; painel é sempre visível)
+  // ===== NOVO: ticker para controlar a toolbar quando MODO OFF =====
+  const idCardWatch = setInterval(() => {
+    // só aplica quando modo All-in/Fold está DESLIGADO
+    if (!document.body.classList.contains('aif-lock-toolbar')) {
+      setToolbarVisibility();
+    }
+  }, CFG.cardPollMs);
+  AIF.timers.push(idCardWatch);
+
+  // Se existir botão "Limpar tudo", garanta que a toolbar siga a regra ao limpar
+  if (btnClear){
+    btnClear.addEventListener('click', () => {
+      setTimeout(setToolbarVisibility, 0);
+    });
+  }
+
   updateCardVisibility();
 
   // ===== Inicializa =====
   setON(!!($('#aif-toggle') && $('#aif-toggle').checked), false);
+  // aplica regra inicial (se estiver OFF e sem cartas, barra fica oculta)
+  setToolbarVisibility();
 
-  console.info('[AIF] Suited-aware ON + painel sempre visível + cartão neutro sem cartas.');
+  console.info('[AIF] ON — toolbar escondida no modo ON; no modo OFF só aparece com 2 cartas.');
 })();
+
