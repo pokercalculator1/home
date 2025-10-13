@@ -1,4 +1,3 @@
-
 (() => {
   // ===== encerra versões antigas =====
   if (window.__AIF && typeof window.__AIF.cleanup === 'function') {
@@ -14,19 +13,14 @@
     pushHands: new Set([
       // Pairs 22+
       "22","33","44","55","66","77","88","99","TT","JJ","QQ","KK","AA",
-
       // A suited A2s–A9s + ATs+
       "A2s","A3s","A4s","A5s","A6s","A7s","A8s","A9s","ATs","AJs","AQs","AKs",
-
       // Broadways suited
       "KQs","KJs","KTs","QJs","QTs","JTs",
-
       // K/Q/J9 suited
       "K9s","Q9s","J9s",
-
       // Suited connectors
       "T9s","98s","87s","76s","65s",
-
       // Offsuit (conservador)
       "AKo","AQo","AJo","ATo","KQo","QJo","JTo"
     ]),
@@ -287,12 +281,11 @@
       document.body.classList.remove('aif-lock-toolbar');
       if (tbGuard) { try{tbGuard.disconnect();}catch(_){} }
       tbGuard = null;
-      // <<< não libera automaticamente: respeita regra "precisa ter cartas"
       setToolbarVisibility();
     }
   }
 
-  // NOVO: Só mostra toolbar quando MODO OFF e há 2 cartas
+  // Só mostra toolbar quando MODO OFF e há 2 cartas
   function setToolbarVisibility(){
     const tb = $('#pcalc-toolbar'); if (!tb) return;
     const modeOn = document.body.classList.contains('aif-lock-toolbar');
@@ -308,13 +301,17 @@
   function render(force=false){
     if (!document.body.classList.contains('aif-lock-toolbar')) return;
 
-    ensureAnchor(() => {
-      const comboPresent = hasTwoCards();
+    const comboPresent = hasTwoCards();
+    if (!comboPresent){
+      // sem 2 cartas: força OFF, limpa painel e oculta wrap
+      setON(false, false);
+      removeAIFDecision();
+      return;
+    }
 
-      const st  = comboPresent ? decide() : null;
-      const sig = comboPresent
-        ? `${st.pick}|${st.combo||'NA'}|${isFinite(st.eq)?st.eq.toFixed(1):'NA'}`
-        : 'nocards';
+    ensureAnchor(() => {
+      const st  = decide();
+      const sig = `${st.pick}|${st.combo||'NA'}|${isFinite(st.eq)?st.eq.toFixed(1):'NA'}`;
 
       if (!force && sig === AIF.lastSig) return;
       AIF.lastSig = sig;
@@ -324,12 +321,7 @@
       const box = document.createElement('div');
       box.className = 'decision aif-decision';
 
-      if (!comboPresent){
-        box.innerHTML = `
-          <div class="decision-title ok">AGUARDANDO CARTAS</div>
-          <div class="decision-detail">Selecione suas cartas para gerar a recomendação do modo tudo ou nada.</div>
-        `;
-      } else if (st.pick === 'allin'){
+      if (st.pick === 'allin'){
         box.innerHTML = `<div class="decision-title ok">APOSTE TUDO</div>
           <div class="decision-detail">Modo tudo ou nada — ${st.reason}.</div>`;
         speakSuggestion('allin');
@@ -352,6 +344,9 @@
   if (!toggle) { console.warn('[AIF] toggle não encontrado.'); return; }
 
   function setON(on, speak=true){
+    // BLOQUEIO: não permite ligar sem 2 cartas
+    if (on && !hasTwoCards()) on = false;
+
     toggle.checked = !!on;
     card && card.classList.toggle('aif-active', !!on);
     lockToolbar(!!on);
@@ -375,16 +370,22 @@
       if (AIF_ANCHOR && AIF_ANCHOR.parentNode){ AIF_ANCHOR.parentNode.removeChild(AIF_ANCHOR); }
       AIF_ANCHOR = null;
 
-      // aplica política de visibilidade da toolbar ao desligar
       setToolbarVisibility();
+      updateCardVisibility();
     }
   }
   toggle.addEventListener('change', () => setON(toggle.checked));
 
-  // ===== Painel do toggle sempre visível =====
+  // ===== VISIBILIDADE DO CARTÃO: só com 2 cartas (e força OFF se faltar) =====
   function updateCardVisibility(){
     if (!wrap) return;
-    wrap.style.removeProperty('display');
+    const have2 = hasTwoCards();
+    if (have2){
+      wrap.style.removeProperty('display');
+    } else {
+      wrap.style.display = 'none';
+      if (toggle && toggle.checked) setON(false, false);
+    }
   }
 
   // ===== Loop: render do AIF quando ON =====
@@ -393,28 +394,34 @@
   }, CFG.pollMs);
   AIF.timers.push(idRender);
 
-  // ===== NOVO: ticker para controlar a toolbar quando MODO OFF =====
+  // ===== Watcher geral: cartão + toolbar mesmo quando ON =====
   const idCardWatch = setInterval(() => {
-    // só aplica quando modo All-in/Fold está DESLIGADO
+    // Se perdeu carta, oculta wrap e desliga o modo
+    if (!hasTwoCards()){
+      if (toggle && toggle.checked) setON(false, false);
+    }
+    updateCardVisibility();
+    // toolbar só aparece quando OFF e com 2 cartas
     if (!document.body.classList.contains('aif-lock-toolbar')) {
       setToolbarVisibility();
     }
   }, CFG.cardPollMs);
   AIF.timers.push(idCardWatch);
 
-  // Se existir botão "Limpar tudo", garanta que a toolbar siga a regra ao limpar
+  // Limpar tudo respeita a regra
   if (btnClear){
     btnClear.addEventListener('click', () => {
-      setTimeout(setToolbarVisibility, 0);
+      setTimeout(() => {
+        updateCardVisibility();
+        setToolbarVisibility();
+      }, 0);
     });
   }
 
-  updateCardVisibility();
-
   // ===== Inicializa =====
   setON(!!($('#aif-toggle') && $('#aif-toggle').checked), false);
-  // aplica regra inicial (se estiver OFF e sem cartas, barra fica oculta)
+  updateCardVisibility();
   setToolbarVisibility();
 
-  console.info('[AIF] ON — toolbar escondida no modo ON; no modo OFF só aparece com 2 cartas.');
+  console.info('[AIF] Regras ativas — wrap só com 2 cartas; se perder carta, wrap some e modo desliga.');
 })();
