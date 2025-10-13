@@ -1,3 +1,4 @@
+
 (() => {
   // ===== encerra versões antigas =====
   if (window.__AIF && typeof window.__AIF.cleanup === 'function') {
@@ -9,9 +10,25 @@
 
   // ===== Config =====
   const CFG = {
+    // Push range <10BB — suited-aware
     pushHands: new Set([
-      "AA","KK","QQ","JJ","TT","99","88","77","66","55",
-      "AK","AQ","AJ","AT","KQ","KJ","KT","QJ","QT","JT"
+      // Pairs 22+
+      "22","33","44","55","66","77","88","99","TT","JJ","QQ","KK","AA",
+
+      // A suited A2s–A9s + ATs+
+      "A2s","A3s","A4s","A5s","A6s","A7s","A8s","A9s","ATs","AJs","AQs","AKs",
+
+      // Broadways suited
+      "KQs","KJs","KTs","QJs","QTs","JTs",
+
+      // K/Q/J9 suited
+      "K9s","Q9s","J9s",
+
+      // Suited connectors
+      "T9s","98s","87s","76s","65s",
+
+      // Offsuit (conservador)
+      "AKo","AQo","AJo","ATo","KQo","QJo","JTo"
     ]),
     equityThreshold: 50,
     pollMs: 600,
@@ -55,11 +72,9 @@
     .aif-switch input:checked + .aif-slider { background:#991b1b; box-shadow:inset 0 0 0 2px #f87171; }
     .aif-switch input:checked + .aif-slider:before { transform:translateX(22px); }
 
-    /* ON: esconder toolbar + decisões nativas */
     body.aif-lock-toolbar #pcalc-toolbar { display:none !important; }
     body.aif-lock-toolbar .decision:not(.aif-decision) { display:none !important; }
 
-    /* Decisão especial */
     .decision.aif-decision {
       border:1px solid #ef4444; border-radius:10px; padding:10px 12px; background:#1b0a0a;
       color:#fee2e2; box-shadow: rgba(0,0,0,.25) 0 8px 24px; margin:10px 0;
@@ -86,7 +101,7 @@
           <input id="aif-toggle" type="checkbox"/>
           <span class="aif-slider"></span>
         </label>
-        <div class="aif-line">All in / Fold (Ative sempre que tiver <10 BB)</div>
+        <div class="aif-line">All in / Fold (Ative sempre que tiver &lt; 10 BB)</div>
       </div>
     `;
     btnClear.insertAdjacentElement('afterend', wrap);
@@ -98,7 +113,7 @@
         <input id="aif-toggle" type="checkbox" ${wasOn?'checked':''}/>
         <span class="aif-slider"></span>
       </label>
-      <div class="aif-line">All in / Fold (Ative sempre que tiver < 10 BB)</div>
+      <div class="aif-line">All in / Fold (Ative sempre que tiver &lt; 10 BB)</div>
     `;
     card.classList.toggle('aif-active', wasOn);
   }
@@ -121,24 +136,43 @@
     }catch(_){}
   }
 
-  // ===== Leitura das cartas (.cardsline #h0/#h1) =====
+  // ===== Suited-aware: leitura de cartas com naipe =====
   const ORDER = 'AKQJT98765432';
-  function extractRankFromSlot(slot){
+  const SUIT_RE = /[♠♥♦♣]/;
+  const SUIT_MAP = { '♠':'s', '♥':'h', '♦':'d', '♣':'c' };
+
+  function parseSlotCard(slot){
     if (!slot) return null;
-    let txt = (slot.textContent || '').toUpperCase().replace(/[♠♥♦♣\s]/g, '');
-    const m = txt.match(/(10|[2-9]|[TJQKA])/);
-    if (!m) return null;
-    return m[1] === '10' ? 'T' : m[1];
+    const txt = (slot.textContent || '').trim().toUpperCase();
+    // rank: 10/T/J/Q/K/A ou 2-9
+    const rm = txt.match(/(10|[2-9]|[TJQKA])/);
+    if (!rm) return null;
+    const rank = (rm[1] === '10') ? 'T' : rm[1];
+    // suit por símbolo (se existir)
+    const sm = txt.match(SUIT_RE);
+    const suit = sm ? SUIT_MAP[sm[0]] : null;
+    return { rank, suit };
   }
+
+  function canonicalCombo(c1, c2){
+    if (!c1 || !c2) return null;
+    // par
+    if (c1.rank === c2.rank) return c1.rank + c2.rank; // ex: TT
+    // ordenar por força de rank (ORDER index menor = mais forte)
+    const rA = ORDER.indexOf(c1.rank);
+    const rB = ORDER.indexOf(c2.rank);
+    const [hi, lo] = (rA <= rB) ? [c1, c2] : [c2, c1];
+    const suitedKnown = (hi.suit && lo.suit);
+    const suffix = suitedKnown ? (hi.suit === lo.suit ? 's' : 'o') : ''; // se não souber naipe, sem sufixo
+    return hi.rank + lo.rank + suffix; // AKs / AKo / AK
+  }
+
   function readHoleComboStrict(){
-    const h0 = $('#h0'); const h1 = $('#h1');
-    if (!h0 || !h1) return null;
-    const r1 = extractRankFromSlot(h0);
-    const r2 = extractRankFromSlot(h1);
-    if (!r1 || !r2) return null;
-    if (r1 === r2) return r1 + r2;
-    return (ORDER.indexOf(r1) < ORDER.indexOf(r2)) ? (r1 + r2) : (r2 + r1);
+    const c1 = parseSlotCard($('#h0'));
+    const c2 = parseSlotCard($('#h1'));
+    return canonicalCombo(c1, c2);
   }
+
   function hasTwoCards(){ return !!readHoleComboStrict(); }
 
   // ===== Equity =====
@@ -157,12 +191,29 @@
     return m ? parseFloat(m[1].replace(',','.')) : NaN;
   }
 
+  // ===== helper: verifica range com fallback se combo veio sem "s/o"
+  function inPushRange(combo){
+    if (!combo) return false;
+    if (CFG.pushHands.has(combo)) return true;
+    if (combo.length === 2) { // ex: "AK" sem s/o -> testa ambos
+      const s = combo + 's';
+      const o = combo + 'o';
+      if (CFG.pushHands.has(s) || CFG.pushHands.has(o)) return true;
+    }
+    return false;
+  }
+
   // ===== Decisão =====
   function decide(){
-    const combo = readHoleComboStrict();
+    const combo = readHoleComboStrict();   // AKs / AKo / TT / (AK se naipe desconhecido)
     const eq    = readEquityPct();
-    if (combo && CFG.pushHands.has(combo)) return { pick:'allin', reason:`cartas ${combo} (push range)`, combo, eq };
-    if (isFinite(eq) && eq >= CFG.equityThreshold) return { pick:'allin', reason:`equity ${eq.toFixed(1)}%`, combo, eq };
+
+    if (inPushRange(combo)) {
+      return { pick:'allin', reason:`cartas ${combo} (push range)`, combo, eq };
+    }
+    if (isFinite(eq) && eq >= CFG.equityThreshold) {
+      return { pick:'allin', reason:`equity ${eq.toFixed(1)}%`, combo, eq };
+    }
     return { pick:'fold', reason:`equity ${isFinite(eq)?eq.toFixed(1)+'%':'indisponível'}`, combo, eq };
   }
 
@@ -209,11 +260,11 @@
     if (st.pick === 'allin'){
       box.innerHTML = `<div class="decision-title ok">APOSTE TUDO</div>
         <div class="decision-detail">Modo tudo ou nada — ${st.reason}.</div>`;
-      speakSuggestion('allin'); // <<< fala só "sugestão aposte tudo"
+      speakSuggestion('allin');
     } else {
       box.innerHTML = `<div class="decision-title warn">DESISTA</div>
         <div class="decision-detail">Modo tudo ou nada — ${st.reason}.</div>`;
-      speakSuggestion('fold');  // <<< fala só "sugestão desista"
+      speakSuggestion('fold');
     }
 
     const mp = mountPoint();
@@ -250,7 +301,6 @@
     lockToolbar(!!on);
     if (on){
       if (speak) { try{ speechSynthesis.cancel(); }catch(_){}
-        // opcional: anunciar ativação
         const s = speechSynthesis, u = new SpeechSynthesisUtterance('Modo tudo ou nada ativado');
         const v = s.getVoices().find(v=>/pt(-|_)br/i.test(v.lang)) || s.getVoices().find(v=>/^pt/i.test(v.lang));
         if (v) u.voice=v; u.rate=1; u.pitch=1; u.volume=1; s.speak(u);
@@ -266,8 +316,7 @@
   }
   toggle.addEventListener('change', () => setON(toggle.checked));
 
-  // ===== Regra de visibilidade do botão (só aparece com cartas) =====
-  function hasTwoCards(){ return !!readHoleComboStrict(); }
+  // ===== Regra: botão só aparece com cartas =====
   function updateCardVisibility(){
     const hasCards = hasTwoCards();
     if (!wrap) return;
@@ -292,5 +341,5 @@
   updateCardVisibility();
   setON(!!toggle.checked, false);
 
-  console.info('[AIF] TTS atualizado: "sugestão aposte tudo" / "sugestão desista". Botão só aparece com cartas selecionadas.');
+  console.info('[AIF] Suited-aware ON: combos AKs/AKo/TT etc. + push range <10BB atualizado.');
 })();
