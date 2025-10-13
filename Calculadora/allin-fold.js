@@ -1,4 +1,3 @@
-
 (() => {
   // ===== encerra versões antigas =====
   if (window.__AIF && typeof window.__AIF.cleanup === 'function') {
