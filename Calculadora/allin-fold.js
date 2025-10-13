@@ -144,11 +144,9 @@
   function parseSlotCard(slot){
     if (!slot) return null;
     const txt = (slot.textContent || '').trim().toUpperCase();
-    // rank: 10/T/J/Q/K/A ou 2-9
     const rm = txt.match(/(10|[2-9]|[TJQKA])/);
     if (!rm) return null;
     const rank = (rm[1] === '10') ? 'T' : rm[1];
-    // suit por símbolo (se existir)
     const sm = txt.match(SUIT_RE);
     const suit = sm ? SUIT_MAP[sm[0]] : null;
     return { rank, suit };
@@ -156,14 +154,12 @@
 
   function canonicalCombo(c1, c2){
     if (!c1 || !c2) return null;
-    // par
-    if (c1.rank === c2.rank) return c1.rank + c2.rank; // ex: TT
-    // ordenar por força de rank (ORDER index menor = mais forte)
+    if (c1.rank === c2.rank) return c1.rank + c2.rank; // par: TT
     const rA = ORDER.indexOf(c1.rank);
     const rB = ORDER.indexOf(c2.rank);
     const [hi, lo] = (rA <= rB) ? [c1, c2] : [c2, c1];
     const suitedKnown = (hi.suit && lo.suit);
-    const suffix = suitedKnown ? (hi.suit === lo.suit ? 's' : 'o') : ''; // se não souber naipe, sem sufixo
+    const suffix = suitedKnown ? (hi.suit === lo.suit ? 's' : 'o') : '';
     return hi.rank + lo.rank + suffix; // AKs / AKo / AK
   }
 
@@ -195,7 +191,7 @@
   function inPushRange(combo){
     if (!combo) return false;
     if (CFG.pushHands.has(combo)) return true;
-    if (combo.length === 2) { // ex: "AK" sem s/o -> testa ambos
+    if (combo.length === 2) { // "AK" sem s/o -> testa ambos
       const s = combo + 's';
       const o = combo + 'o';
       if (CFG.pushHands.has(s) || CFG.pushHands.has(o)) return true;
@@ -243,11 +239,32 @@
     return $$('.body')[1] || $('#srp-box') || $('#pcalc-sugestao') || document.body;
   }
 
-  // ===== Render (TTS fala "sugestão ...") =====
+  // ===== Render (com cartão neutro quando sem cartas) =====
   function render(force=false){
     if (!document.body.classList.contains('aif-lock-toolbar')) return;
     hideNative();
 
+    const comboPresent = hasTwoCards();
+
+    if (!comboPresent){
+      const sigKey = 'nocards';
+      if (!force && sigKey === AIF.lastSig) return;
+      AIF.lastSig = sigKey;
+
+      removeAIFDecision();
+      const box = document.createElement('div');
+      box.className = 'decision aif-decision';
+      box.innerHTML = `
+        <div class="decision-title ok">AGUARDANDO CARTAS</div>
+        <div class="decision-detail">Selecione suas cartas para gerar a recomendação do modo tudo ou nada.</div>
+      `;
+      const mp = mountPoint();
+      if (mp.firstChild) mp.insertBefore(box, mp.firstChild); else mp.appendChild(box);
+      // Sem TTS neste estado
+      return;
+    }
+
+    // fluxo normal (com cartas)
     const st  = decide();
     const sig = `${st.pick}|${st.combo||'NA'}|${isFinite(st.eq)?st.eq.toFixed(1):'NA'}`;
     if (!force && sig === AIF.lastSig) return;
@@ -316,30 +333,23 @@
   }
   toggle.addEventListener('change', () => setON(toggle.checked));
 
-  // ===== Regra: botão só aparece com cartas =====
+  // ===== Painel sempre visível (sem desligar ao faltar cartas) =====
   function updateCardVisibility(){
-    const hasCards = hasTwoCards();
     if (!wrap) return;
-    if (hasCards){
-      wrap.style.removeProperty('display');
-    } else {
-      wrap.style.display = 'none';
-      if (toggle.checked) setON(false, false);
-    }
+    wrap.style.removeProperty('display'); // sempre visível
   }
 
   // ===== Loops =====
   const idRender = setInterval(() => {
-    if (document.body.classList.contains('aif-lock-toolbar')) render(false);
+    if (document.body && document.body.classList.contains('aif-lock-toolbar')) render(false);
   }, CFG.pollMs);
   AIF.timers.push(idRender);
 
-  const idCard = setInterval(() => { updateCardVisibility(); }, CFG.cardPollMs);
-  AIF.timers.push(idCard);
+  // (Sem necessidade do loop de visibilidade; painel é sempre visível)
+  updateCardVisibility();
 
   // ===== Inicializa =====
-  updateCardVisibility();
-  setON(!!toggle.checked, false);
+  setON(!!($('#aif-toggle') && $('#aif-toggle').checked), false);
 
-  console.info('[AIF] Suited-aware ON: combos AKs/AKo/TT etc. + push range <10BB atualizado.');
+  console.info('[AIF] Suited-aware ON + painel sempre visível + cartão neutro sem cartas.');
 })();
