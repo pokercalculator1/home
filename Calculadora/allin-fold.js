@@ -86,7 +86,7 @@
           <input id="aif-toggle" type="checkbox"/>
           <span class="aif-slider"></span>
         </label>
-        <div class="aif-line">All in / Fold (Ative sempre que tiver menos de 10 BB)</div>
+        <div class="aif-line">All in / Fold (Ative sempre que tiver <10 BB)</div>
       </div>
     `;
     btnClear.insertAdjacentElement('afterend', wrap);
