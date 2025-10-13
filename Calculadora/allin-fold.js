@@ -51,9 +51,7 @@
       document.body.classList.remove('aif-lock-toolbar');
       const card = $('#aif-card'); if (card) card.classList.remove('aif-active');
       try { speechSynthesis.cancel(); } catch(_){}
-      if (AIF_ND_OBS){ try{AIF_ND_OBS.disconnect();}catch(_){}; AIF_ND_OBS = null; }
-      if (AIF_ANCHOR && AIF_ANCHOR.parentNode){ AIF_ANCHOR.parentNode.removeChild(AIF_ANCHOR); }
-      AIF_ANCHOR = null;
+      const mount = $('#aif-mount'); if (mount && mount.parentNode) mount.parentNode.removeChild(mount);
     }
   };
   window.__AIF = AIF;
@@ -74,7 +72,6 @@
     .aif-slider:before { content:""; position:absolute; height:20px; width:20px; left:3px; top:3px; background:#e5e7eb; border-radius:999px; transition:.2s ease; }
     .aif-switch input:checked + .aif-slider { background:#991b1b; box-shadow:inset 0 0 0 2px #f87171; }
     .aif-switch input:checked + .aif-slider:before { transform:translateX(22px); }
-
     .decision.aif-decision {
       border:1px solid #ef4444; border-radius:10px; padding:10px 12px; background:#1b0a0a;
       color:#fee2e2; box-shadow: rgba(0,0,0,.25) 0 8px 24px; margin:10px 0;
@@ -118,52 +115,30 @@
     card.classList.toggle('aif-active', wasOn);
   }
 
-  // ===== helpers de posicionamento/escopo =====
+  // ===== helpers =====
   function getRightBody() {
     const bodies = $$('.body');
     return bodies[1] || document.body;
+  }
+  function getMount(){
+    const rb = getRightBody();
+    let m = $('#aif-mount');
+    if (!m){
+      m = document.createElement('div');
+      m.id = 'aif-mount';
+      // sempre no topo da 2ª .body
+      rb.insertBefore(m, rb.firstChild || null);
+    } else if (m.parentNode !== rb){
+      m.parentNode.removeChild(m);
+      rb.insertBefore(m, rb.firstChild || null);
+    }
+    return m;
   }
   function findNativeDecision(){
     const rb = getRightBody();
     const cand = rb.querySelector('.decision:not(.aif-decision)');
     return cand || null;
   }
-
-  // ===== Âncora invisível antes da .decision nativa =====
-  let AIF_ANCHOR = null;
-  let AIF_ND_OBS = null;
-
-  function ensureAnchor(cb){
-    const rb = getRightBody();
-    const nd = findNativeDecision();
-    if (nd){
-      if (!AIF_ANCHOR){
-        AIF_ANCHOR = document.createElement('div');
-        AIF_ANCHOR.id = 'aif-anchor';
-        AIF_ANCHOR.style.display = 'none';
-        nd.parentNode.insertBefore(AIF_ANCHOR, nd); // ANTES da nativa
-      }
-      if (typeof cb === 'function') cb(AIF_ANCHOR);
-      return;
-    }
-    if (AIF_ND_OBS) return;
-    AIF_ND_OBS = new MutationObserver(() => {
-      const nd2 = findNativeDecision();
-      if (nd2){
-        if (!AIF_ANCHOR){
-          AIF_ANCHOR = document.createElement('div');
-          AIF_ANCHOR.id = 'aif-anchor';
-          AIF_ANCHOR.style.display = 'none';
-          nd2.parentNode.insertBefore(AIF_ANCHOR, nd2);
-        }
-        try { AIF_ND_OBS.disconnect(); } catch(_){}
-        AIF_ND_OBS = null;
-        if (typeof cb === 'function') cb(AIF_ANCHOR);
-      }
-    });
-    AIF_ND_OBS.observe(rb, {childList:true, subtree:true});
-  }
-
   function hideNativeDecision(){
     const nd = findNativeDecision();
     if (nd){
@@ -249,7 +224,7 @@
   function inPushRange(combo){
     if (!combo) return false;
     if (CFG.pushHands.has(combo)) return true;
-    if (combo.length === 2) { // "AK" sem s/o -> testa ambos
+    if (combo.length === 2) {
       const s = combo + 's';
       const o = combo + 'o';
       if (CFG.pushHands.has(s) || CFG.pushHands.has(o)) return true;
@@ -287,12 +262,10 @@
       document.body.classList.remove('aif-lock-toolbar');
       if (tbGuard) { try{tbGuard.disconnect();}catch(_){} }
       tbGuard = null;
-      // <<< não libera automaticamente: respeita regra "precisa ter cartas"
       setToolbarVisibility();
     }
   }
 
-  // NOVO: Só mostra toolbar quando MODO OFF e há 2 cartas
   function setToolbarVisibility(){
     const tb = $('#pcalc-toolbar'); if (!tb) return;
     const modeOn = document.body.classList.contains('aif-lock-toolbar');
@@ -304,46 +277,46 @@
     }
   }
 
-  // ===== Render: só quando existir anchor (garante posição) =====
+  // ===== Render SEM ÂNCORA: usa mount fixo =====
   function render(force=false){
     if (!document.body.classList.contains('aif-lock-toolbar')) return;
 
-    ensureAnchor(() => {
-      const comboPresent = hasTwoCards();
+    const comboPresent = hasTwoCards();
+    const st  = comboPresent ? decide() : null;
+    const sig = comboPresent
+      ? `${st.pick}|${st.combo||'NA'}|${isFinite(st.eq)?st.eq.toFixed(1):'NA'}`
+      : 'nocards';
 
-      const st  = comboPresent ? decide() : null;
-      const sig = comboPresent
-        ? `${st.pick}|${st.combo||'NA'}|${isFinite(st.eq)?st.eq.toFixed(1):'NA'}`
-        : 'nocards';
+    if (!force && sig === AIF.lastSig) return;
+    AIF.lastSig = sig;
 
-      if (!force && sig === AIF.lastSig) return;
-      AIF.lastSig = sig;
+    removeAIFDecision();
 
-      removeAIFDecision();
+    const box = document.createElement('div');
+    box.className = 'decision aif-decision';
 
-      const box = document.createElement('div');
-      box.className = 'decision aif-decision';
+    if (!comboPresent){
+      box.innerHTML = `
+        <div class="decision-title ok">AGUARDANDO CARTAS</div>
+        <div class="decision-detail">Selecione suas cartas para gerar a recomendação do modo tudo ou nada.</div>
+      `;
+      // sem TTS nesse estado
+    } else if (st.pick === 'allin'){
+      box.innerHTML = `<div class="decision-title ok">APOSTE TUDO</div>
+        <div class="decision-detail">Modo tudo ou nada — ${st.reason}.</div>`;
+      speakSuggestion('allin');
+    } else {
+      box.innerHTML = `<div class="decision-title warn">DESISTA</div>
+        <div class="decision-detail">Modo tudo ou nada — ${st.reason}.</div>`;
+      speakSuggestion('fold');
+    }
 
-      if (!comboPresent){
-        box.innerHTML = `
-          <div class="decision-title ok">AGUARDANDO CARTAS</div>
-          <div class="decision-detail">Selecione suas cartas para gerar a recomendação do modo tudo ou nada.</div>
-        `;
-      } else if (st.pick === 'allin'){
-        box.innerHTML = `<div class="decision-title ok">APOSTE TUDO</div>
-          <div class="decision-detail">Modo tudo ou nada — ${st.reason}.</div>`;
-        speakSuggestion('allin');
-      } else {
-        box.innerHTML = `<div class="decision-title warn">DESISTA</div>
-          <div class="decision-detail">Modo tudo ou nada — ${st.reason}.</div>`;
-        speakSuggestion('fold');
-      }
+    // sempre insere no mount fixo (no topo da 2ª .body)
+    const mount = getMount();
+    mount.appendChild(box);
 
-      if (AIF_ANCHOR && AIF_ANCHOR.parentNode){
-        AIF_ANCHOR.parentNode.insertBefore(box, AIF_ANCHOR.nextSibling);
-        hideNativeDecision();
-      }
-    });
+    // se a nativa existir, mantém oculta durante o modo ON
+    hideNativeDecision();
   }
 
   // ===== Toggle =====
@@ -363,19 +336,13 @@
         const v = s.getVoices().find(v=>/pt(-|_)br/i.test(v.lang)) || s.getVoices().find(v=>/^pt/i.test(v.lang));
         if (v) u.voice=v; u.rate=1; u.pitch=1; u.volume=1; s.speak(u);
       }
-      ensureAnchor(() => { render(true); });
+      render(true); // monta imediatamente
     } else {
       removeAIFDecision();
       showNativeDecision();
       AIF.lastSig = null;
       try { speechSynthesis.cancel(); } catch(_){}
       lastSpokenKey = null;
-
-      if (AIF_ND_OBS){ try{AIF_ND_OBS.disconnect();}catch(_){}; AIF_ND_OBS = null; }
-      if (AIF_ANCHOR && AIF_ANCHOR.parentNode){ AIF_ANCHOR.parentNode.removeChild(AIF_ANCHOR); }
-      AIF_ANCHOR = null;
-
-      // aplica política de visibilidade da toolbar ao desligar
       setToolbarVisibility();
     }
   }
@@ -387,25 +354,26 @@
     wrap.style.removeProperty('display');
   }
 
-  // ===== Loop: render do AIF quando ON =====
+  // ===== Loops =====
   const idRender = setInterval(() => {
     if (document.body && document.body.classList.contains('aif-lock-toolbar')) render(false);
   }, CFG.pollMs);
   AIF.timers.push(idRender);
 
-  // ===== NOVO: ticker para controlar a toolbar quando MODO OFF =====
   const idCardWatch = setInterval(() => {
-    // só aplica quando modo All-in/Fold está DESLIGADO
-    if (!document.body.classList.contains('aif-lock-toolbar')) {
-      setToolbarVisibility();
-    }
+    if (!document.body.classList.contains('aif-lock-toolbar')) setToolbarVisibility();
+    // mantém o mount no topo mesmo se a UI recarregar
+    getMount();
   }, CFG.cardPollMs);
   AIF.timers.push(idCardWatch);
 
-  // Se existir botão "Limpar tudo", garanta que a toolbar siga a regra ao limpar
+  // garantir regra ao limpar
   if (btnClear){
     btnClear.addEventListener('click', () => {
-      setTimeout(setToolbarVisibility, 0);
+      setTimeout(() => {
+        setToolbarVisibility();
+        if (document.body.classList.contains('aif-lock-toolbar')) render(true);
+      }, 0);
     });
   }
 
@@ -413,9 +381,8 @@
 
   // ===== Inicializa =====
   setON(!!($('#aif-toggle') && $('#aif-toggle').checked), false);
-  // aplica regra inicial (se estiver OFF e sem cartas, barra fica oculta)
   setToolbarVisibility();
+  getMount(); // cria o mount já no início
 
-  console.info('[AIF] ON — toolbar escondida no modo ON; no modo OFF só aparece com 2 cartas.');
+  console.info('[AIF] Modo AIF com mount fixo — texto e voz sincronizados mesmo trocando cartas.');
 })();
-
