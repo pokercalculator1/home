@@ -1,4 +1,4 @@
-// pcalc-app.js — VERSÃO CORRETA (com classes de força detalhadas)
+// pcalc-app.js — COMPLETO (com Scroll, Destaque e Classes Corretas)
 (function(g){
   const PC = g.PCALC;
   const { RANKS, SUITS, SUIT_CLASS, SUIT_GLYPH, fmtRank, cardId, makeDeck, evalBest, cmpEval, CAT, CAT_NAME } = PC;
@@ -14,7 +14,7 @@
     if(n==null) return '';
     if(typeof n === 'string'){
       const u = n.toUpperCase();
-      if('AKQJT987654432'.includes(u)) return u;
+      if('AKQJT98765432'.includes(u)) return u;
       if(u === '10') return 'T';
       return u[0] || '';
     }
@@ -271,14 +271,6 @@
         if(kick) detail += `, kicker ${kick}`;
         break;
       }
-
-      case CAT.ONE: { // Nota: pcalc-core.js agora chama Par de CAT.PAIR (1)
-        const p = r2cSafe(k[0]);
-        const ks = listClean([k[1], k[2], k[3]]);
-        detail = p ? `Par de ${p}` : 'Par';
-        if(ks.length) detail += ` (kickers ${ks.join(', ')})`;
-        break;
-      }
       
       case CAT.PAIR: { // Categoria correta para Par (1)
         const p = r2cSafe(k[0]);
@@ -360,13 +352,14 @@
     
     const heroClassesTotal = arr.length;
 
-    const top5 = arr.slice(0,5).map(g=>{
+    // Mapeia o array INTEIRO, não apenas o top5
+    const all_classes = arr.map(g=>{ 
       const desc = describeEval(g.ev);
       return { name: desc.name, detail: desc.detail, count: g.count, examples: g.examples };
     });
 
     return {
-      top5,
+      all_classes, // <-- Retorna a lista completa
       hero: {
         eval: heroEv,
         desc: describeEval(heroEv),
@@ -796,9 +789,6 @@
     return all.slice(0,5).map(x=>({label:x.label, right:`Rank`}));
   }
 
-  // (Esta função não é mais usada, mas deixada para referência)
-  // function computeTop5PostflopLeaderboard(){ ... }
-
   function hideNutsOverlay(){ if(nutsOverlay){ nutsOverlay.remove(); nutsOverlay=null; } if(overlayTimer){ clearTimeout(overlayTimer); overlayTimer=null; } }
   function positionOverlayNear(anchor, el){
     const r=anchor.getBoundingClientRect();
@@ -814,7 +804,7 @@
     el.style.zIndex='9999';
   }
 
-  // FUNÇÃO CHAVE 3: O Overlay
+  // FUNÇÃO CHAVE 3: O Overlay (com scroll)
   function showNutsOverlay(){
     const {board}=PC.getKnown();
     const anchor=document.querySelector('.nutsline');
@@ -823,7 +813,7 @@
 
     const wrap=document.createElement('div');
     wrap.id='nutsOverlay';
-    wrap.style.cssText='background:#0b1324;border:1px solid #334155;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.35);padding:8px 10px;min-width:300px;color:#e5e7eb;font-size:14px';
+    wrap.style.cssText='background:#0b1324;border:1px solid #334155;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.35);padding:8px 10px;min-width:320px;max-width:380px;color:#e5e7eb;font-size:14px';
 
     const title=document.createElement('div');
     title.className='mut';
@@ -831,13 +821,14 @@
     wrap.appendChild(title);
 
     const list=document.createElement('div');
+    // Esta 'list' é o container principal. O scroll vai dentro dela.
 
     const isPreflop = board.length<3;
 
     if(isPreflop){
-      // LÓGICA PRÉ-FLOP (continua a mesma)
+      // LÓGICA PRÉ-FLOP (sem scroll, continua a mesma)
       title.textContent = 'Top 5 (pré-flop, JSON) + sua posição';
-      const all = rankAllPF(); // lista completa ordenada
+      const all = rankAllPF();
       const rows = all ? top5FromAllPF(all) : computeTop5PreflopChen();
       if(rows && rows.length){
         rows.forEach((it,idx)=>{
@@ -873,20 +864,36 @@
           }
         }
       }
+      wrap.appendChild(list); // Adiciona a lista pré-flop
       // FIM DA LÓGICA PRÉ-FLOP
       
     } else {
       // ===============================================
-      // LÓGICA PÓS-FLOP (CORRETA, USANDO CLASSES DE FORÇA)
+      // LÓGICA PÓS-FLOP (COM SCROLL E DESTAQUE)
       // ===============================================
-      title.textContent = 'Top 5 mãos possíveis (board atual)';
+      title.textContent = 'Ranking de Mãos Possíveis (Board Atual)';
       
-      const data = computePostflopLeaderboard(); // Usa a função correta
+      const data = computePostflopLeaderboard(); 
       
-      if(data && data.top5.length){
-        data.top5.forEach((it, idx)=>{
+      // 1. Cria o container do SCROLL
+      const scrollBox = document.createElement('div');
+      scrollBox.style.cssText = 'max-height: 250px; overflow-y: auto; border: 1px solid #22304b; border-radius: 6px; padding: 4px; background: rgba(0,0,0,.1);';
+      
+      if(data && data.all_classes.length){
+        
+        // 2. Preenche a lista dentro do scroll
+        data.all_classes.forEach((it, idx) => {
           const row=document.createElement('div');
-          row.style.cssText='display:flex;flex-direction:column;gap:2px;padding:6px 0;border-bottom:1px dashed #22304b';
+          row.style.cssText='display:flex;flex-direction:column;gap:2px;padding:6px 4px;border-bottom:1px dashed #22304b';
+          
+          // ---- DESTAQUE VERDE ----
+          if (idx + 1 === data.hero.classPosition) {
+              row.style.background = 'rgba(34, 197, 94, 0.1)';
+              row.style.borderColor = 'rgba(34, 197, 94, 0.3)';
+              row.style.borderRadius = '4px';
+              row.id = 'hero-class-in-list'; // ID para o auto-scroll
+          }
+          
           const head=document.createElement('div');
           head.style.cssText='display:flex;justify-content:space-between;gap:10px';
           
@@ -895,22 +902,17 @@
           
           const right=document.createElement('div'); 
           right.className='mut'; 
-          right.textContent = `(${it.count} combos)`;
+          right.textContent = `(${it.count}c)`; // Combos (abreviado)
           
           head.appendChild(left); head.appendChild(right);
           row.appendChild(head);
-
-          if(it.examples?.length){
-            const ex=document.createElement('div');
-            ex.className='mut';
-            ex.style.cssText='font-size:12px';
-            ex.textContent = `Exemplos: ${it.examples.slice(0,5).join('  |  ')}`;
-            row.appendChild(ex);
-          }
-          list.appendChild(row);
+          
+          scrollBox.appendChild(row); // Adiciona a linha ao scrollBox
         });
 
-        // Bloco do Herói
+        list.appendChild(scrollBox); // Adiciona o scrollBox ao container 'list'
+        
+        // 3. Bloco do Herói (fica FORA do scroll, sempre visível)
         const heroBlock=document.createElement('div');
         heroBlock.style.cssText='margin-top:8px;padding-top:6px;border-top:1px solid #22304b';
         const heroTitle=document.createElement('div');
@@ -927,18 +929,28 @@
         heroPos.className='mut';
         heroPos.style.cssText='margin-top:4px';
         
-        // ESTA É A LINHA QUE O painel.js VAI LER
-        heroPos.textContent = `Posição: ${data.hero.classPosition} de ${data.hero.classTotal} classes • Combos que vencem/empatam/perdem: ${data.hero.betterCombos}/${data.hero.tieCombos}/${data.hero.worseCombos}`;
+        // Esta é a linha que o 'painel.js' usa para o score
+        heroPos.textContent = `Posição: ${data.hero.classPosition} de ${data.hero.classTotal} classes • V/E/P: ${data.hero.betterCombos}/${data.hero.tieCombos}/${data.hero.worseCombos}`;
         heroBlock.appendChild(heroPos);
 
-        list.appendChild(heroBlock);
+        list.appendChild(heroBlock); // Adiciona o bloco do herói (depois do scroll)
+        
       }else{
         const row=document.createElement('div'); row.className='mut'; row.textContent='—';
         list.appendChild(row);
       }
+      
+      wrap.appendChild(list); // Adiciona a lista pós-flop (com scroll + hero)
+      
+      // 4. Auto-Scroll para a posição do herói
+      // (Precisa ser feito *depois* que o wrap é adicionado ao DOM)
+      setTimeout(() => {
+          const heroRow = wrap.querySelector('#hero-class-in-list');
+          if (heroRow) {
+              heroRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          }
+      }, 50); // Pequeno delay para garantir a renderização
     }
-
-    wrap.appendChild(list);
 
     wrap.addEventListener('mouseenter', ()=>{ nutsHover=true; if(overlayTimer){clearTimeout(overlayTimer); overlayTimer=null;} });
     wrap.addEventListener('mouseleave', ()=>{ nutsHover=false; overlayTimer=setTimeout(()=>{ if(!nutsHover) hideNutsOverlay(); }, 180); });
