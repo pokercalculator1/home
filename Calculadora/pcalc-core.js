@@ -1,4 +1,4 @@
-// pcalc-core.js (Corrigido)
+// pcalc-core.js (Corrigido com Kickers para Par/Trinca/Carta Alta)
 (function(g){
   const PCALC = g.PCALC = g.PCALC || {};
 
@@ -22,26 +22,22 @@
   PCALC.CAT={HIGH:0,PAIR:1,TWO:2,TRIPS:3,STRAIGHT:4,FLUSH:5,FULL:6,QUADS:7,STRAIGHT_FLUSH:8,ROYAL:9};
   PCALC.CAT_NAME={ [PCALC.CAT.HIGH]:'Carta Alta',[PCALC.CAT.PAIR]:'Par',[PCALC.CAT.TWO]:'Dois Pares',[PCALC.CAT.TRIPS]:'Trinca',[PCALC.CAT.STRAIGHT]:'Straight',[PCALC.CAT.FLUSH]:'Flush',[PCALC.CAT.FULL]:'Full House',[PCALC.CAT.QUADS]:'Quadra',[PCALC.CAT.STRAIGHT_FLUSH]:'Straight Flush',[PCALC.CAT.ROYAL]:'Royal Flush' };
 
-  // ===== INÍCIO DA CORREÇÃO =====
-  // A função original continuava o loop e sobrescrevia 'b' com uma sequência menor.
-  // A versão corrigida retorna imediatamente assim que a sequência mais alta é encontrada.
   function straightHigh(set){
     const u=[...set].sort((a,b)=>b-a);
-    if(u.includes(14)) u.push(1); // Adiciona Ás como 1 para A-5
+    if(u.includes(14)) u.push(1);
     let run=1,b=null;
     for(let i=0;i<u.length-1;i++){
       if(u[i]-1===u[i+1]){
         run++;
         if(run>=5){
-          b = u[i+1]+4; // Encontrou a sequência, 'b' é a carta mais alta
-          return b;     // Retorna IMEDIATAMENTE (este é o fix)
+          b = u[i+1]+4;
+          return b; // FIX 1: Retorno imediato
         }
       }
       else run=1;
     }
-    return b; // Retorna null ou a sequência A-5 (se 'b' foi setado)
+    return b;
   }
-  // ===== FIM DA CORREÇÃO =====
 
   PCALC.evalBest=function(cards){
     const bySuit={s:[],h:[],d:[],c:[]}, count={};
@@ -83,10 +79,29 @@
     const sH = straightHigh(new Set(cards.map(c=>c.r)));
     if(sH) return {cat:PCALC.CAT.STRAIGHT, kick:[sH]};
 
-    if(trips.length)       return {cat:PCALC.CAT.TRIPS, kick:[trips[0]]};
-    if(pairs.length>=2)    return {cat:PCALC.CAT.TWO,   kick:[pairs[0], pairs[1]]};
-    if(pairs.length===1)   return {cat:PCALC.CAT.PAIR,  kick:[pairs[0]]};
-    return {cat:PCALC.CAT.HIGH, kick:[]};
+    // ===== CORREÇÃO KICKERS (TRINCA) =====
+    if(trips.length) {
+      const tripRank = trips[0];
+      const kickers = cards.filter(c => c.r !== tripRank).map(c => c.r).sort((a,b) => b-a);
+      return {cat:PCALC.CAT.TRIPS, kick:[tripRank, kickers[0], kickers[1]]}; // Retorna trinca + 2 kickers
+    }
+    
+    // ===== CORREÇÃO KICKERS (PAR) =====
+    if(pairs.length>=2) {
+      const pair1 = pairs[0];
+      const pair2 = pairs[1];
+      const kick = Math.max(...cards.filter(c => c.r !== pair1 && c.r !== pair2).map(c => c.r));
+      return {cat:PCALC.CAT.TWO,   kick:[pair1, pair2, kick]}; // Retorna 2 pares + 1 kicker
+    }
+    if(pairs.length===1) {
+      const pairRank = pairs[0];
+      const kickers = cards.filter(c => c.r !== pairRank).map(c => c.r).sort((a,b) => b-a);
+      return {cat:PCALC.CAT.PAIR,  kick:[pairRank, kickers[0], kickers[1], kickers[2]]}; // Retorna par + 3 kickers
+    }
+    
+    // ===== CORREÇÃO KICKERS (CARTA ALTA) =====
+    const kickers = cards.map(c => c.r).sort((a,b) => b-a);
+    return {cat:PCALC.CAT.HIGH, kick:kickers.slice(0, 5)}; // Retorna 5 kickers
   };
 
   PCALC.cmpEval=function(a,b){
