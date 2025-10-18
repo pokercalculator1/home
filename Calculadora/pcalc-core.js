@@ -1,4 +1,4 @@
-// pcalc-core.js
+// pcalc-core.js (Corrigido)
 (function(g){
   const PCALC = g.PCALC = g.PCALC || {};
 
@@ -22,16 +22,26 @@
   PCALC.CAT={HIGH:0,PAIR:1,TWO:2,TRIPS:3,STRAIGHT:4,FLUSH:5,FULL:6,QUADS:7,STRAIGHT_FLUSH:8,ROYAL:9};
   PCALC.CAT_NAME={ [PCALC.CAT.HIGH]:'Carta Alta',[PCALC.CAT.PAIR]:'Par',[PCALC.CAT.TWO]:'Dois Pares',[PCALC.CAT.TRIPS]:'Trinca',[PCALC.CAT.STRAIGHT]:'Straight',[PCALC.CAT.FLUSH]:'Flush',[PCALC.CAT.FULL]:'Full House',[PCALC.CAT.QUADS]:'Quadra',[PCALC.CAT.STRAIGHT_FLUSH]:'Straight Flush',[PCALC.CAT.ROYAL]:'Royal Flush' };
 
+  // ===== INÍCIO DA CORREÇÃO =====
+  // A função original continuava o loop e sobrescrevia 'b' com uma sequência menor.
+  // A versão corrigida retorna imediatamente assim que a sequência mais alta é encontrada.
   function straightHigh(set){
     const u=[...set].sort((a,b)=>b-a);
-    if(u.includes(14)) u.push(1);
+    if(u.includes(14)) u.push(1); // Adiciona Ás como 1 para A-5
     let run=1,b=null;
     for(let i=0;i<u.length-1;i++){
-      if(u[i]-1===u[i+1]){ run++; if(run>=5) b=u[i+1]+4; }
+      if(u[i]-1===u[i+1]){
+        run++;
+        if(run>=5){
+          b = u[i+1]+4; // Encontrou a sequência, 'b' é a carta mais alta
+          return b;     // Retorna IMEDIATAMENTE (este é o fix)
+        }
+      }
       else run=1;
     }
-    return b;
+    return b; // Retorna null ou a sequência A-5 (se 'b' foi setado)
   }
+  // ===== FIM DA CORREÇÃO =====
 
   PCALC.evalBest=function(cards){
     const bySuit={s:[],h:[],d:[],c:[]}, count={};
