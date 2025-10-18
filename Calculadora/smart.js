@@ -338,7 +338,7 @@
         return { label: 'Aposte se tiver bom score realista', level: 'strong' };
       }
       if (eSmart >= be * 1.05) {
-        return { label: 'Pague ose tiver bom score realista', level: 'good' };
+        return { label: 'Pague se tiver bom score realista', level: 'good' };
       }
       if (eSmart >= be * 0.95) {
         return { label: 'confira o score realista', level: 'thin' };
