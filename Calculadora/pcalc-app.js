@@ -1,4 +1,4 @@
-// pcalc-app.js — PF(JSON) no pré-flop (linha e hover c/ posição da sua mão), pós-flop Top5, watchdog e sem "kicker undefined"
+// pcalc-app.js — MODIFICADO (Ranking de Categorias)
 (function(g){
   const PC = g.PCALC;
   const { RANKS, SUITS, SUIT_CLASS, SUIT_GLYPH, fmtRank, cardId, makeDeck, evalBest, cmpEval, CAT, CAT_NAME } = PC;
@@ -203,8 +203,10 @@
       }
 
       case CAT.FLUSH: {
-        const hi = r2cSafe(k[0]);
-        detail = hi ? `Flush (alto ${hi})` : 'Flush';
+        // CORREÇÃO: Pega os 5 kickers
+        const ks = listClean(k);
+        detail = (ks.length > 0) ? `Flush (alto ${ks[0]})` : 'Flush';
+        if(ks.length > 1) detail += ` [${ks.join(', ')}]`;
         break;
       }
 
@@ -240,8 +242,9 @@
       }
 
       case CAT.HIGH: {
-        const hi = r2cSafe(k[0]);
-        detail = hi ? `Carta Alta ${hi}` : 'Carta Alta';
+        const ks = listClean(k);
+        detail = (ks.length > 0) ? `Carta Alta ${ks[0]}` : 'Carta Alta';
+        if(ks.length > 1) detail += ` [${ks.slice(1,5).join(', ')}]`;
         break;
       }
 
@@ -261,65 +264,61 @@
     }
     return holes;
   }
-  function computePostflopLeaderboard(){
+
+  // ===============================================
+  // INÍCIO DA MODIFICAÇÃO: NOVA FUNÇÃO DE LEADERBOARD
+  // ===============================================
+
+  /**
+   * Computa o leaderboard de CATEGORIAS (não combos).
+   * Apenas lista quais classes de mãos são possíveis (Quadra, Full House...)
+   * e classifica a mão do herói entre elas.
+   */
+  function computeCategoryLeaderboard(){
     const { hand, board } = PC.getKnown();
-    if(board.length < 3) return null;
+    if(board.length < 3) return null; // Não roda pré-flop
 
-    const deadIds = [];
-    for(const c of hand) deadIds.push(cardId(c));
-    for(const c of board) deadIds.push(cardId(c));
+    // Pega todas as cartas conhecidas
+    const deadIds = [...hand, ...board].map(cardId);
+    // Lista todos os pares de buraco possíveis para o vilão
     const oppHoles = listOpponentHoles(deadIds);
-
+    
+    // Avalia a mão do herói
     const heroEv = evalBest(hand.concat(board));
+    const heroCategory = heroEv.cat; // Categoria do herói (ex: 6 para Full House)
 
-    const groups = new Map();
-    let betterCombos=0, tieCombos=0, worseCombos=0;
+    // Cria um Set para armazenar apenas as categorias únicas
+    const possibleCategories = new Set();
+    possibleCategories.add(heroCategory); // Adiciona a mão do herói
 
+    // Testa todas as mãos do vilão
     for(const [a,b] of oppHoles){
       const ev = evalBest([a,b].concat(board));
-      const key = keyFromEval(ev);
-      let g = groups.get(key);
-      if(!g){
-        g = { ev, count:0, examples:[] };
-        groups.set(key, g);
-      }
-      g.count++;
-      if(g.examples.length < 5){
-        g.examples.push(cardId(a)+','+cardId(b));
-      }
-
-      const cmp = cmpEval(ev, heroEv);
-      if(cmp>0) betterCombos++;
-      else if(cmp<0) worseCombos++;
-      else tieCombos++;
+      possibleCategories.add(ev.cat); // Adiciona a categoria (ex: 9, 8, 7...)
     }
 
-    const arr = [...groups.values()];
-    arr.sort((x,y)=> -cmpEval(x.ev, y.ev));
-
-    let heroClassPos = 1;
-    for(const g of arr){
-      if(cmpEval(g.ev, heroEv) > 0) heroClassPos++;
-      else break;
-    }
-    const heroClassesTotal = arr.length;
-
-    const top5 = arr.slice(0,5).map(g=>{
-      const desc = describeEval(g.ev);
-      return { name: desc.name, detail: desc.detail, count: g.count, examples: g.examples };
-    });
+    // Converte o Set para um Array e ordena da mais forte (9) para a mais fraca (0)
+    const sortedCategories = [...possibleCategories].sort((a, b) => b - a);
+    
+    // Acha a posição da mão do herói nessa lista
+    const heroRank = sortedCategories.indexOf(heroCategory) + 1;
+    // Pega a descrição completa do herói (ex: "Full House (7 cheio de A)")
+    const heroDesc = describeEval(heroEv);
 
     return {
-      top5,
+      categories: sortedCategories, // Array ordenado [9, 8, 6, ...]
       hero: {
-        eval: heroEv,
-        desc: describeEval(heroEv),
-        classPosition: heroClassPos,
-        classTotal: heroClassesTotal,
-        betterCombos, tieCombos, worseCombos
+        desc: heroDesc,
+        category: heroCategory,
+        rank: heroRank,
+        total: sortedCategories.length
       }
     };
   }
+  // ===============================================
+  // FIM DA MODIFICAÇÃO
+  // ===============================================
+
 
   // ========== UI base ==========
   let nutsOverlay=null, nutsHover=false, overlayTimer=null, wiredNuts=false;
@@ -558,7 +557,6 @@
             <button class="btn" id="btnEqCalc">↻ Recalcular</button>
           </div>
           <div id="eqStatus" class="mut" style="margin-top:8px"></div>
-          <!-- A LINHA DE RANK PRÉ-FLOP (JSON) será inserida AQUI (antes da barra) quando for pré-flop -->
           <div class="bar" style="margin-top:8px"><i id="eqBarWin" style="width:0%"></i></div>
           <div style="display:flex;gap:8px;margin-top:6px" id="eqBreak"></div>
           <div class="hint" id="suggestOut" style="margin-top:10px"></div>
@@ -740,9 +738,9 @@
     return all.slice(0,5).map(x=>({label:x.label, right:`Rank`}));
   }
 
-  // Top 5 REAL pós-flop para overlay
+  // Top 5 REAL pós-flop para overlay (Esta função não é mais usada pela 'showNutsOverlay' pós-flop)
   function computeTop5PostflopLeaderboard(){
-    const data = computePostflopLeaderboard();
+    const data = computePostflopLeaderboard(); // Nota: Esta função não existe mais, foi renomeada/substituída
     if(!data) return null;
     const rows = data.top5.map((it, idx)=>({
       left: `${idx+1}) ${it.detail}`,
@@ -767,6 +765,10 @@
     el.style.left=`${left}px`;
     el.style.zIndex='9999';
   }
+
+  // ===============================================
+  // INÍCIO DA MODIFICAÇÃO: NOVA FUNÇÃO showNutsOverlay
+  // ===============================================
   function showNutsOverlay(){
     const {board}=PC.getKnown();
     const anchor=document.querySelector('.nutsline');
@@ -780,13 +782,15 @@
     const title=document.createElement('div');
     title.className='mut';
     title.style.cssText='margin-bottom:6px;font-weight:600';
-    const isPreflop = board.length<3;
-    title.textContent = isPreflop ? 'Top 5 (pré-flop, JSON) + sua posição' : 'Top 5 mãos possíveis (board atual)';
     wrap.appendChild(title);
 
     const list=document.createElement('div');
 
+    const isPreflop = board.length<3;
+
     if(isPreflop){
+      // LÓGICA PRÉ-FLOP (continua a mesma)
+      title.textContent = 'Top 5 (pré-flop, JSON) + sua posição';
       const all = rankAllPF(); // lista completa ordenada
       const rows = all ? top5FromAllPF(all) : computeTop5PreflopChen();
       if(rows && rows.length){
@@ -805,72 +809,85 @@
         const row=document.createElement('div'); row.className='mut'; row.textContent='—';
         list.appendChild(row);
       }
-
-      // Sua mão e posição
+      // Sua mão e posição (pré-flop)
       if(all && hasPF()){
         const tag = getPreflopTagFromHand();
         if(tag){
-          // acha a posição na lista completa
           const pos = all.findIndex(x=>x.label.toUpperCase()===tag.toUpperCase());
           if(pos>=0){
-            const rankN = all[pos].rank; // já é 1..169
-            const tier  = all[pos].tier || '';
+            const rankN = all[pos].rank; const tier = all[pos].tier || '';
             const yourRow=document.createElement('div');
             yourRow.style.cssText='margin-top:8px;padding-top:6px;border-top:1px solid #22304b';
-
             if(rankN <= 5){
-              // Já está no Top 5: destaque
               yourRow.innerHTML = `<div><b>⭐ Sua mão:</b> ${tag} — #${rankN}/169 ${tier ? `(${tier})` : ''} <span class="mut">(no Top 5)</span></div>`;
             }else{
-              // Fora do Top 5: mostrar abaixo do Top 5
               yourRow.innerHTML = `<div><b>Sua mão:</b> ${tag} — <b>#${rankN}/169</b> ${tier ? `(${tier})` : ''}</div>`;
             }
             list.appendChild(yourRow);
           }
         }
       }
-    }else{
-      const data = computeTop5PostflopLeaderboard();
-      if(data && data.rows.length){
-        data.rows.forEach((it)=>{
+      // FIM DA LÓGICA PRÉ-FLOP
+      
+    } else {
+      // ===============================================
+      // LÓGICA PÓS-FLOP (NOVO CÓDIGO)
+      // ===============================================
+      title.textContent = 'Ranking de Categorias (Board Atual)';
+      
+      // Chama a nova função que criamos
+      const data = computeCategoryLeaderboard(); 
+      
+      if(data && data.categories.length){
+        
+        // 1. Lista as categorias
+        data.categories.forEach((cat, idx) => {
           const row=document.createElement('div');
-          row.style.cssText='display:flex;flex-direction:column;gap:2px;padding:6px 0;border-bottom:1px dashed #22304b';
-          const head=document.createElement('div');
-          head.style.cssText='display:flex;justify-content:space-between;gap:10px';
-          const left=document.createElement('div'); left.textContent=it.left;
-          const right=document.createElement('div'); right.className='mut'; right.textContent=it.right;
-          head.appendChild(left); head.appendChild(right);
-          row.appendChild(head);
-
-          if(it.examples?.length){
-            const ex=document.createElement('div');
-            ex.className='mut';
-            ex.style.cssText='font-size:12px';
-            ex.textContent = `Exemplos: ${it.examples.slice(0,5).join('  |  ')}`;
-            row.appendChild(ex);
+          row.style.cssText='display:flex;justify-content:space-between;gap:10px;padding:4px 0';
+          
+          // Pega o nome da categoria (ex: "Full House")
+          const catName = PC.CAT_NAME[cat] || 'Desconhecido';
+          
+          const left=document.createElement('div'); 
+          left.textContent = `${idx + 1}) ${catName}`;
+          row.appendChild(left);
+          
+          // Destaca a categoria da sua mão na lista
+          if (cat === data.hero.category) {
+              left.style.fontWeight = '700';
+              left.style.color = '#22c55e'; // Verde
+              
+              const right=document.createElement('div');
+              right.style.cssText='font-weight:700;color:#22c55e';
+              right.textContent = '(Sua mão)';
+              row.appendChild(right);
           }
           list.appendChild(row);
         });
 
+        // 2. Bloco do Herói (mostra sua mão exata)
         const heroBlock=document.createElement('div');
         heroBlock.style.cssText='margin-top:8px;padding-top:6px;border-top:1px solid #22304b';
+        
         const heroTitle=document.createElement('div');
         heroTitle.style.cssText='font-weight:600;margin-bottom:4px';
         heroTitle.textContent='Sua mão (neste board):';
         heroBlock.appendChild(heroTitle);
 
         const heroLine=document.createElement('div');
-        const d = data.hero.desc;
+        const d = data.hero.desc; // "Full House — Full House (7 cheio de A)"
         heroLine.innerHTML = `${d.name} — ${d.detail}`;
         heroBlock.appendChild(heroLine);
 
         const heroPos=document.createElement('div');
         heroPos.className='mut';
         heroPos.style.cssText='margin-top:4px';
-        heroPos.textContent = `Posição: ${data.hero.classPosition} de ${data.hero.classTotal} classes • Combos que vencem/empatam/perdem: ${data.hero.betterCombos}/${data.hero.tieCombos}/${data.hero.worseCombos}`;
+        // Mostra a posição da *categoria*
+        heroPos.textContent = `Posição: ${data.hero.rank} de ${data.hero.total} classes`;
         heroBlock.appendChild(heroPos);
 
         list.appendChild(heroBlock);
+        
       }else{
         const row=document.createElement('div'); row.className='mut'; row.textContent='—';
         list.appendChild(row);
@@ -885,6 +902,10 @@
     positionOverlayNear(anchor, wrap);
     nutsOverlay=wrap;
   }
+  // ===============================================
+  // FIM DA MODIFICAÇÃO
+  // ===============================================
+
   function wireNutsOverlayOnce(){
     if(wiredNuts) return;
     const anchor=document.querySelector('.nutsline');
@@ -1089,8 +1110,3 @@
 
   console.log("[eqTrials PATCH] eqTrials → 300k/500k/1M; 1M roda em batches com overlay e rótulos.");
 })(window);
-
-
-
-
-
