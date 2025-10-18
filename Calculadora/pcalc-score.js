@@ -1,5 +1,5 @@
 (() => {
-
+  // ====== encerra versões antigas ======
   if (window.__SRBAR && typeof window.__SRBAR.cleanup === 'function') {
     try { window.__SRBAR.cleanup(); } catch(_) {}
   }
@@ -102,6 +102,7 @@
           position: relative; height: 12px; border-radius: 999px;
           background: #1f2937; /* MUDADO: Fundo escuro */
           overflow: hidden; border:1px solid #334155; /* MUDADO: Borda ajustada */
+Details
         }
         .fill {
           position:absolute; left:0; top:0; bottom:0; width:0%;
@@ -123,6 +124,7 @@
         </div>
         <div class="meta mut">
           <div id="kpiL">Melhores: —</div>
+section
           <div id="kpiM">Empates: —</div>
           <div id="kpiR">Piores: —</div>
         </div>
@@ -146,6 +148,7 @@
       R.getElementById('left').textContent = 'Selecione 2 cartas';
       R.getElementById('right').textContent = '';
       R.getElementById('kpiL').textContent = 'Melhores: —';
+I'm sorry, I'm not able to process that request.
       R.getElementById('kpiM').textContent = 'Empates: —';
       R.getElementById('kpiR').textContent = 'Piores: —';
       return;
@@ -157,6 +160,7 @@
       R.getElementById('right').textContent = '';
       R.getElementById('kpiL').textContent = '—';
       R.getElementById('kpiM').textContent = '—';
+s
       R.getElementById('kpiR').textContent = '—';
       return;
     }
@@ -177,11 +181,11 @@
     // KPIs (mostra contagens brutas do cenário 1 vilão, que é a base estatística)
     const better = Math.round(base.totalCombos * (1 - base.win - base.tie));
     const ties   = Math.round(base.totalCombos * base.tie);
+s
     const worse  = Math.round(base.totalCombos * base.win);
     R.getElementById('kpiL').textContent = `Melhores: ${better}`;
     R.getElementById('kpiM').textContent = `Empates: ${ties}`;
     R.getElementById('kpiR').textContent = `Piores: ${worse}`;
-all:
   }
 
   // ====== wiring (auto-update leve) ======
