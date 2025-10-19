@@ -168,7 +168,7 @@
   function r2cSafe(r){
     if(r==null) return '';
     return (r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r));
-S }
+  }
   function listClean(arr){ return (arr||[]).map(r2cSafe).filter(x=>x && x!=='undefined'); }
 
   // descrição amigável (mantém seu estilo)
@@ -325,7 +325,7 @@ S }
       }
       default:
         return `UNK`;
-    }
+  T }
   }
 
   // Rótulo amigável p/ overlay
@@ -851,7 +851,7 @@ S }
     // Atualiza/Remove a linha PF conforme a street
     const box=document.getElementById('equityBox');
     if(box) renderPreflopRankLineInto(box);
-i }
+  }
 
   function safeRecalc(){ try{ calcEquity(); }catch(e){} }
 
@@ -937,7 +937,7 @@ i }
         width: 8px;
       }
       .nuts-overlay-list::-webkit-scrollbar-track {
-section         background: #0b1324; /* Fundo (o mesmo do overlay) */
+        background: #0b1324; /* Fundo (o mesmo do overlay) */
       }
       .nuts-overlay-list::-webkit-scrollbar-thumb {
         background-color: #222; /* A cor que você pediu */
@@ -1000,7 +1000,7 @@ section         background: #0b1324; /* Fundo (o mesmo do overlay) */
         });
       }else{
         const row=document.createElement('div'); row.className='mut'; row.textContent='—';
-S       list.appendChild(row);
+        list.appendChild(row);
       }
 
       // Sua mão e posição
@@ -1044,7 +1044,7 @@ S       list.appendChild(row);
 
           if(it.examples?.length){
             const ex=document.createElement('div');
-s           ex.className='mut';
+            ex.className='mut';
             ex.style.cssText='font-size:12px';
             ex.textContent = `Exemplos: ${it.examples.slice(0,5).join('  |  ')}`;
             row.appendChild(ex);
@@ -1060,7 +1060,7 @@ s           ex.className='mut';
             row.style.borderLeft = '3px solid #8B5CF6';
             row.style.marginLeft = '-6px';
             row.style.paddingLeft = '6px';
-SAP         row.style.paddingBottom = '6px';
+            row.style.paddingBottom = '6px';
             row.style.marginRight = '-5px'; // Compensa padding do scroll
 
             // Adiciona os status (V/E/P) diretamente na linha
@@ -1068,7 +1068,7 @@ SAP         row.style.paddingBottom = '6px';
             heroStats.className = 'mut';
             heroStats.style.cssText = 'font-size:12px; margin-top: 4px; padding-left: 10px; width: 100%; font-weight: 600;';
             heroStats.textContent = `(Sua Posição • V/E/P: ${d.hero.betterCombos}/${d.hero.tieCombos}/${d.hero.worseCombos})`;
-section           row.appendChild(heroStats);
+            row.appendChild(heroStats);
           }
           // --- Fim da Lógica do Herói ---
 
@@ -1081,7 +1081,7 @@ section           row.appendChild(heroStats);
 
       }else{
         const row=document.createElement('div'); row.className='mut'; row.textContent='—';
-label         list.appendChild(row);
+        list.appendChild(row);
       }
     }
 
@@ -1095,7 +1095,7 @@ label         list.appendChild(row);
 
     // --- NOVO: Scroll automático para a mão do herói ---
     const heroRow = wrap.querySelector('#hero-row-in-overlay');
-a   if (heroRow) {
+    if (heroRow) {
       // 'auto' é instantâneo, 'center' tenta centralizar
       heroRow.scrollIntoView({ behavior: 'auto', block: 'center' });
     }
@@ -1104,7 +1104,7 @@ a   if (heroRow) {
     if(wiredNuts) return;
     const anchor=document.querySelector('.nutsline');
     if(!anchor) return;
-Example     wiredNuts=true;
+    wiredNuts=true;
     anchor.addEventListener('click', (e)=>{ e.stopPropagation(); if(nutsOverlay) hideNutsOverlay(); else showNutsOverlay(); });
     anchor.addEventListener('mouseenter', ()=>{ showNutsOverlay(); });
     anchor.addEventListener('mouseleave', ()=>{ overlayTimer=setTimeout(()=>{ if(!nutsHover) hideNutsOverlay(); }, 180); });
@@ -1120,7 +1120,7 @@ Example     wiredNuts=true;
 
   document.addEventListener('DOMContentLoaded', ()=>{
     // aguardando start via __pcalc_start_app__ (login-guard)
-img });
+  });
 })(window);
 
 
@@ -1162,7 +1162,7 @@ img });
     // fallback: por texto
     const candidates = Array.from(document.querySelectorAll("button,[role=button],btn"));
     return candidates.find(el => (el.textContent||"").trim().toLowerCase().includes(CFG.BTN_TEXT_CONTAINS.toLowerCase())) || null;
-section }
+  }
   function showOverlay(){
     let el = document.getElementById("pcalc-progress");
     if(!el){
@@ -1207,7 +1207,7 @@ section }
     let pool = removeCards(deck, hero);
     const oppHands = [];
     opponents = Math.max(1, Number(opponents)||1);
-    for(let o=0;o<opponents;o++){
+section   for(let o=0;o<opponents;o++){
       const i = (Math.random()*pool.length)|0;
       const c1 = pool.splice(i,1)[0];
       const j = (Math.random()*pool.length)|0;
@@ -1229,7 +1229,7 @@ section }
     }
     if(heroBest && ties===0) return {win:1,tie:0,lose:0};
     if(!heroBest && ties===0) return {win:0,tie:0,lose:1};
-section     return heroBest ? {win:1,tie:ties,lose:0} : {win:0,tie:ties,lose:1};
+    return heroBest ? {win:1,tie:ties,lose:0} : {win:0,tie:ties,lose:1};
   }
 
   let running=false, stopped=false;
@@ -1259,13 +1259,13 @@ section     return heroBest ? {win:1,tie:ties,lose:0} : {win:0,tie:ties,lose:1
     const oppSel=document.getElementById("eqOpp");
     const trialsSel=document.getElementById("eqTrials");
     const opp = parseInt(oppSel?.value||'2',10);
-Read   const trials = parseInt(trialsSel?.value||"1000000",10);
+    const trials = parseInt(trialsSel?.value||"1000000",10);
 
     const btn = (function(){
       let b = document.getElementById("btnEqCalc");
       if(b) return b;
       const candidates = Array.from(document.querySelectorAll("button,[role=button]"));
-      return candidates.find(el => (el.textContent||"").toLowerCase().includes("recalcular")) || null;
+source     return candidates.find(el => (el.textContent||"").toLowerCase().includes("recalcular")) || null;
     })();
     if(btn){ btn.disabled=true; btn.classList.add('mut'); }
 
@@ -1280,18 +1280,18 @@ Read   const trials = parseInt(trialsSel?.value||"1000000",10);
     }).then(()=>{
       hideOverlay();
       if(btn){ btn.disabled=false; btn.classList.remove('mut'); }
-Note   });
+    });
   }
 
   // boot leve: só quando o usuário apertar "Recalcular"
   document.addEventListener('click', (e)=>{
     const t = (e.target||{});
     if((t.id==='btnEqCalc') || (String(t.textContent||'').trim().toLowerCase().includes("recalcular"))){
-      try{
+source     try{
         const sel = document.getElementById("eqTrials");
         if(sel){
           const opts = sel.querySelectorAll("option");
-Music         if(opts.length>=3){
+          if(opts.length>=3){
             opts[0].value="300000"; opts[0].textContent="300k";
             opts[1].value="500000"; opts[1].textContent="500k";
             opts[2].value="1000000"; opts[2].textContent="1M"; opts[2].selected=true;
@@ -1299,7 +1299,7 @@ Music         if(opts.length>=3){
         }
       }catch(_){}
       try{ calcUI(); }catch(_){}
-A   }
+  section }
   });
 
   // pequena tentativa de ajustar labels ao abrir
@@ -1311,7 +1311,7 @@ A   }
         opts[0].value="300000"; opts[0].textContent="300k";
         opts[1].value="500000"; opts[1].textContent="500k";
         opts[2].value="1000000"; opts[2].textContent="1M"; opts[2].selected=true;
-      }
+Source     }
     }
   }catch(_){ } }, 300);
 })(window);
