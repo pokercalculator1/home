@@ -365,7 +365,51 @@
     }
   }
 
-  // ====== Leaderboard pós-flop (AGORA agrupado por grupos lógicos) ======
+  // ====== Leaderboard pós-flop (AGORA agrupado por grupos lógicos e exibindo 1 combo) ======
+
+  // NOVO: exemplo canônico por grupo (ignora naipe onde não importa)
+  function representativeExample(ev){
+    const toC = r => r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r||'');
+    const k = ev.kick || [];
+    switch(ev.cat){
+      case CAT.HIGH: {
+        const a = toC(k[0]), b = toC(k[1]);
+        return [`${a} ${b}`.trim()];
+      }
+      case CAT.PAIR:   return [`${toC(k[0])}${toC(k[0])}`];            // ex.: 77
+      case CAT.TWO: {                                                 // ex.: A K
+        const a = toC(Math.max(k[0]||0, k[1]||0));
+        const b = toC(Math.min(k[0]||0, k[1]||0));
+        return [`${a} ${b}`];
+      }
+      case CAT.TRIPS:  return [`${toC(k[0])}${toC(k[0])}`];            // ex.: 77 (representativo da trinca)
+      case CAT.STRAIGHT: {
+        const top = toC(k[0]);
+        return [`Sequência alta ${top}`];
+      }
+      case CAT.FLUSH: {
+        const top = toC(k[0]), sec = toC(k[1]);
+        return [sec ? `Flush alto ${top}/${sec}` : `Flush alto ${top}`];
+      }
+      case CAT.FULL: {
+        const t = toC(k[0]), p = toC(k[1]);
+        return [`${t}${t}${t}+${p}${p}`];                              // ex.: AAA+KK
+      }
+      case CAT.QUADS:  return [`${toC(k[0])}${toC(k[0])}${toC(k[0])}${toC(k[0])}`]; // ex.: 7777
+      case CAT.STRAIGHT_FLUSH: {
+        const top = toC(k[0]);
+        return [`Straight Flush alto ${top}`];
+      }
+      case CAT.ROYAL:  return [`Royal Flush`];
+      default: return ['—'];
+    }
+  }
+
+  // NOVO: contador exibido por grupo (sempre 1 “combo” representativo)
+  function displayCountForGroup(/*ev*/){
+    return 1; // sua regra: 1 combo por grupo lógico
+  }
+
   function listOpponentHoles(deadIds){
     const dead = new Set(deadIds);
     const deck = makeDeck().filter(c=>!dead.has(cardId(c)));
@@ -377,6 +421,7 @@
     }
     return holes;
   }
+
   function computePostflopLeaderboard(){
     const { hand, board } = PC.getKnown();
     if(board.length < 3) return null;
@@ -394,17 +439,14 @@
     for(const [a,b] of oppHoles){
       const oppAll7 = [a,b].concat(board);
       const ev = evalBest(oppAll7);
-      const key = groupKey(ev, oppAll7, board); // << agrupamento lógico
+      const key = groupKey(ev, oppAll7, board); // agrupamento lógico
 
       let g = groups.get(key);
       if(!g){
-        g = { key, ev, count:0, examples:[] };
+        g = { key, ev, rawCount:0, examplesCanon: representativeExample(ev) };
         groups.set(key, g);
       }
-      g.count++;
-      if(g.examples.length < 5){
-        g.examples.push(cardId(a)+','+cardId(b));
-      }
+      g.rawCount++; // só para estatísticas internas (não exibimos)
 
       const cmp = cmpEval(ev, heroEv);
       if(cmp>0) betterCombos++;
@@ -426,8 +468,8 @@
       return {
         name: CAT_NAME[g.ev.cat] || '—',
         detail: groupLabel(g.key),
-        count: g.count,
-        examples: g.examples
+        count: displayCountForGroup(g.ev),  // SEMPRE 1
+        examples: g.examplesCanon           // canônico (sem nipes)
       };
     });
 
@@ -868,7 +910,7 @@
     if(!data) return null;
     const rows = data.top5.map((it, idx)=>({
       left: `${idx+1}) ${it.detail}`,
-      right: `(${it.count} combos)`,
+      right: `(${it.count} combo${it.count>1?'s':''})`,
       examples: it.examples
     }));
     const hero = data.hero;
@@ -1142,7 +1184,7 @@
   async function runBatches(hero, opponents, total, onProgress){
     running=true; stopped=false;
     let W=0,T=0,L=0, done=0;
-    const per = CFG.BATCH;
+    const per = 50_000;
     while(done<total && !stopped){
       const todo = Math.min(per, total-done);
       for(let i=0;i<todo;i++){
@@ -1158,16 +1200,21 @@
   }
 
   function calcUI(){
-    const { hand, board } = PC.getKnown();
+    const { hand } = PC.getKnown();
     if(hand.length<2){ setOverlay('Selecione 2 cartas.'); return; }
     const hero = hand;
 
-    const oppSel=document.getElementById(CFG.SELECT_ID==='eqTrials'?'eqOpp':'eqOpp');
-    const trialsSel=document.getElementById(CFG.SELECT_ID);
+    const oppSel=document.getElementById("eqOpp");
+    const trialsSel=document.getElementById("eqTrials");
     const opp = parseInt(oppSel?.value||'2',10);
-    const trials = parseInt(trialsSel?.value||String(CFG.TARGET_1M),10);
+    const trials = parseInt(trialsSel?.value||"1000000",10);
 
-    const btn = findRecalcButton();
+    const btn = (function(){
+      let b = document.getElementById("btnEqCalc");
+      if(b) return b;
+      const candidates = Array.from(document.querySelectorAll("button,[role=button]"));
+      return candidates.find(el => (el.textContent||"").toLowerCase().includes("recalcular")) || null;
+    })();
     if(btn){ btn.disabled=true; btn.classList.add('mut'); }
 
     setOverlay('Preparando 1M (em lotes)...'); rewriteLabelsTo1M(); upgradeSelect();
@@ -1187,12 +1234,32 @@
   // boot leve: só quando o usuário apertar "Recalcular"
   document.addEventListener('click', (e)=>{
     const t = (e.target||{});
-    if((t.id==='btnEqCalc') || (String(t.textContent||'').trim().toLowerCase().includes(CFG.BTN_TEXT_CONTAINS.toLowerCase()))){
-      try{ upgradeSelect(); }catch(_){}
+    if((t.id==='btnEqCalc') || (String(t.textContent||'').trim().toLowerCase().includes("recalcular"))){
+      try{
+        const sel = document.getElementById("eqTrials");
+        if(sel){
+          const opts = sel.querySelectorAll("option");
+          if(opts.length>=3){
+            opts[0].value="300000"; opts[0].textContent="300k";
+            opts[1].value="500000"; opts[1].textContent="500k";
+            opts[2].value="1000000"; opts[2].textContent="1M"; opts[2].selected=true;
+          }
+        }
+      }catch(_){}
       try{ calcUI(); }catch(_){}
     }
   });
 
   // pequena tentativa de ajustar labels ao abrir
-  setTimeout(()=>{ try{ upgradeSelect(); rewriteLabelsTo1M(); }catch(_){ } }, 300);
+  setTimeout(()=>{ try{
+    const sel = document.getElementById("eqTrials");
+    if(sel){
+      const opts = sel.querySelectorAll("option");
+      if(opts.length>=3){
+        opts[0].value="300000"; opts[0].textContent="300k";
+        opts[1].value="500000"; opts[1].textContent="500k";
+        opts[2].value="1000000"; opts[2].textContent="1M"; opts[2].selected=true;
+      }
+    }
+  }catch(_){ } }, 300);
 })(window);
