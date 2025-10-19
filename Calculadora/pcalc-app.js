@@ -1,4 +1,4 @@
-// pcalc-app.js — COMPLETO (com Scroll, Destaque e Classes Corretas)
+// pcalc-app.js — PF(JSON) no pré-flop (linha e hover c/ posição da sua mão), pós-flop Top5 AGRUPADO, watchdog e sem "kicker undefined"
 (function(g){
   const PC = g.PCALC;
   const { RANKS, SUITS, SUIT_CLASS, SUIT_GLYPH, fmtRank, cardId, makeDeck, evalBest, cmpEval, CAT, CAT_NAME } = PC;
@@ -84,6 +84,7 @@
     if(!box) return;
     const { hand, board } = PC.getKnown();
 
+    // Se já existe flop (board >= 3), remove a linha (se existir) e sai
     if(board && board.length >= 3){
       const old = box.querySelector('#preflopRankLine');
       if(old) old.remove();
@@ -159,180 +160,286 @@
     }catch(e){}
   });
 
-  // ========== Leaderboard pós-flop (NOVA LÓGICA 169) ==========
+  // ======================================
+  // AGRUPAMENTO POR “GRUPOS LÓGICOS” (SEU PEDIDO)
+  // ======================================
 
-  // ===== 169 (AKo/AKs) =====
-  const ORDER_169 = 'AKQJT98765432';
-  const SU_4 = ['s','h','d','c'];
-  const MERGE_SUITED = false; // 2 linhas por mão não-par: ...s e ...o
-
-  const RCHAR2NUM = {A:14, K:13, Q:12, J:11, T:10, '9':9,'8':8,'7':7,'6':6,'5':5,'4':4,'3':3,'2':2};
-
-  // Indexa o baralho para (rChar,sChar) → {card, id}
-  function buildDeckIndex(){
-    const idx = Object.create(null);
-    for(const c of makeDeck()){
-      const rch = rankNumToChar(c.r);
-      const sch = String(c.s||'').toLowerCase();
-      idx[`${rch}${sch}`] = { card: c, id: cardId(c) };
-    }
-    return idx;
+  // utils p/ descrições sem "undefined"
+  function r2cSafe(r){
+    if(r==null) return '';
+    return (r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r));
   }
-  let DECK_IDX = null;
-  function ensureDeckIndex(){ if(!DECK_IDX) DECK_IDX = buildDeckIndex(); return DECK_IDX; }
-
-  function idByRS(rChar, sChar){
-    const idx = ensureDeckIndex();
-    const key = `${rChar}${sChar}`;
-    const hit = idx[key];
-    if(!hit){ console.warn('RS não encontrado', key); return null; }
-    return hit.id;
-  }
-
-  function getKnownIds(){
-    const { hand=[], board=[] } = PC.getKnown();
-    return {
-      handIds: hand.map(cardId),
-      boardIds: board.map(cardId)
-    };
-  }
-  function getBlockedIdSet(){
-    const { handIds, boardIds } = getKnownIds();
-    return new Set([...handIds, ...boardIds]);
-  }
-
-  // Expande combos de uma classe 169 (respeitando bloqueios)
-  function expandClass169(tag){
-    // tag: "77", "AKs", "AKo"
-    const blocked = getBlockedIdSet();
-    const combos = [];
-    const pair = (tag.length===2);
-    if(pair){
-      const r = tag[0]; // ex "7"
-      for(let i=0;i<SU_4.length;i++){
-        for(let j=i+1;j<SU_4.length;j++){
-          const id1 = idByRS(r, SU_4[i]);
-          const id2 = idByRS(r, SU_4[j]);
-          if(!id1 || !id2) continue;
-          if(blocked.has(id1) || blocked.has(id2)) continue;
-          combos.push([id1, id2]);
-        }
-      }
-      return combos;
-    }
-
-    const suited = tag.endsWith('s');
-    const off    = tag.endsWith('o');
-    const hi = tag[0], lo = tag[1];
-
-    if(suited){
-      for(const s of SU_4){
-        const id1 = idByRS(hi, s);
-        const id2 = idByRS(lo, s);
-        if(!id1 || !id2) continue;
-        if(blocked.has(id1) || blocked.has(id2)) continue;
-        combos.push([id1,id2]);
-      }
-      return combos;
-    }
-    if(off){
-      for(const s1 of SU_4){
-        for(const s2 of SU_4){
-          if(s1===s2) continue;
-          const id1 = idByRS(hi, s1);
-          const id2 = idByRS(lo, s2);
-          if(!id1 || !id2) continue;
-          if(blocked.has(id1) || blocked.has(id2)) continue;
-          combos.push([id1,id2]);
-        }
-      }
-      return combos;
-    }
-    // (fallback se vier "AK" sem sufixo — não usamos, pois MERGE=false)
-    return combos;
-  }
-
-  // Melhor avaliação possível por classe (considerando bloqueios e board)
-  function bestEvalForClass169(tag){
-    const { board=[] } = PC.getKnown();
-    if(board.length<3) return null;
-    const combos = expandClass169(tag);
-    if(!combos.length) return null;
-    let best = null;
-    for(const [id1,id2] of combos){
-      const ev = evalBest([{id:id1},{id:id2}].map(x=>x) ? evalBest([{id:id1},{id:id2}].concat(board)) : evalBest([id1,id2].concat(board)));
-      // ↑ Acima garantimos compatibilidade com implementações que aceitam (cardObj) ou (id).
-      // Se seu evalBest espera objetos do makeDeck, podemos resolver via deck index:
-      // Como cardId é string, a implementação padrão do seu core aceita ids em array.
-      const ev2 = evalBest([id1,id2].concat(board));
-      const chosen = ev2 || ev; // usa o que existir
-      if(!best || cmpEval(chosen, best) > 0) best = chosen;
-    }
-    return best;
-  }
-
-  // Descrição textual (reuso do seu describeEval)
-  function r2cSafe(r){ if(r==null) return ''; return (r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r)); }
   function listClean(arr){ return (arr||[]).map(r2cSafe).filter(x=>x && x!=='undefined'); }
+
+  // descrição amigável (mantém seu estilo)
   function describeEval(ev){
     const name = CAT_NAME[ev.cat] || '—';
     const k = ev.kick || [];
     let detail = '';
+
     switch(ev.cat){
-      case CAT.ROYAL: detail='Royal Flush'; break;
-      case CAT.SFLUSH: { const hi=r2cSafe(k[0]); detail = hi?`Straight Flush (alto ${hi})`:'Straight Flush'; break; }
-      case CAT.QUADS:  { const q=r2cSafe(k[0]), p=r2cSafe(k[1]); detail = q?`Quadra de ${q}`:'Quadra'; if(p) detail+=` (kicker ${p})`; break; }
-      case CAT.FULL:   { const t=r2cSafe(k[0]), p=r2cSafe(k[1]); detail = (t&&p)?`Full House (${t} cheio de ${p})`:'Full House'; break; }
-      case CAT.FLUSH:  { const ks=listClean(k); detail=ks.length?`Flush (alto ${ks[0]})`:'Flush'; if(ks.length>1) detail+=` [${ks.join(', ')}]`; break; }
-      case CAT.STRAIGHT:{ const hi=r2cSafe(k[0]); detail = hi?`Sequência (alto ${hi})`:'Sequência'; break; }
-      case CAT.TRIPS:  { const t=r2cSafe(k[0]), ks=listClean([k[1],k[2]]); detail=t?`Trinca de ${t}`:'Trinca'; if(ks.length) detail+=` (kickers ${ks.join(', ')})`; break; }
-      case CAT.TWO:    { const a=r2cSafe(k[0]), b=r2cSafe(k[1]), p=r2cSafe(k[2]); detail=(a&&b)?`Dois Pares (${a} & ${b})`:'Dois Pares'; if(p) detail+=`, kicker ${p}`; break; }
-      case CAT.PAIR:   { const p=r2cSafe(k[0]), ks=listClean([k[1],k[2],k[3]]); detail=p?`Par de ${p}`:'Par'; if(ks.length) detail+=` (kickers ${ks.join(', ')})`; break; }
-      case CAT.HIGH:   { const ks=listClean(k); detail=ks.length?`Carta Alta ${ks[0]}`:'Carta Alta'; if(ks.length>1) detail+=` [${ks.slice(1,5).join(', ')}]`; break; }
-      default: detail=name||'—';
+      case CAT.ROYAL:
+        detail = 'Royal Flush';
+        break;
+
+      case CAT.STRAIGHT_FLUSH: {
+        const hi = r2cSafe(k[0]);
+        const suit = ev.s ? ` (${ev.s})` : '';
+        detail = hi ? `Straight Flush (alto ${hi})${suit}` : `Straight Flush${suit}`;
+        break;
+      }
+
+      case CAT.QUADS: {
+        const quad = r2cSafe(k[0]);
+        const kick = r2cSafe(k[1]);
+        detail = quad ? `Quadra de ${quad}` : 'Quadra';
+        if(kick) detail += ` (kicker ${kick})`;
+        break;
+      }
+
+      case CAT.FULL: {
+        const t = r2cSafe(k[0]);
+        const p = r2cSafe(k[1]);
+        if(t && p) detail = `Full House (${t} cheio de ${p})`;
+        else detail = 'Full House';
+        break;
+      }
+
+      case CAT.FLUSH: {
+        const hi = r2cSafe(k[0]);
+        detail = hi ? `Flush (alto ${hi})` : 'Flush';
+        break;
+      }
+
+      case CAT.STRAIGHT: {
+        const hi = r2cSafe(k[0]);
+        detail = hi ? `Sequência (alto ${hi})` : 'Sequência';
+        break;
+      }
+
+      case CAT.TRIPS: {
+        const t = r2cSafe(k[0]);
+        const ks = listClean([k[1], k[2]]);
+        detail = t ? `Trinca de ${t}` : 'Trinca';
+        if(ks.length) detail += ` (kickers ${ks.join(', ')})`;
+        break;
+      }
+
+      case CAT.TWO: {
+        const a = r2cSafe(k[0]), b = r2cSafe(k[1]);
+        const kick = r2cSafe(k[2]);
+        if(a && b) detail = `Dois Pares (${a} & ${b})`;
+        else detail = 'Dois Pares';
+        if(kick) detail += `, kicker ${kick}`;
+        break;
+      }
+
+      case CAT.PAIR: {
+        const p = r2cSafe(k[0]);
+        const ks = listClean([k[1], k[2], k[3]]);
+        detail = p ? `Par de ${p}` : 'Par';
+        if(ks.length) detail += ` (kickers ${ks.join(', ')})`;
+        break;
+      }
+
+      case CAT.HIGH: {
+        const hi = r2cSafe(k[0]);
+        detail = hi ? `Carta Alta ${hi}` : 'Carta Alta';
+        break;
+      }
+
+      default:
+        detail = name || '—';
     }
     return { name, detail };
   }
 
-  // ===== Leaderboard 169 até o herói =====
-  function computePostflopLeaderboard169UntilHero(maxRows=40){
-    const { hand=[], board=[] } = PC.getKnown();
-    if(board.length<3) return null;
+  // ===== Helpers p/ agrupar =====
+  function flushRanksBySuit(all7, suit){
+    return all7.filter(c=>c.s===suit).map(c=>c.r).sort((a,b)=>b-a);
+  }
+  function inferFlushSuit(all7, ev){
+    if(ev.cat !== CAT.FLUSH) return null;
+    const target = (ev.kick||[]).slice(0,5).join(',');
+    for(const s of SUITS){
+      const top5 = flushRanksBySuit(all7, s).slice(0,5).join(',');
+      if(top5 && top5 === target) return s;
+    }
+    return null;
+  }
+  function highCardTop2(all7){
+    const uniq = Array.from(new Set(all7.map(c=>c.r))).sort((a,b)=>b-a);
+    return { hi: uniq[0]||null, k2: uniq[1]||null };
+  }
 
-    // Avaliação exata do herói
-    const heroEv = evalBest(hand.concat(board));
+  // CHAVE do “grupo lógico” (sua regra)
+  function groupKey(ev, all7, board){
+    switch(ev.cat){
+      case CAT.HIGH: {
+        const { hi: H, k2 } = highCardTop2(all7);
+        return `HIGH:${H||0}-${k2||0}`;
+      }
+      case CAT.PAIR: {
+        const p = ev.kick?.[0] || 0;
+        return `PAIR:${p}`;
+      }
+      case CAT.TWO: {
+        const a = ev.kick?.[0]||0, b = ev.kick?.[1]||0;
+        const hi2 = Math.max(a,b), lo2 = Math.min(a,b);
+        return `TWO:${hi2}-${lo2}`;
+      }
+      case CAT.TRIPS: {
+        const t = ev.kick?.[0] || 0;
+        return `TRIPS:${t}`;
+      }
+      case CAT.STRAIGHT: {
+        const top = ev.kick?.[0] || 0;
+        return `STRAIGHT:${top}`;
+      }
+      case CAT.FLUSH: {
+        // regra: naipe importa
+        // board com 4 do naipe => só maior; com 3 => maior e segunda
+        const suit = inferFlushSuit(all7, ev) || 'x';
+        const boardSuitCount = board.filter(c=>c.s===suit).length;
+        const ranks = flushRanksBySuit(all7, suit);
+        const top = ranks[0]||0, second = ranks[1]||0;
+        if(boardSuitCount >= 4) return `FLUSH:${suit}:${top}`;
+        return `FLUSH:${suit}:${top}-${second}`;
+      }
+      case CAT.FULL: {
+        const t = ev.kick?.[0]||0, p = ev.kick?.[1]||0;
+        return `FULL:${t}-${p}`;
+      }
+      case CAT.QUADS: {
+        const q = ev.kick?.[0]||0;
+        return `QUADS:${q}`;
+      }
+      case CAT.STRAIGHT_FLUSH: {
+        const top = ev.kick?.[0]||0;
+        const s   = ev.s || inferFlushSuit(all7, ev) || 'x';
+        return `SFLUSH:${s}:${top}`;
+      }
+      case CAT.ROYAL: {
+        const s = ev.s || inferFlushSuit(all7, ev) || 'x';
+        return `ROYAL:${s}`;
+      }
+      default:
+        return `UNK`;
+    }
+  }
 
-    // Gera as 169 classes (duas linhas por AK: AKo/AKs)
-    const classes = all169Tags();
+  // Rótulo amigável p/ overlay
+  function groupLabel(key){
+    const [cat, rest] = key.split(':', 2);
+    const toC = r2cSafe;
+    switch(cat){
+      case 'HIGH': {
+        const [a,b] = (rest||'0-0').split('-').map(x=>+x);
+        return `Carta Alta ${toC(a)} (kicker ${toC(b)})`;
+      }
+      case 'PAIR': return `Par de ${toC(+rest)}`;
+      case 'TWO': {
+        const [a,b] = (rest||'0-0').split('-').map(x=>+x);
+        return `Dois Pares (${toC(a)} & ${toC(b)})`;
+      }
+      case 'TRIPS': return `Trinca de ${toC(+rest)}`;
+      case 'STRAIGHT': return `Sequência (alto ${toC(+rest)})`;
+      case 'FLUSH': {
+        const [s, ranks] = (rest||'x:0').split(':');
+        const [top,second] = (ranks||'0').split('-').map(x=>+x);
+        return (second!=null && !isNaN(second))
+          ? `Flush ${s} (alto ${toC(top)} / ${toC(second)})`
+          : `Flush ${s} (alto ${toC(top)})`;
+      }
+      case 'FULL': {
+        const [t,p] = (rest||'0-0').split('-').map(x=>+x);
+        return `Full House (${toC(t)} cheio de ${toC(p)})`;
+      }
+      case 'QUADS': return `Quadra de ${toC(+rest)}`;
+      case 'SFLUSH': {
+        const [s,top] = (rest||'x:0').split(':');
+        return `Straight Flush ${s} (alto ${toC(+top)})`;
+      }
+      case 'ROYAL': return `Royal Flush ${rest||''}`;
+      default: return '—';
+    }
+  }
 
-    // Para cada classe, pega a melhor combinação possível no board atual
-    const scored = [];
-    for(const cls of classes){
-      const best = bestEvalForClass169(cls);
-      if(!best) continue;
-      // Apenas classes que BATEM a mão do herói entram
-      if(cmpEval(best, heroEv) > 0){
-        scored.push({ cls, ev: best });
+  // ====== Leaderboard pós-flop (AGORA agrupado por grupos lógicos) ======
+  function listOpponentHoles(deadIds){
+    const dead = new Set(deadIds);
+    const deck = makeDeck().filter(c=>!dead.has(cardId(c)));
+    const holes = [];
+    for(let i=0;i<deck.length-1;i++){
+      for(let j=i+1;j<deck.length;j++){
+        holes.push([deck[i], deck[j]]);
       }
     }
+    return holes;
+  }
+  function computePostflopLeaderboard(){
+    const { hand, board } = PC.getKnown();
+    if(board.length < 3) return null;
 
-    // Ordena por força desc
-    scored.sort((a,b)=> cmpEval(b.ev, a.ev));
+    const deadIds = [];
+    for(const c of hand) deadIds.push(cardId(c));
+    for(const c of board) deadIds.push(cardId(c));
+    const oppHoles = listOpponentHoles(deadIds);
 
-    // Descobre rótulo exato da mão do herói ("AKs","AKo","77"...)
-    let heroLabel = '(sua mão)';
-    try{
-      const tag = getPreflopTagFromHand();
-      if(tag) heroLabel = tag;
-    }catch(_){}
+    const heroEv = evalBest(hand.concat(board));
 
-    // Corta para não lotar o overlay e adiciona sua mão no final
-    const list = scored.slice(0, Math.max(0, maxRows-1));
-    list.push({ cls: heroLabel, ev: heroEv, isHero: true });
+    const groups = new Map();
+    let betterCombos=0, tieCombos=0, worseCombos=0;
+
+    for(const [a,b] of oppHoles){
+      const oppAll7 = [a,b].concat(board);
+      const ev = evalBest(oppAll7);
+      const key = groupKey(ev, oppAll7, board); // << agrupamento lógico
+
+      let g = groups.get(key);
+      if(!g){
+        g = { key, ev, count:0, examples:[] };
+        groups.set(key, g);
+      }
+      g.count++;
+      if(g.examples.length < 5){
+        g.examples.push(cardId(a)+','+cardId(b));
+      }
+
+      const cmp = cmpEval(ev, heroEv);
+      if(cmp>0) betterCombos++;
+      else if(cmp<0) worseCombos++;
+      else tieCombos++;
+    }
+
+    const arr = [...groups.values()].sort((x,y)=> -cmpEval(x.ev, y.ev));
+
+    // posição da classe do herói (comparando contra os representantes dos grupos)
+    let heroClassPos = 1;
+    for(const g of arr){
+      if(cmpEval(g.ev, heroEv) > 0) heroClassPos++;
+      else break;
+    }
+    const heroClassesTotal = arr.length;
+
+    const top5 = arr.slice(0,5).map(g=>{
+      return {
+        name: CAT_NAME[g.ev.cat] || '—',
+        detail: groupLabel(g.key),
+        count: g.count,
+        examples: g.examples
+      };
+    });
 
     return {
-      rows: list,
-      strongerCount: scored.length
+      top5,
+      hero: {
+        eval: heroEv,
+        desc: describeEval(heroEv),
+        classPosition: heroClassPos,
+        classTotal: heroClassesTotal,
+        betterCombos, tieCombos, worseCombos
+      }
     };
   }
 
@@ -380,7 +487,7 @@
     renderSlots();
     renderNuts();
     renderHeroMade();
-    PC.computeAndRenderOuts();
+    PC.computeAndRenderOuts?.();
     renderEquityPanel();
 
     wiredNuts=false; wireNutsOverlayOnce(); hideNutsOverlay();
@@ -488,7 +595,7 @@
       }
       let idx=0;
       const opps=[];
-      for(let k=0;k<nOpp;k++){ opps.push([pool[idx++], pool[idx++]]); }
+      for(let k=0;k<nOpp;k++){ opps.push([pool[idx++],pool[idx++]]); }
       const extra=[];
       for(let k=0;k<missing;k++){ extra.push(pool[idx++]); }
       const full=board.concat(extra);
@@ -573,6 +680,7 @@
             <button class="btn" id="btnEqCalc">↻ Recalcular</button>
           </div>
           <div id="eqStatus" class="mut" style="margin-top:8px"></div>
+          <!-- A LINHA DE RANK PRÉ-FLOP (JSON) será inserida AQUI (antes da barra) quando for pré-flop -->
           <div class="bar" style="margin-top:8px"><i id="eqBarWin" style="width:0%"></i></div>
           <div style="display:flex;gap:8px;margin-top:6px" id="eqBreak"></div>
           <div class="hint" id="suggestOut" style="margin-top:10px"></div>
@@ -754,6 +862,19 @@
     return all.slice(0,5).map(x=>({label:x.label, right:`Rank`}));
   }
 
+  // Top 5 REAL pós-flop para overlay (usa agrupamento)
+  function computeTop5PostflopLeaderboard(){
+    const data = computePostflopLeaderboard();
+    if(!data) return null;
+    const rows = data.top5.map((it, idx)=>({
+      left: `${idx+1}) ${it.detail}`,
+      right: `(${it.count} combos)`,
+      examples: it.examples
+    }));
+    const hero = data.hero;
+    return { rows, hero };
+  }
+
   function hideNutsOverlay(){ if(nutsOverlay){ nutsOverlay.remove(); nutsOverlay=null; } if(overlayTimer){ clearTimeout(overlayTimer); overlayTimer=null; } }
   function positionOverlayNear(anchor, el){
     const r=anchor.getBoundingClientRect();
@@ -768,8 +889,6 @@
     el.style.left=`${left}px`;
     el.style.zIndex='9999';
   }
-
-  // FUNÇÃO CHAVE 3: O Overlay (com scroll) — **AGORA com 169 classes**
   function showNutsOverlay(){
     const {board}=PC.getKnown();
     const anchor=document.querySelector('.nutsline');
@@ -778,21 +897,19 @@
 
     const wrap=document.createElement('div');
     wrap.id='nutsOverlay';
-    wrap.style.cssText='background:#0b1324;border:1px solid #334155;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.35);padding:8px 10px;min-width:320px;max-width:420px;color:#e5e7eb;font-size:14px';
+    wrap.style.cssText='background:#0b1324;border:1px solid #334155;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.35);padding:8px 10px;min-width:300px;color:#e5e7eb;font-size:14px';
 
     const title=document.createElement('div');
     title.className='mut';
     title.style.cssText='margin-bottom:6px;font-weight:600';
+    const isPreflop = board.length<3;
+    title.textContent = isPreflop ? 'Top 5 (pré-flop, JSON) + sua posição' : 'Top 5 mãos possíveis (board atual)';
     wrap.appendChild(title);
 
     const list=document.createElement('div');
 
-    const isPreflop = board.length<3;
-
     if(isPreflop){
-      // — Pré-flop (inalterado)
-      title.textContent = 'Top 5 (pré-flop, JSON) + sua posição';
-      const all = rankAllPF();
+      const all = rankAllPF(); // lista completa ordenada
       const rows = all ? top5FromAllPF(all) : computeTop5PreflopChen();
       if(rows && rows.length){
         rows.forEach((it,idx)=>{
@@ -810,75 +927,78 @@
         const row=document.createElement('div'); row.className='mut'; row.textContent='—';
         list.appendChild(row);
       }
+
+      // Sua mão e posição
       if(all && hasPF()){
         const tag = getPreflopTagFromHand();
         if(tag){
+          // acha a posição na lista completa
           const pos = all.findIndex(x=>x.label.toUpperCase()===tag.toUpperCase());
           if(pos>=0){
-            const rankN = all[pos].rank; const tier = all[pos].tier || '';
-            const yourRow=document.createElement('div');
-            yourRow.style.cssText='margin-top:8px;padding-top:6px;border-top:1px solid #22304b';
-            if(rankN <= 5){
-              yourRow.innerHTML = `<div><b>⭐ Sua mão:</b> ${tag} — #${rankN}/169 ${tier ? `(${tier})` : ''} <span class="mut">(no Top 5)</span></div>`;
-            }else{
-              yourRow.innerHTML = `<div><b>Sua mão:</b> ${tag} — <b>#${rankN}/169</b> ${tier ? `(${tier})` : ''}</div>`;
-            }
-            list.appendChild(yourRow);
+            const rankN = all[pos].rank; // já é 1..169
+
+            const heroBlock=document.createElement('div');
+            heroBlock.style.cssText='margin-top:8px;padding-top:6px;border-top:1px solid #22304b';
+            const heroTitle=document.createElement('div');
+            heroTitle.style.cssText='font-weight:600;margin-bottom:4px';
+            heroTitle.textContent='Sua mão (pré-flop):';
+            heroBlock.appendChild(heroTitle);
+
+            const heroLine=document.createElement('div');
+            heroLine.innerHTML = `${all[pos].label} — Rank ${rankN}/169 • ${all[pos].tier}`;
+            heroBlock.appendChild(heroLine);
+
+            list.appendChild(heroBlock);
           }
         }
       }
-      wrap.appendChild(list);
 
-    } else {
-      // — Pós-flop com 169 classes (AKo/AKs separados)
-      title.textContent = 'Ranking (169 classes: AKo/AKs) — até sua mão';
-
-      const data = computePostflopLeaderboard169UntilHero(40);
-      const scrollBox = document.createElement('div');
-      scrollBox.style.cssText = 'max-height: 260px; overflow-y: auto; border: 1px solid #22304b; border-radius: 6px; padding: 4px; background: rgba(0,0,0,.1);';
-
-      if(data && data.rows.length){
-        data.rows.forEach((it, idx) => {
+    }else{
+      const d = computeTop5PostflopLeaderboard();
+      if(d && d.rows?.length){
+        d.rows.forEach(it=>{
           const row=document.createElement('div');
-          row.style.cssText='display:flex;flex-direction:column;gap:2px;padding:6px 4px;border-bottom:1px dashed #22304b';
-          if (it.isHero){
-            row.style.background = 'rgba(34, 197, 94, 0.10)';
-            row.style.borderColor = 'rgba(34, 197, 94, 0.35)';
-            row.style.borderRadius = '4px';
-            row.id = 'hero-class-in-list';
+          row.style.cssText='display:flex;justify-content:space-between;gap:10px;padding:4px 0';
+          const left=document.createElement('div'); left.textContent=it.left;
+          const right=document.createElement('div'); right.className='mut'; right.textContent=it.right;
+          row.appendChild(left); row.appendChild(right);
+
+          if(it.examples?.length){
+            const ex=document.createElement('div');
+            ex.className='mut';
+            ex.style.cssText='font-size:12px';
+            ex.textContent = `Exemplos: ${it.examples.slice(0,5).join('  |  ')}`;
+            row.appendChild(ex);
           }
-          const head=document.createElement('div');
-          head.style.cssText='display:flex;justify-content:space-between;gap:10px';
-          const left=document.createElement('div'); 
-          const d = describeEval(it.ev);
-          left.textContent = `${String(idx+1).padStart(2,'0')}) ${it.cls} — ${d.name}`;
-          const right=document.createElement('div'); 
-          right.className='mut'; 
-          right.textContent = d.detail;
-          head.appendChild(left); head.appendChild(right);
-          row.appendChild(head);
-          scrollBox.appendChild(row);
+          list.appendChild(row);
         });
 
-        list.appendChild(scrollBox);
+        const heroBlock=document.createElement('div');
+        heroBlock.style.cssText='margin-top:8px;padding-top:6px;border-top:1px solid #22304b';
+        const heroTitle=document.createElement('div');
+        heroTitle.style.cssText='font-weight:600;margin-bottom:4px';
+        heroTitle.textContent='Sua mão (neste board):';
+        heroBlock.appendChild(heroTitle);
 
-        const heroInfo=document.createElement('div');
-        heroInfo.style.cssText='margin-top:8px;padding-top:6px;border-top:1px solid #22304b';
-        heroInfo.innerHTML = `<div class="mut">Classes que te batem: <b>${Math.max(0, data.rows.length-1)}</b></div>`;
-        list.appendChild(heroInfo);
+        const heroLine=document.createElement('div');
+        const dd = d.hero.desc;
+        heroLine.innerHTML = `${dd.name} — ${dd.detail}`;
+        heroBlock.appendChild(heroLine);
 
+        const heroPos=document.createElement('div');
+        heroPos.className='mut';
+        heroPos.style.cssText='margin-top:4px';
+        heroPos.textContent = `Posição: ${d.hero.classPosition} de ${d.hero.classTotal} classes • Combos que vencem/empatam/perdem: ${d.hero.betterCombos}/${d.hero.tieCombos}/${d.hero.worseCombos}`;
+        heroBlock.appendChild(heroPos);
+
+        list.appendChild(heroBlock);
       }else{
         const row=document.createElement('div'); row.className='mut'; row.textContent='—';
         list.appendChild(row);
       }
-
-      wrap.appendChild(list);
-
-      setTimeout(() => {
-        const heroRow = wrap.querySelector('#hero-class-in-list');
-        if (heroRow) heroRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      }, 50);
     }
+
+    wrap.appendChild(list);
 
     wrap.addEventListener('mouseenter', ()=>{ nutsHover=true; if(overlayTimer){clearTimeout(overlayTimer); overlayTimer=null;} });
     wrap.addEventListener('mouseleave', ()=>{ nutsHover=false; overlayTimer=setTimeout(()=>{ if(!nutsHover) hideNutsOverlay(); }, 180); });
@@ -886,10 +1006,6 @@
     positionOverlayNear(anchor, wrap);
     nutsOverlay=wrap;
   }
-  // ===============================================
-  // FIM DA MODIFICAÇÃO 169
-  // ===============================================
-
   function wireNutsOverlayOnce(){
     if(wiredNuts) return;
     const anchor=document.querySelector('.nutsline');
@@ -946,11 +1062,11 @@
 
   // --------- Helpers leves de UI ----------
   function findRecalcButton(){
-    // tente IDs comuns
+    // IDs comuns
     let btn = document.getElementById("recalc") || document.getElementById("btnRecalcular");
     if(btn) return btn;
     // fallback: por texto
-    const candidates = Array.from(document.querySelectorAll("button,[role=button],.btn"));
+    const candidates = Array.from(document.querySelectorAll("button,[role=button],btn"));
     return candidates.find(el => (el.textContent||"").trim().toLowerCase().includes(CFG.BTN_TEXT_CONTAINS.toLowerCase())) || null;
   }
   function showOverlay(){
@@ -958,7 +1074,7 @@
     if(!el){
       el = document.createElement("div");
       el.id = "pcalc-progress";
-      el.style.cssText = "position:fixed;right:12px;bottom:12px;background:#0b1324;color:#e5e7eb;padding:10px 12px;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,.4);font:500 13px/1.3 system-ui,Segoe UI,Roboto,Arial;z-index:99999";
+      el.style.cssText = "position:fixed;right:12px;bottom:12px;background:#0b1324;color:#e5e7eb;padding:10px 12px;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,4);font:500 13px/1.3 system-ui,Segoe UI,Roboto,Arial;z-index:99999";
       document.body.appendChild(el);
     }
     return el;
@@ -1012,85 +1128,71 @@
     const he = evalSafe(hero, board);
     let best = he, ties = 0, heroBest = true;
     for(const [v1,v2] of oppHands){
-      const ve = evalSafe([v1,v2], board);
-      const c = cmpEv(ve,best);
-      if(c>0){ best=ve; heroBest=false; ties=0; }
-      else if(c===0){ if(heroBest) ties++; }
+      const ev = evalSafe([v1,v2], board);
+      const cmp = cmpEv(ev, best);
+      if(cmp>0){ best=ev; heroBest=false; ties=0; }
+      else if(cmp===0){ ties++; }
     }
-    if(heroBest) return (ties>0) ? "tie" : "win";
-    return "lose";
+    if(heroBest && ties===0) return {win:1,tie:0,lose:0};
+    if(!heroBest && ties===0) return {win:0,tie:0,lose:1};
+    return heroBest ? {win:1,tie:ties,lose:0} : {win:0,tie:ties,lose:1};
   }
 
-  async function runPreflopAsync(total, batch){
-    const sel = (PC.state && PC.state.selected) || [];
-    if(sel.length<2) throw new Error("Selecione 2 cartas antes.");
-    const hero = sel.slice(0,2);
-    const opponents = Math.max(1, Number(PC.state?.opponents||2));
-    let win=0,tie=0,lose=0,done=0;
-    return await new Promise(resolve=>{
-      function step(){
-        const chunk = Math.min(batch, total - done);
-        for(let i=0;i<chunk;i++){
-          const r = mcOnce(hero, opponents);
-          if(r==="win") win++; else if(r==="tie") tie++; else lose++;
-        }
-        done += chunk;
-        const pct = Math.min(100, Math.round(done*100/total));
-        setOverlay(`Pré-flop: rodando ${total.toLocaleString('pt-BR')} (${pct}%)…`);
-        if(done < total) setTimeout(step, 0);
-        else {
-          const tot = win+tie+lose;
-          resolve({ method:"Monte Carlo", samples: tot, win: win/tot, tie: tie/tot, lose: lose/tot });
-        }
+  let running=false, stopped=false;
+  async function runBatches(hero, opponents, total, onProgress){
+    running=true; stopped=false;
+    let W=0,T=0,L=0, done=0;
+    const per = CFG.BATCH;
+    while(done<total && !stopped){
+      const todo = Math.min(per, total-done);
+      for(let i=0;i<todo;i++){
+        const r = mcOnce(hero, opponents);
+        W += r.win; T += r.tie; L += r.lose;
       }
-      step();
+      done += todo;
+      onProgress?.(done, total, W, T, L);
+      await new Promise(r=>setTimeout(r,0)); // yield
+    }
+    running=false;
+    return {W,T,L,done};
+  }
+
+  function calcUI(){
+    const { hand, board } = PC.getKnown();
+    if(hand.length<2){ setOverlay('Selecione 2 cartas.'); return; }
+    const hero = hand;
+
+    const oppSel=document.getElementById(CFG.SELECT_ID==='eqTrials'?'eqOpp':'eqOpp');
+    const trialsSel=document.getElementById(CFG.SELECT_ID);
+    const opp = parseInt(oppSel?.value||'2',10);
+    const trials = parseInt(trialsSel?.value||String(CFG.TARGET_1M),10);
+
+    const btn = findRecalcButton();
+    if(btn){ btn.disabled=true; btn.classList.add('mut'); }
+
+    setOverlay('Preparando 1M (em lotes)...'); rewriteLabelsTo1M(); upgradeSelect();
+
+    runBatches(hero, opp, trials, (done,total,W,T,L)=>{
+      const tot = W+T+L || 1;
+      const win = (W/tot*100).toFixed(1);
+      const tie = (T/tot*100).toFixed(1);
+      const lose= (L/tot*100).toFixed(1);
+      setOverlay(`Monte Carlo vs ${opp} oponente(s) • ${done.toLocaleString()}/${total.toLocaleString()} amostras  |  Win ${win}%  Tie ${tie}%  Lose ${lose}%`);
+    }).then(()=>{
+      hideOverlay();
+      if(btn){ btn.disabled=false; btn.classList.remove('mut'); }
     });
   }
 
-  // --------- Integra com seu botão "Recalcular" só quando 1M estiver selecionado ----------
-  function hookRecalcular(){
-    const btn = findRecalcButton();
-    if(!btn) return;
-    btn.addEventListener("click", function onRecalc(e){
-      const sel = document.getElementById(CFG.SELECT_ID);
-      const val = sel ? Number(sel.value) : 0;
-      const boardLen = Math.max(0, (PC.state?.selected?.length||0) - 2);
-      // Só pré-flop + 1M → intercepta
-      if(boardLen===0 && val === CFG.TARGET_1M){
-        e.preventDefault();
-        e.stopPropagation();
-        rewriteLabelsTo1M();
-        runPreflopAsync(CFG.TARGET_1M, CFG.BATCH)
-          .then(res=>{
-            // Atualiza rótulos e percentuais na UI (heurística)
-            rewriteLabelsTo1M();
-            try{
-              const winEl = Array.from(document.querySelectorAll("*")).find(n => /^\s*Win:\s*/.test(n.textContent||""));
-              const tieEl = Array.from(document.querySelectorAll("*")).find(n => /^\s*Tie:\s*/.test(n.textContent||""));
-              const loseEl= Array.from(document.querySelectorAll("*")).find(n => /^\s*Lose:\s*/.test(n.textContent||""));
-              if(winEl)  winEl.textContent  = `Win: ${(res.win*100).toFixed(1)}%`;
-              if(tieEl)  tieEl.textContent  = `Tie: ${(res.tie*100).toFixed(1)}%`;
-              if(loseEl) loseEl.textContent = `Lose: ${(res.lose*100).toFixed(1)}%`;
-            }catch(_){}
-            setOverlay(`Monte Carlo • 1.000.000 amostras — Win ${(res.win*100).toFixed(2)}% · Tie ${(res.tie*100).toFixed(2)}% · Lose ${(res.lose*100).toFixed(2)}%`);
-            setTimeout(hideOverlay, 4000);
-          })
-          .catch(err=>{
-            console.error("[eqTrials PATCH] erro no 1M:", err);
-            setOverlay("Falhou o 1M — veja console");
-            setTimeout(hideOverlay, 4000);
-          });
-      }
-      // Caso contrário, deixa o fluxo original seguir (300k/500k, pós-flop, etc.)
-    }, true); // capture=true para interceptar antes dos handlers originais
-  }
+  // boot leve: só quando o usuário apertar "Recalcular"
+  document.addEventListener('click', (e)=>{
+    const t = (e.target||{});
+    if((t.id==='btnEqCalc') || (String(t.textContent||'').trim().toLowerCase().includes(CFG.BTN_TEXT_CONTAINS.toLowerCase()))){
+      try{ upgradeSelect(); }catch(_){}
+      try{ calcUI(); }catch(_){}
+    }
+  });
 
-  function boot(){
-    upgradeSelect();
-    hookRecalcular();
-  }
-  if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
-  else boot();
-
-  console.log("[eqTrials PATCH] eqTrials → 300k/500k/1M; 1M roda em batches com overlay e rótulos.");
+  // pequena tentativa de ajustar labels ao abrir
+  setTimeout(()=>{ try{ upgradeSelect(); rewriteLabelsTo1M(); }catch(_){ } }, 300);
 })(window);
