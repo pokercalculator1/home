@@ -1,12 +1,12 @@
 (() => {
-  
+  // ===== SR BAR (Score Realista) — versão por GRUPOS LÓGICOS =====
   if (window.__SRBAR && typeof window.__SRBAR.cleanup === 'function') {
     try { window.__SRBAR.cleanup(); } catch(_) {}
   }
 
   const PC = window.PCALC;
   if (!PC) { console.warn('[SR] PCALC não encontrado.'); return; }
-  const { makeDeck, evalBest, cmpEval, cardId, CAT_NAME } = PC;
+  const { makeDeck, evalBest, cmpEval, cardId, CAT_NAME, CAT, SUITS } = PC;
 
   // ====== estado / cleanup ======
   const S = {
@@ -22,8 +22,9 @@
   };
   window.__SRBAR = S;
 
-  // ====== helpers ======
+  // ====== helpers básicos ======
   const $ = (s, r=document)=> r.querySelector(s);
+  const r2cSafe = (r)=> r==null ? '' : (r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'T':String(r));
 
   function listOpponentHoles(deadIds){
     const dead = new Set(deadIds);
@@ -34,42 +35,128 @@
         holes.push([deck[i], deck[j]]);
       }
     }
-    return holes; // ~990 combos típicos no flop
+    return holes;
   }
 
-  // força realista vs 1 vilão (enumeração completa)
+  // ====== helpers para AGRUPAMENTO LÓGICO (mesma regra do app) ======
+  function flushRanksBySuit(all7, suit){
+    return all7.filter(c=>c.s===suit).map(c=>c.r).sort((a,b)=>b-a);
+  }
+  function inferFlushSuit(all7, ev){
+    if(ev.cat !== CAT.FLUSH) return null;
+    const target = (ev.kick||[]).slice(0,5).join(',');
+    for(const s of SUITS){
+      const top5 = flushRanksBySuit(all7, s).slice(0,5).join(',');
+      if(top5 && top5 === target) return s;
+    }
+    return null;
+  }
+  function highCardTop2(all7){
+    const uniq = Array.from(new Set(all7.map(c=>c.r))).sort((a,b)=>b-a);
+    return { hi: uniq[0]||null, k2: uniq[1]||null };
+  }
+  function groupKey(ev, all7, board){
+    switch(ev.cat){
+      case CAT.HIGH: {
+        const { hi: H, k2 } = highCardTop2(all7);
+        return `HIGH:${H||0}-${k2||0}`;
+      }
+      case CAT.PAIR: {
+        const p = ev.kick?.[0] || 0;
+        return `PAIR:${p}`;
+      }
+      case CAT.TWO: {
+        const a = ev.kick?.[0]||0, b = ev.kick?.[1]||0;
+        const hi2 = Math.max(a,b), lo2 = Math.min(a,b);
+        return `TWO:${hi2}-${lo2}`;
+      }
+      case CAT.TRIPS: {
+        const t = ev.kick?.[0] || 0;
+        return `TRIPS:${t}`;
+      }
+      case CAT.STRAIGHT: {
+        const top = ev.kick?.[0] || 0;
+        return `STRAIGHT:${top}`;
+      }
+      case CAT.FLUSH: {
+        const suit = inferFlushSuit(all7, ev) || 'x';
+        const boardSuitCount = board.filter(c=>c.s===suit).length;
+        const ranks = flushRanksBySuit(all7, suit);
+        const top = ranks[0]||0, second = ranks[1]||0;
+        if(boardSuitCount >= 4) return `FLUSH:${suit}:${top}`;
+        return `FLUSH:${suit}:${top}-${second}`;
+      }
+      case CAT.FULL: {
+        const t = ev.kick?.[0]||0, p = ev.kick?.[1]||0;
+        return `FULL:${t}-${p}`;
+      }
+      case CAT.QUADS: {
+        const q = ev.kick?.[0]||0;
+        return `QUADS:${q}`;
+      }
+      case CAT.STRAIGHT_FLUSH: {
+        const top = ev.kick?.[0]||0;
+        const s   = ev.s || inferFlushSuit(all7, ev) || 'x';
+        return `SFLUSH:${s}:${top}`;
+      }
+      case CAT.ROYAL: {
+        const s = ev.s || inferFlushSuit(all7, ev) || 'x';
+        return `ROYAL:${s}`;
+      }
+      default:
+        return `UNK`;
+    }
+  }
+
+  // força realista vs 1 vilão — AGORA por GRUPOS (cada grupo conta 1)
   function strengthVsOneVillain(hero2, board){
     const heroEv = evalBest(hero2.concat(board));
     const deadIds = hero2.concat(board).map(cardId);
     const oppHoles = listOpponentHoles(deadIds);
 
-    let win=0, tie=0, lose=0;
+    // 1) agrupar todos os holes por “grupo lógico”
+    const groups = new Map(); // key -> representante (ev)
     for (const [a,b] of oppHoles){
-      const villEv = evalBest([a,b].concat(board));
-      const c = cmpEval(heroEv, villEv);
-      if (c>0) win++; else if (c<0) lose++; else tie++;
+      const all7 = [a,b].concat(board);
+      const ev = evalBest(all7);
+      const key = groupKey(ev, all7, board);
+      if(!groups.has(key)){ groups.set(key, ev); } // 1 representante por grupo
     }
-    const tot = win+tie+lose || 1;
+
+    // 2) comparar cada GRUPO com o herói
+    let winG = 0, tieG = 0, loseG = 0;
+    for(const ev of groups.values()){
+      const c = cmpEval(heroEv, ev);
+      if (c>0) winG++;
+      else if (c<0) loseG++;
+      else tieG++;
+    }
+    const totG = Math.max(1, groups.size);
     return {
-      win: win/tot, tie: tie/tot, lose: lose/tot,
-      totalCombos: tot,
+      win: winG/totG,             // fração por grupos
+      tie: tieG/totG,
+      lose: loseG/totG,
+      totalGroups: totG,
+      betterGroups: loseG,
+      tieGroups: tieG,
+      worseGroups: winG,
       heroEv
     };
   }
 
-  // ajusta para N vilões (aprox analítica rápida)
+  // ajusta para N vilões (aprox analítica rápida) — usa frações por GRUPOS
   function adjustForNOpp(p1, t1, nOpp){
     nOpp = Math.max(1, Number(nOpp)||1);
     if (nOpp === 1) return { win: p1, tie: t1, lose: 1-p1-t1 };
-    // Aproximação conservadora (independente):
+    // aproximação independente
     const win = Math.pow(p1, nOpp);
-    const tie = 0; // desprezamos empate multiway para simplicidade
+    const tie = 0; // ignoramos empate multiway
     const lose = Math.max(0, 1 - win - tie);
     return { win, tie, lose };
   }
 
   function scoreFrom(win, tie){
-    // 0..10
+    // 0..10 simples
     return Math.max(0, Math.min(10, 10*win + 5*tie));
   }
 
@@ -156,7 +243,7 @@
       return;
     }
 
-    // força vs 1 vilão
+    // força vs 1 vilão (por grupos)
     const base = strengthVsOneVillain(hand, board);
     // ajuste p/ N vilões (aprox rápida)
     const adj  = adjustForNOpp(base.win, base.tie, nOpp);
@@ -169,13 +256,10 @@
     R.getElementById('left').textContent  = `${score.toFixed(1)} / 10`;
     R.getElementById('right').textContent = `vs ${nOpp} oponente${nOpp>1?'s':''} • ${CAT_NAME ? (CAT_NAME[base.heroEv.cat]||'') : ''}`;
 
-    // KPIs (mostra contagens brutas do cenário 1 vilão, que é a base estatística)
-    const better = Math.round(base.totalCombos * (1 - base.win - base.tie));
-    const ties   = Math.round(base.totalCombos * base.tie);
-    const worse  = Math.round(base.totalCombos * base.win);
-    R.getElementById('kpiL').textContent = `Melhores: ${better}`;
-    R.getElementById('kpiM').textContent = `Empates: ${ties}`;
-    R.getElementById('kpiR').textContent = `Piores: ${worse}`;
+    // KPIs — agora por GRUPOS
+    R.getElementById('kpiL').textContent = `Melhores: ${base.betterGroups}`;
+    R.getElementById('kpiM').textContent = `Empates: ${base.tieGroups}`;
+    R.getElementById('kpiR').textContent = `Piores: ${base.worseGroups}`;
   }
 
   // ====== wiring (auto-update leve) ======
