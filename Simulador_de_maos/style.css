@@ -14,14 +14,12 @@ img.brand-logo {
     text-align: center;
 }
 
-
-
 #multi-sim {
   background:#111827;
   border:1px solid #334155;
   border-radius:14px;
   padding:14px;
-  width:720px;
+  width:80%;
   margin:40px auto;
   box-shadow:0 12px 30px rgba(0,0,0,.35);
 }
@@ -247,3 +245,4 @@ button:hover { filter:brightness(1.1); }
   color:#facc15;
   text-shadow:0 0 4px rgba(250,204,21,0.4);
 }
+
