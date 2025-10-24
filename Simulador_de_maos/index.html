@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Simulador Multi-Players - Poker Calculator</title>
+<link rel="stylesheet" href="style.css">
+<script src="pcalc-core.js"></script>
+</head>
+<body>
+<img src="logo.png" alt="Poker Calculator" class="brand-logo">
+<p class="sub">Simulador de Mãos: Simula , vários Boards e mostra qual mão ganhou mais vezes.</p>
+<div id="multi-sim">
+  
+  <div class="controls">
+    <label>Jogadores:</label>
+    <select id="playerCount">
+      <option>2</option><option>3</option><option>4</option>
+      <option>5</option><option>6</option><option>7</option>
+      <option>8</option><option>9</option>
+    </select>
+    <button id="initPlayers">Gerar</button>
+  </div>
+
+  <div id="heroArea"></div>
+  <div id="villainArea">
+    <div class="villain-row" id="villainRow1"></div>
+    <div class="villain-row" id="villainRow2"></div>
+  </div>
+
+  <div style="text-align:center;margin-top:10px;">
+    <label>Rodadas:</label>
+    <input id="numRounds" type="number" min="1" max="500" value="10" style="width:80px;text-align:center;">
+    <button id="btnAuto">Iniciar Auto</button>
+    <button id="btnReset" style="margin-left:8px;background:#ef4444;color:#fff;">Resetar</button>
+  </div>
+
+  <div id="boardArea"><div id="boardRow"></div></div>
+
+  <div id="resultArea"></div>
+  <div id="scoreArea"></div>
+</div>
+
+<!-- Modal de seleção -->
+<div id="cardModal"><div id="cardGrid"></div></div>
+
+<script src="script.js"></script>
+<script src="simulator.js"></script>
+<script src="recursos.js"></script>
+<script src="turbo.js"></script>
+</body>
+</html>
