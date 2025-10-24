@@ -40,15 +40,38 @@ img.brand-logo {
 
 button {
   background:#22c55e;
+  font-size: 15px;
   color:#000;
   border:none;
   padding:6px 12px;
   border-radius:6px;
   cursor:pointer;
+  padding: 7px 14px;
   font-weight:bold;
 }
-button:hover { filter:brightness(1.1); }
 
+element.style {
+    width: 80px;
+    text-align: center;
+}
+
+button:hover { filter:brightness(1.1); }
+select#playerCount {
+    font-size: 15px;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-weight: bold;
+    cursor: pointer;
+}
+input#numRounds {
+    font-size: 15px;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-weight: bold;
+    cursor: pointer;
+}
 .player-row {
   display:flex;
   align-items:center;
@@ -245,4 +268,5 @@ button:hover { filter:brightness(1.1); }
   color:#facc15;
   text-shadow:0 0 4px rgba(250,204,21,0.4);
 }
+
 
