@@ -52,6 +52,10 @@ h1 {
   gap: 16px;
 }
 
+img.brand-logo {
+    width: 30%;
+    margin-left: 35%;
+}
 @media (max-width: 980px) {
   .grid {
     grid-template-columns: 1fr;
@@ -394,3 +398,4 @@ code {
     left: calc(5*var(--slotw) + 3*var(--slotgap) + 2*var(--rowgap) - 2px);
   }
 }
+
