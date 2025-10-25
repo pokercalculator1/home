@@ -281,14 +281,18 @@ img.brand-logo {
   background: #111827;
 }
 
-/* Spacer */
-.spacer {
-  width: calc(var(--slotw) + var(--slotgap) - var(--rowgap));
-  height: 1px;
+/* Melhor mão ao lado da sua mão */
+.board2 .row:nth-child(2) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--rowgap);
 }
 
-.nutsline {
-  gap: var(--slotgap);
+.board2 .row:nth-child(2) .group:last-child {
+  position: static;
+  margin-left: var(--rowgap);
 }
 
 /* ===== Botões ===== */
