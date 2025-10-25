@@ -60,8 +60,8 @@ h1 {
 
 /* ===== Branding (logo + título) ===== */
 img.brand-logo {
-  width: 30%;
-  margin-left: 35%;
+  width: 16%;
+  margin-left: 42%;
 }
 
 /* ===== Destaque para a decisão ===== */
@@ -96,6 +96,12 @@ img.brand-logo {
   border-radius: 999px;
   background: currentColor;
   opacity: .25;
+}
+
+@media (max-width: 768px) {
+  img.brand-logo {
+  width: 16%;
+  margin-left: 42%;
 }
 
 /* Glow suave */
@@ -394,5 +400,6 @@ code {
     left: calc(5*var(--slotw) + 3*var(--slotgap) + 2*var(--rowgap) - 2px);
   }
 }
+
 
 
