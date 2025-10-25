@@ -54,7 +54,7 @@ h1 {
 
 /* ===== Branding (logo + título) ===== */
 img.brand-logo {
-  width: 16%; /* padrão desktop */
+  width: 16%;
   display: block;
   margin: 0 auto;
 }
@@ -355,12 +355,18 @@ code {
    📱 MOBILE: até 768px
    =============================== */
 @media (max-width: 768px) {
+  html, body {
+    max-width: 100vw;
+    overflow-x: hidden;
+    height: 100vh;
+  }
+
   .grid {
     grid-template-columns: 1fr;
   }
 
   img.brand-logo {
-    width: 36%; /* menor e centralizada */
+    width: 36%;
     margin: 0 auto;
   }
 
@@ -382,7 +388,7 @@ code {
    =============================== */
 @media (min-width: 769px) {
   img.brand-logo {
-    width: 16%; /* padrão desktop */
+    width: 16%;
     margin: 0 auto;
   }
 }
