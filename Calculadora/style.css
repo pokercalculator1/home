@@ -52,16 +52,11 @@ h1 {
   gap: 16px;
 }
 
-@media (max-width: 980px) {
-  .grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 /* ===== Branding (logo + título) ===== */
 img.brand-logo {
-  width: 16%;
-  margin-left: 42%;
+  width: 16%; /* padrão desktop */
+  display: block;
+  margin: 0 auto;
 }
 
 /* ===== Destaque para a decisão ===== */
@@ -97,13 +92,7 @@ img.brand-logo {
   background: currentColor;
   opacity: .25;
 }
-}
-@media (max-width: 768px) {
-  img.brand-logo {
-  width: 30%;
-  margin-left: 35%;
-}
-}
+
 /* Glow suave */
 @media (prefers-reduced-motion: no-preference) {
   .decision.glow::before {
@@ -362,8 +351,19 @@ code {
 .evVerdict.bad { color: #ef4444; }
 .evVerdict.even { color: #f59e0b; }
 
-/* ===== Responsivo: slots menores ===== */
-@media (max-width:520px) {
+/* ===============================
+   📱 MOBILE: até 768px
+   =============================== */
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  img.brand-logo {
+    width: 36%; /* menor e centralizada */
+    margin: 0 auto;
+  }
+
   :root {
     --slotw: 44px;
     --sloth: 62px;
@@ -373,35 +373,16 @@ code {
   .row { gap: var(--rowgap); }
 
   .btn.warn {
-    background: #1f2937;
-    border-color: #f59e0b;
-    color: #fde68a;
-    margin-left: 30.5%;
+    margin-left: 0;
   }
 }
 
-/* ===== “Mão mais forte” alinhada ===== */
-.board2 .row:first-child {
-  min-height: calc(var(--sloth) + 24px);
-}
-
-.board2 .row:nth-child(2) .group:last-child {
-  position: absolute;
-  top: 0;
-  left: calc(5*var(--slotw) + 3*var(--slotgap) + 2*var(--rowgap));
-}
-
-.board2 .row:nth-child(2) .group:last-child .mut {
-  margin-bottom: 6px;
-}
-
-@media (max-width:360px) {
-  .board2 .row:nth-child(2) .group:last-child {
-    left: calc(5*var(--slotw) + 3*var(--slotgap) + 2*var(--rowgap) - 2px);
+/* ===============================
+   💻 DESKTOP: acima de 768px
+   =============================== */
+@media (min-width: 769px) {
+  img.brand-logo {
+    width: 16%; /* padrão desktop */
+    margin: 0 auto;
   }
 }
-
-
-
-
-
