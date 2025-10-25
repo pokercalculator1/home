@@ -1,64 +1,38 @@
-:root {
-  --bg: #0f172a;
-  --panel: #111827;
-  --muted: #94a3b8;
-  --text: #e5e7eb;
-  --accent: #22c55e;
-  --line: #1f2937;
-  --warn: #f59e0b;
-  --danger: #ef4444;
+:root{
+  --bg:#0f172a;
+  --panel:#111827;
+  --muted:#94a3b8;
+  --text:#e5e7eb;
+  --accent:#22c55e;
+  --line:#1f2937;
+  --warn:#f59e0b;
+  --danger:#ef4444;
 
   /* Dimensões dos slots/cartas */
-  --slotw: 50px;
-  --sloth: 70px;
-  --slotgap: 6px;
-  --rowgap: 14px;
+  --slotw:50px;
+  --sloth:70px;
+  --slotgap:6px;
+  --rowgap:14px;
 }
 
 /* ===== Base ===== */
-* {
-  box-sizing: border-box;
+*{ box-sizing:border-box; }
+body{
+  margin:0;
+  background:linear-gradient(180deg,#0b1220,#0b1220 40%,#0f172a);
+  color:var(--text);
+  font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;
 }
-
-body {
-  margin: 0;
-  background: linear-gradient(180deg, #0b1220, #0b1220 40%, #0f172a);
-  color: var(--text);
-  font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial, sans-serif;
-}
-
-.wrap {
-  max-width: 1100px;
-  margin: 24px auto;
-  padding: 0 16px;
-}
-
-h1 {
-  font-size: 20px;
-  margin: 0 0 12px;
-  letter-spacing: .2px;
-}
-
-.sub {
-  color: var(--muted);
-  margin: 4px 0 16px;
-  text-align: center;
-}
+.wrap{ max-width:1100px; margin:24px auto; padding:0 16px; }
+h1{ font-size:20px; margin:0 0 12px; letter-spacing:.2px; }
+.sub{ color:var(--muted); margin:4px 0 16px; }
 
 /* ===== Grid principal ===== */
-.grid {
-  display: grid;
+.grid{
+  display:grid;
   grid-template-columns: 1fr 420px;
-  gap: 16px;
+  gap:16px;
 }
-
-/* ===== Branding (logo + título) ===== */
-img.brand-logo {
-  width: 16%;
-  display: block;
-  margin: 0 auto;
-}
-
 /* ===== Destaque para a decisão ===== */
 .decision {
   margin-top: 10px;
@@ -70,18 +44,18 @@ img.brand-logo {
 }
 
 .decision-title {
-  font-weight: 900;
+  font-weight: 900;          /* bem forte */
   font-size: 16px;
-  text-transform: uppercase;
+  text-transform: uppercase; /* caixa alta melhora leitura rápida */
   letter-spacing: .5px;
   line-height: 1.1;
 }
 
 /* Paleta por “tipo” de decisão */
-.decision-title.ok { color: #22c55e; }
-.decision-title.warn { color: #f59e0b; }
-.decision-title.info { color: #60a5fa; }
-.decision-title.danger { color: #ef4444; }
+.decision-title.ok     { color: #22c55e; }  /* verde - valor/raise */
+.decision-title.warn   { color: #f59e0b; }  /* amarelo - semi-blefe/linha mista */
+.decision-title.info   { color: #60a5fa; }  /* azul - check/pot control */
+.decision-title.danger { color: #ef4444; }  /* vermelho - fold */
 
 .decision-title::after {
   content: '';
@@ -89,11 +63,11 @@ img.brand-logo {
   margin-top: 6px;
   height: 3px;
   border-radius: 999px;
-  background: currentColor;
+  background: currentColor; /* usa a cor da decisão */
   opacity: .25;
 }
 
-/* Glow suave */
+/* Glow suave que NÃO atrapalha leitura; respeita usuários sensíveis a movimento */
 @media (prefers-reduced-motion: no-preference) {
   .decision.glow::before {
     content: '';
@@ -108,291 +82,353 @@ img.brand-logo {
   }
   @keyframes decision-pulse {
     0%, 100% { opacity: .18; }
-    50% { opacity: .35; }
+    50%      { opacity: .35; }
   }
 }
 
+/* Corpo/explicação da decisão */
 .decision-detail {
   margin-top: 6px;
-  color: #cbd5e1;
+  color: #cbd5e1;    /* mut */
   font-size: 13px;
 }
 
-/* ===== Cards/containers ===== */
-.card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, .35);
+@media (max-width: 980px){
+  .grid{ grid-template-columns:1fr; }
 }
 
-.card h2 {
-  margin: 0;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--line);
-  font-size: 16px;
+/* ===== Branding (logo + título) ===== */
+.brand{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin:0 0 12px;
+  flex-wrap:wrap;
 }
-
-.card .body {
-  padding: 12px 14px;
+.brand-logo{
+  height:56px;     /* desktop: logo à esquerda */
+  width:auto;      /* mantém proporção 560x180 */
+  max-width:100%;
+  margin:0;        /* sem empurrar conteúdo */
 }
-
-/* ===== Deck ===== */
-.deck {
-  display: grid;
-  grid-template-columns: repeat(13, 1fr);
-  gap: 6px;
-}
-
-.cell {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 6px 0;
+.brand-title{
+  margin:0;
+  font-size:20px;
+  line-height:1.2;
   text-align: center;
-  cursor: pointer;
-  user-select: none;
-  background: #0b1324;
 }
-
-.cell:hover { outline: 1px solid #334155; }
-
-.cell.sel {
-  background: #1e293b;
-  border-color: #334155;
-  box-shadow: inset 0 0 0 1px #3b82f6;
-}
-
-/* Naipes/cores */
-.s { color: #60a5fa; }
-.h { color: #ef4444; }
-.d { color: #22c55e; }
-.c { color: #e5e7eb; }
-.mut { color: #64748b; }
-
-/* ===== Badges / labels ===== */
-.labels {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 2vh;
-}
-
-.lbl {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px dashed #334155;
-  color: #cbd5e1;
-}
-
-/* ===== Barras/progresso ===== */
-.bar {
-  height: 8px;
-  border-radius: 99px;
-  background: #0b1220;
-  border: 1px solid #1f2937;
-  overflow: hidden;
-}
-
-.bar > i {
-  display: block;
-  height: 100%;
-  background: linear-gradient(90deg, #3b82f6, #22c55e);
-}
-
-/* ===== Outs ===== */
-.outs {
-  display: grid;
-  gap: 10px;
-}
-
-.out {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 8px;
-}
-
-.out h3 {
-  margin: 0 0 6px;
-  font-size: 14px;
-}
-
-.out small {
-  color: #9ca3af;
-}
-
-.cards {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.cardtag {
+ /* ===== Destaque para a decisão ===== */
+.decision {
+  margin-top: 10px;
+  padding: 10px 12px;
   border: 1px solid #334155;
-  border-radius: 8px;
-  padding: 6px 8px;
+  border-radius: 12px;
   background: #0b1324;
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-}
-
-/* ===== Board em 2 linhas ===== */
-.board2 {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
   position: relative;
 }
 
-.row {
-  display: flex;
-  gap: var(--rowgap);
-  align-items: flex-start;
-  flex-wrap: nowrap;
+.decision-title {
+  font-weight: 900;          /* bem forte */
+  font-size: 16px;
+  text-transform: uppercase; /* caixa alta melhora leitura rápida */
+  letter-spacing: .5px;
+  line-height: 1.1;
 }
 
-.row .group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+/* Paleta por “tipo” de decisão */
+.decision-title.ok     { color: #22c55e; }  /* verde - valor/raise */
+.decision-title.warn   { color: #f59e0b; }  /* amarelo - semi-blefe/linha mista */
+.decision-title.info   { color: #60a5fa; }  /* azul - check/pot control */
+.decision-title.danger { color: #ef4444; }  /* vermelho - fold */
+
+.decision-title::after {
+  content: '';
+  display: block;
+  margin-top: 6px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor; /* usa a cor da decisão */
+  opacity: .25;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .decision.glow::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 12px;
+    background: radial-gradient(60% 100% at 50% -20%, currentColor 0%, transparent 60%);
+    filter: blur(12px);
+    opacity: .25;
+    animation: decision-pulse 2.4s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes decision-pulse {
+    0%, 100% { opacity: .18; }
+    50%      { opacity: .35; }
+  }
 }
 
-.row .cardsline {
-  display: flex;
-  gap: var(--slotgap);
-  flex-wrap: nowrap;
+/* Corpo/explicação da decisão */
+.decision-detail {
+  margin-top: 6px;
+  color: #cbd5e1;    /* mut */
+  font-size: 13px;
 }
+2) Patch no seu script.js
+(a) Adicione estas funções utilitárias em qualquer lugar antes do calcEquity():
+js
+Copiar código
+// Mapeia o título em uma classe de cor (ok/warn/info/danger)
+function decisionClass(title){
+  const t = (title || '').toUpperCase();
+  if (t.includes('APOSTE') || t.includes('VALOR') || t.includes('AUMENTE')) return 'ok';
+  if (t.includes('SEMI-BLEFE')) return 'warn';
+  if (t.includes('CHECK OU DESISTA') || t.includes('DESISTA') || t.includes('FOLD')) return 'danger';
+  if (t.includes('CONTROLE') || t.includes('CHECK') || t.includes('POT CONTROL')) return 'info';
+  return 'info';
+}
+
+// Opcional: quer o brilho “glow” só quando a decisão muda de tipo?
+let _lastDecisionClass = null;
+function shouldGlow(cls){
+  const glow = (_lastDecisionClass && _lastDecisionClass !== cls);
+  _lastDecisionClass = cls;
+  return glow;
+}
+/* Tablet/Mobile: centraliza apenas a IMAGEM da logo */
+@media (max-width: 980px){
+  .brand{
+    flex-direction:column;
+    align-items:flex-start;
+    gap:8px;
+  }
+  .brand-logo{
+    display:block;
+    height:40px;
+    margin:0 auto; /* centraliza só a imagem */
+  }
+}
+@media (max-width:520px){
+  .brand-logo{
+    width:min(240px, 40vw);
+    height:auto;
+  }
+}
+
+/* ===== Cards/containers ===== */
+.card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:14px;
+  box-shadow:0 12px 30px rgba(0,0,0,.35);
+}
+.card h2{
+  margin:0;
+  padding:12px 14px;
+  border-bottom:1px solid var(--line);
+  font-size:16px;
+}
+.card .body{ padding:12px 14px; }
+
+/* ===== Deck ===== */
+.deck{
+  display:grid;
+  grid-template-columns:repeat(13,1fr);
+  gap:6px;
+}
+.cell{
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:6px 0;
+  text-align:center;
+  cursor:pointer;
+  user-select:none;
+  background:#0b1324;
+}
+.cell:hover{ outline:1px solid #334155; }
+.cell.sel{
+  background:#1e293b;
+  border-color:#334155;
+  box-shadow:inset 0 0 0 1px #3b82f6;
+}
+
+/* Naipes/cores */
+.s{ color:#60a5fa; }
+.h{ color:#ef4444; }
+.d{ color:#22c55e; }
+.c{ color:#e5e7eb; }
+.mut{ color:#64748b; }
+
+/* ===== Badges / labels ===== */
+.labels{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:2vh; }
+.lbl{
+  font-size:12px;
+  padding:2px 8px;
+  border-radius:999px;
+  border:1px dashed #334155;
+  color:#cbd5e1;
+}
+
+/* ===== Barras/progresso ===== */
+.bar{
+  height:8px;
+  border-radius:99px;
+  background:#0b1220;
+  border:1px solid #1f2937;
+  overflow:hidden;
+}
+.bar>i{
+  display:block;
+  height:100%;
+  background:linear-gradient(90deg,#3b82f6,#22c55e);
+}
+
+/* ===== Outs ===== */
+.outs{ display:grid; gap:10px; }
+.out{
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:8px;
+}
+.out h3{ margin:0 0 6px; font-size:14px; }
+.out small{ color:#9ca3af; }
+
+.cards{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.cardtag{
+  border:1px solid #334155;
+  border-radius:8px;
+  padding:6px 8px;
+  background:#0b1324;
+  display:inline-flex;
+  gap:6px;
+  align-items:center;
+}
+
+/* ===== Board em 2 linhas ===== */
+.board2{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+
+  /* necessário para posicionar o bloco “Mão mais forte” no topo */
+  position: relative;
+}
+.row{ display:flex; gap:var(--rowgap); align-items:flex-start; flex-wrap:nowrap; }
+.row .group{ display:flex; flex-direction:column; gap:6px; }
+.row .cardsline{ display:flex; gap:var(--slotgap); flex-wrap:nowrap; }
 
 /* Slots */
-.slot {
-  width: var(--slotw);
-  height: var(--sloth);
-  border-radius: 10px;
-  border: 1px dashed #334155;
-  display: grid;
-  place-items: center;
-  background: #0b1324;
+.slot{
+  width:var(--slotw);
+  height:var(--sloth);
+  border-radius:10px;
+  border:1px dashed #334155;
+  display:grid;
+  place-items:center;
+  background:#0b1324;
+}
+.slot.filled{ border-style:solid; background:#111827; }
+
+/* Spacer (não usado neste layout, mas mantido) */
+.spacer{
+  width:calc(var(--slotw) + var(--slotgap) - var(--rowgap));
+  height:1px;
 }
 
-.slot.filled {
-  border-style: solid;
-  background: #111827;
-}
-
-/* Melhor mão ao lado da sua mão */
-.board2 .row:nth-child(2) {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-start;
-  gap: var(--rowgap);
-}
-
-.board2 .row:nth-child(2) .group:last-child {
-  position: static;
-  margin-left: var(--rowgap);
-}
+/* Linha de nuts com o mesmo gap dos slots (para casar com turn↔river) */
+.nutsline{ gap:var(--slotgap); }
 
 /* ===== Botões ===== */
-.btns {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 10px;
+.btns{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+.btn{
+  padding:8px 12px;
+  border:1px solid #334155;
+  background:#0b1324;
+  color:#e5e7eb;
+  border-radius:10px;
+  cursor:pointer;
+  transition:.15s ease filter, .15s ease background;
 }
-
-.btn {
-  padding: 8px 12px;
-  border: 1px solid #334155;
-  background: #0b1324;
-  color: #e5e7eb;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: .15s ease filter, .15s ease background;
-}
-
-.btn:hover { background: #132038; }
-
-.btn.primary {
-  background: #2563eb;
-  border-color: #2563eb;
-}
-
-.btn.primary:hover { filter: brightness(1.1); }
-
-.btn.warn {
-  background: #1f2937;
-  border-color: #f59e0b;
-  color: #fde68a;
-}
+.btn:hover{ background:#132038; }
+.btn.primary{ background:#2563eb; border-color:#2563eb; }
+.btn.primary:hover{ filter:brightness(1.1); }
+.btn.warn{ background:#1f2937; border-color:#f59e0b; color:#fde68a; }
 
 /* ===== Dicas / rodapé / code ===== */
-.hint {
-  padding: 8px 10px;
-  border-left: 3px solid #3b82f6;
-  background: #0b1324;
-  color: #cbd5e1;
-  border-radius: 8px;
+.hint{
+  padding:8px 10px;
+  border-left:3px solid #3b82f6;
+  background:#0b1324;
+  color:#cbd5e1;
+  border-radius:8px;
 }
-
-.foot {
-  margin-top: 12px;
-  color: #94a3b8;
-}
-
-code {
-  background: #0b1324;
-  padding: 2px 6px;
-  border-radius: 6px;
-  border: 1px solid #334155;
+.foot{ margin-top:12px; color:#94a3b8; }
+code{
+  background:#0b1324;
+  padding:2px 6px;
+  border-radius:6px;
+  border:1px solid #334155;
 }
 
 /* ===== EV — semáforo ===== */
-.evVerdict { font-weight: 700; }
-.evVerdict.good { color: #22c55e; }
-.evVerdict.bad { color: #ef4444; }
-.evVerdict.even { color: #f59e0b; }
+.evVerdict{ font-weight:700; }
+.evVerdict.good{ color:#22c55e; }  /* verde */
+.evVerdict.bad{ color:#ef4444; }   /* vermelho */
+.evVerdict.even{ color:#f59e0b; }  /* amarelo */
 
-/* ===============================
-   📱 MOBILE: até 768px
-   =============================== */
-@media (max-width: 768px) {
-  html, body {
-    max-width: 100vw;
-    overflow-x: hidden;
-    height: 100vh;
+/* ===== Responsivo: slots menores ===== */
+@media (max-width:520px){
+  :root{
+    --slotw:44px;
+    --sloth:62px;
+    --rowgap:10px;
   }
+  .row{ gap:var(--rowgap); }
 
-  .grid {
-    grid-template-columns: 1fr;
-  }
-
-  img.brand-logo {
-    width: 36%;
-    margin: 0 auto;
-  }
-
-  :root {
-    --slotw: 44px;
-    --sloth: 62px;
-    --rowgap: 10px;
-  }
-
-  .row { gap: var(--rowgap); }
-
-  .btn.warn {
-    margin-left: 0;
+  /* manter offset antigo do botão de limpar, se desejar */
+  .btn.warn{
+    background:#1f2937;
+    border-color:#f59e0b;
+    color:#fde68a;
+    margin-left:30.5%;
   }
 }
 
-/* ===============================
-   💻 DESKTOP: acima de 768px
-   =============================== */
-@media (min-width: 769px) {
-  img.brand-logo {
-    width: 16%;
-    margin: 0 auto;
+/* =========================
+   “Mão mais forte” NA MESMA LINHA da “Sua mão”
+   e ALINHADA com TURN e RIVER (desktop e mobile)
+   ========================= */
+
+/* Dá altura suficiente na 1ª linha para comportar as cartas dos nuts que sobem */
+.board2 .row:first-child{
+  min-height: calc(var(--sloth) + 24px);
+}
+
+/* Sobe o último .group da 2ª linha (Mão mais forte) para o topo:
+   PRIMEIRA carta fica exatamente sobre a coluna do TURN,
+   SEGUNDA carta sobre a coluna do RIVER. */
+.board2 .row:nth-child(2) .group:last-child{
+  position:absolute;
+  top:0;
+
+  /* Cálculo do deslocamento horizontal:
+     Sua mão: 2*slotw + 1*slotgap
+     + gap entre grupos: 1*rowgap
+     + Flop: 3*slotw + 2*slotgap
+     + gap entre grupos: 1*rowgap
+     = 5*slotw + 3*slotgap + 2*rowgap
+  */
+  left: calc(5*var(--slotw) + 3*var(--slotgap) + 2*var(--rowgap));
+}
+
+/* Texto logo abaixo das cartas dos nuts */
+.board2 .row:nth-child(2) .group:last-child .mut{
+  margin-bottom: 6px;
+}
+
+/* Ajuste fino opcional em telas muito estreitas */
+@media (max-width:360px){
+  .board2 .row:nth-child(2) .group:last-child{
+    left: calc(5*var(--slotw) + 3*var(--slotgap) + 2*var(--rowgap) - 2px);
   }
 }
