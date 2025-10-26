@@ -108,6 +108,11 @@ select option { background:#0f172a; color:#e5e7eb; }
   margin-right: auto;
 }
 
+/* Centraliza se houver apenas 1 elemento no placar */
+#scoreArea:has(.score-item:only-child) {
+  justify-items: center;
+}
+
 .score-item {
   display: flex;
   flex-direction: column;
@@ -161,12 +166,19 @@ select option { background:#0f172a; color:#e5e7eb; }
     display:grid; grid-template-columns:repeat(2, 1fr);
     gap:10px; justify-items:center;
   }
+
   .villain-row { display:contents; }
 
   .player-row.villain {
     flex-direction:row; align-items:center; justify-content:center;
     background:#0f172a; padding:6px; border-radius:10px; border:1px solid #1e293b;
     flex-wrap:nowrap; gap:4px; width:100%; max-width:160px; box-sizing:border-box;
+  }
+
+  /* Centraliza vilão se estiver sozinho na linha */
+  #villainArea:has(.player-row.villain:only-child) {
+    justify-content: center;
+    display: flex;
   }
 
   .player-name { font-size:12px; text-align:center; flex-basis:100%; }
