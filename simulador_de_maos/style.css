@@ -54,6 +54,36 @@ select option { background:#0f172a; color:#e5e7eb; }
 .player-name { font-weight:bold; color:#94a3b8; min-width:80px; }
 .player-name.hero { color:#facc15; }
 
+/* === Vilões lado a lado (desktop) === */
+#villainArea {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  justify-items: center;
+  margin-top: 16px;
+}
+
+.player-row.villain {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0f172a;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid #1e293b;
+  gap: 6px;
+  flex-wrap: nowrap;
+  width: 100%;
+  max-width: 180px;
+  box-sizing: border-box;
+}
+
+.player-name {
+  font-size: 13px;
+  text-align: center;
+  color: #94a3b8;
+}
+
 /* === Cartas === */
 .slot {
   width:52px; height:70px; border-radius:10px; border:1px dashed #334155;
@@ -169,15 +199,23 @@ select option { background:#0f172a; color:#e5e7eb; }
   #boardRow { flex-wrap:wrap; justify-content:center; }
   #scoreArea { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:8px; padding:6px; }
   #heroArea { display:flex; justify-content:center; flex-wrap:wrap; margin-bottom:10px; }
-  #villainArea { display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; justify-items:center; }
-  .villain-row { display:contents; }
-  .player-row.villain {
-    flex-direction:row; align-items:center; justify-content:center;
-    background:#0f172a; padding:6px; border-radius:10px; border:1px solid #1e293b;
-    flex-wrap:nowrap; gap:4px; width:100%; max-width:160px; box-sizing:border-box;
+
+  /* 2 vilões por linha no mobile */
+  #villainArea {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    justify-items: center;
   }
+
+  .player-row.villain {
+    max-width: 160px;
+    flex-direction: row;
+    padding: 6px;
+  }
+
   .player-name { font-size:12px; text-align:center; flex-basis:100%; }
   .slot { width:46px; height:62px; }
+
   #cardModal { position:fixed; inset:0; background:rgba(0,0,0,0.88); display:none; justify-content:center; align-items:center; z-index:9999; }
   #cardGrid {
     display:grid; grid-template-columns: repeat(13, max-content); grid-template-rows: repeat(4, max-content);
