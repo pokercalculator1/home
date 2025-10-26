@@ -88,19 +88,40 @@ select option { background:#0f172a; color:#e5e7eb; }
 }
 .modal-card.used { opacity:.3; pointer-events:none; filter:grayscale(.8); }
 
-/* === Board & Placar === */
+/* === Board === */
 #boardArea { margin-top:16px; }
 #boardRow { display:flex; justify-content:center; gap:8px; }
 
+/* === Placar === */
 #scoreArea {
-  display:flex; justify-content:center; flex-wrap:wrap; gap:10px; margin-top:14px;
-  padding:8px; background:#0f172a; border-radius:10px; border:1px solid #334155;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  justify-content: center;
+  margin-top: 14px;
+  padding: 8px;
+  background: #0f172a;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
 }
+
 .score-item {
-  display:flex; flex-direction:column; align-items:center;
-  background:#1e293b; padding:8px 12px; border-radius:8px; min-width:70px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #1e293b;
+  padding: 8px 12px;
+  border-radius: 8px;
+  min-width: 100px;
 }
-.score-item.hero { background:linear-gradient(135deg,#facc15,#eab308); color:#000; }
+
+.score-item.hero {
+  background: linear-gradient(135deg, #facc15, #eab308);
+  color: #000;
+}
 
 /* === MOBILE === */
 @media (max-width: 768px) {
@@ -124,7 +145,11 @@ select option { background:#0f172a; color:#e5e7eb; }
   button { width:90%; max-width:240px; margin:2px 0; font-size:1rem; }
 
   #boardRow { flex-wrap:wrap; justify-content:center; }
-  #scoreArea { flex-direction:column; align-items:center; }
+  #scoreArea { 
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+    padding: 6px;
+  }
 
   /* Hero */
   #heroArea {
@@ -149,16 +174,14 @@ select option { background:#0f172a; color:#e5e7eb; }
   /* Cartas menores no mobile (mão dos jogadores) */
   .slot { width:46px; height:62px; }
 
-  /* === Modal no mobile: 4 linhas (naipe) com SCROLL HORIZONTAL === */
+  /* === Modal: 4 linhas fixas (naipe) com scroll horizontal === */
   #cardModal {
     position:fixed; inset:0; background:rgba(0,0,0,0.88);
     display:none; justify-content:center; align-items:center; z-index:9999;
   }
 
-  /* O grid inteiro vira uma "faixa" rolável horizontalmente */
   #cardGrid {
     display:grid;
-    /* 13 colunas medem o conteúdo, não encolhem: gera overflow-x controlado */
     grid-template-columns: repeat(13, max-content);
     grid-template-rows: repeat(4, max-content);
     gap:4px;
@@ -166,14 +189,13 @@ select option { background:#0f172a; color:#e5e7eb; }
     width:100vw; max-width:100vw;
     padding:8px 6px; margin:0;
 
-    overflow-x:auto;     /* ← scroll horizontal */
+    overflow-x:auto;
     overflow-y:hidden;
     -webkit-overflow-scrolling:touch;
     background:#111827;
     border:none; border-radius:0;
   }
 
-  /* Cada carta tem largura fixa (não encolhe), garantindo 13 por linha e scroll quando necessário */
   .modal-card {
     width:48px; height:66px;
     border:1px solid #334155; background:#0b1324;
@@ -181,7 +203,6 @@ select option { background:#0f172a; color:#e5e7eb; }
     border-radius:8px; box-sizing:border-box;
   }
 
-  /* Ajuste fino para telas muito estreitas (≤ 360px) */
   @media (max-width: 360px) {
     .modal-card { width:44px; height:60px; font-size:15px; }
   }
