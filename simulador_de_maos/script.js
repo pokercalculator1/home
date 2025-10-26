@@ -79,52 +79,118 @@ window.board = board;
 
   const delay=ms=>new Promise(r=>setTimeout(r,ms));
 
+  // ================================
+  // 🔁 Simulação Automática Sequencial
+  // ================================
   async function autoSimular(qtd){
-    if(running)return; running=true;
-    if(window.MultiSim?.setRounds)window.MultiSim.setRounds(qtd);
-    for(let i=1;i<=qtd;i++){await rodadaCompleta();await delay(1000);if(!running)break;}
+    if(running)return; 
+    running=true;
+
+    if(window.MultiSim?.setRounds) window.MultiSim.setRounds(qtd);
+
+    for(let i=1;i<=qtd;i++){
+      console.log(`Rodada ${i}/${qtd}`);
+      await rodadaCompleta(i, qtd);
+      await delay(1000);
+      if(!running)break;
+    }
+
     running=false;
+    console.log("✅ Simulação finalizada!");
   }
 
-  async function rodadaCompleta(){
+  // ================================
+  // 🂠 Rodada Completa (Flop → Turn → River)
+  // ================================
+  async function rodadaCompleta(numRodada,total){
     const deck=makeDeck();
+
+    // remove cartas já usadas pelos jogadores
     players.flat().forEach(c=>{
-      if(!c)return;const idx=deck.findIndex(x=>x.r===c.r&&x.s===c.s);
+      if(!c)return;
+      const idx=deck.findIndex(x=>x.r===c.r&&x.s===c.s);
       if(idx>=0)deck.splice(idx,1);
     });
-    board.length=0; renderBoard();
-    await delay(800);
-    for(let i=0;i<5;i++){board.push(deck.splice((Math.random()*deck.length)|0,1)[0]);renderBoard();}
-    if(window.MultiSim?.playRound)window.MultiSim.playRound(players,board);
+
+    // limpa o board
+    board.length=0;
+    renderBoard();
+    await delay(500);
+
+    // Flop
+    for(let i=0;i<3;i++)
+      board.push(deck.splice((Math.random()*deck.length)|0,1)[0]);
+    renderBoard();
+    console.log(`🃏 Flop rod.${numRodada}`);
+    await delay(1000);
+
+    // Turn
+    board.push(deck.splice((Math.random()*deck.length)|0,1)[0]);
+    renderBoard();
+    console.log(`🃏 Turn rod.${numRodada}`);
+    await delay(1000);
+
+    // River
+    board.push(deck.splice((Math.random()*deck.length)|0,1)[0]);
+    renderBoard();
+    console.log(`🃏 River rod.${numRodada}`);
+    await delay(1000);
+
+    // Resultado (soma ponto após o river)
+    if (window.MultiSim?.playRound)
+      window.MultiSim.playRound(players, board);
+
+    console.log(`🏁 Fim da rodada ${numRodada}/${total}`);
   }
 
+  // ================================
+  // 🧩 Renderização do Board
+  // ================================
   function renderBoard(){
     const row=q('#boardRow');
-    if(row.children.length===0)for(let i=0;i<5;i++){const d=document.createElement('div');d.className='slot back';row.appendChild(d);}
+    if(row.children.length===0)
+      for(let i=0;i<5;i++){
+        const d=document.createElement('div');
+        d.className='slot back';
+        row.appendChild(d);
+      }
+
     for(let i=0;i<5;i++){
-      const slot=row.children[i], c=board[i];
-      if(c&&!slot.classList.contains('filled')){
+      const slot=row.children[i];
+      const c=board[i];
+      if(c){
         slot.className='slot filled';
         slot.innerHTML=`<div class="${SUIT_CLASS[c.s]}" style="text-align:center">
           <div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div>
           <div style="font-size:18px">${SUIT_GLYPH[c.s]}</div>
         </div>`;
+      } else {
+        slot.className='slot back';
+        slot.innerHTML='';
       }
     }
   }
 
+  // ================================
+  // 🔄 Reset
+  // ================================
   function resetSimulador(){
-    running=false; board.length=0; players.length=0;
+    running=false;
+    board.length=0;
+    players.length=0;
     ['#heroArea','#villainRow1','#villainRow2','#boardRow','#resultArea','#scoreArea']
       .forEach(id=>q(id)?.replaceChildren());
-    if(window.MultiSim?.resetPlacar)window.MultiSim.resetPlacar();
+    if(window.MultiSim?.resetPlacar) window.MultiSim.resetPlacar();
   }
 
+  // ================================
+  // 🎛️ Controles
+  // ================================
   q('#initPlayers').onclick=genPlayers;
   q('#btnAuto').onclick=()=>{
     const qtd=parseInt(q('#numRounds').value)||10;
-    if(!players.length)return alert("Gere jogadores antes!");
-    if(players.some(p=>!p[0]||!p[1]))return alert("Todos os jogadores precisam ter cartas!");
+    if(!players.length) return alert("Gere jogadores antes!");
+    if(players.some(p=>!p[0]||!p[1])) return alert("Todos os jogadores precisam ter cartas!");
     autoSimular(qtd);
   };
   q('#btnReset').onclick=resetSimulador;
