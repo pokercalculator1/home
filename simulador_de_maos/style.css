@@ -284,10 +284,10 @@ select option {
     margin-bottom: 10px;
   }
 
-  /* Vilões 2x2 e cartas lado a lado */
+  /* Vilões 2x2 com auto-ajuste e cartas lado a lado */
   #villainArea {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 10px;
     justify-items: center;
   }
@@ -295,14 +295,14 @@ select option {
   .villain-row { display: contents; }
 
   .player-row.villain {
-    flex-direction: row; /* ← cartas lado a lado */
+    flex-direction: row;
     align-items: center;
     justify-content: center;
     background: #0f172a;
     padding: 8px 6px;
     border-radius: 10px;
     border: 1px solid #1e293b;
-    flex-wrap: nowrap; /* evita quebra */
+    flex-wrap: wrap; /* permite adaptação sem vazamento */
     gap: 6px;
   }
 
