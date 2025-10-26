@@ -85,14 +85,12 @@ window.board = board;
     if(window.MultiSim?.setRounds) window.MultiSim.setRounds(qtd);
 
     for(let i=1;i<=qtd;i++){
-      console.log(`Rodada ${i}/${qtd}`);
       await rodadaCompleta(i, qtd);
       await delay(1000);
       if(!running)break;
     }
 
     running=false;
-    console.log("✅ Simulação finalizada!");
   }
 
   async function rodadaCompleta(numRodada,total){
@@ -129,28 +127,39 @@ window.board = board;
 
   function renderBoard(){
     const row=q('#boardRow');
+
     if(row.children.length===0)
-      for(let i=0;i<5;i++){const d=document.createElement('div');d.className='slot back';row.appendChild(d);}
+      for(let i=0;i<5;i++){
+        const d=document.createElement('div');
+        d.className='slot back';
+        row.appendChild(d);
+      }
 
     for(let i=0;i<5;i++){
       const slot=row.children[i];
       const c=board[i];
-      if(c && !slot.classList.contains('filled')){
-        slot.className='slot flip';
-        slot.innerHTML=`
-          <div class="card-inner">
-            <div class="card-back"></div>
-            <div class="card-front ${SUIT_CLASS[c.s]}">
-              <div style="text-align:center">
-                <div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div>
-                <div style="font-size:18px">${SUIT_GLYPH[c.s]}</div>
+
+      if(c){
+        if(slot.dataset.shown!=='1'){
+          slot.className='slot';
+          slot.innerHTML=`
+            <div class="card-inner">
+              <div class="card-back"></div>
+              <div class="card-front ${SUIT_CLASS[c.s]}">
+                <div style="text-align:center">
+                  <div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div>
+                  <div style="font-size:18px">${SUIT_GLYPH[c.s]}</div>
+                </div>
               </div>
-            </div>
-          </div>`;
-        setTimeout(()=>{slot.classList.add('filled');slot.classList.remove('flip');},600);
-      } else if(!c){
+            </div>`;
+          slot.dataset.shown='1';
+          requestAnimationFrame(()=>{requestAnimationFrame(()=>{slot.classList.add('faceup');});});
+        }
+      } else {
+        slot.classList.remove('faceup');
         slot.className='slot back';
         slot.innerHTML='';
+        delete slot.dataset.shown;
       }
     }
   }
