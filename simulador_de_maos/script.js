@@ -79,13 +79,9 @@ window.board = board;
 
   const delay=ms=>new Promise(r=>setTimeout(r,ms));
 
-  // ================================
-  // 🔁 Simulação Automática Sequencial
-  // ================================
   async function autoSimular(qtd){
     if(running)return; 
     running=true;
-
     if(window.MultiSim?.setRounds) window.MultiSim.setRounds(qtd);
 
     for(let i=1;i<=qtd;i++){
@@ -99,20 +95,14 @@ window.board = board;
     console.log("✅ Simulação finalizada!");
   }
 
-  // ================================
-  // 🂠 Rodada Completa (Flop → Turn → River)
-  // ================================
   async function rodadaCompleta(numRodada,total){
     const deck=makeDeck();
-
-    // remove cartas já usadas pelos jogadores
     players.flat().forEach(c=>{
       if(!c)return;
       const idx=deck.findIndex(x=>x.r===c.r&&x.s===c.s);
       if(idx>=0)deck.splice(idx,1);
     });
 
-    // limpa o board
     board.length=0;
     renderBoard();
     await delay(500);
@@ -121,59 +111,50 @@ window.board = board;
     for(let i=0;i<3;i++)
       board.push(deck.splice((Math.random()*deck.length)|0,1)[0]);
     renderBoard();
-    console.log(`🃏 Flop rod.${numRodada}`);
     await delay(1000);
 
     // Turn
     board.push(deck.splice((Math.random()*deck.length)|0,1)[0]);
     renderBoard();
-    console.log(`🃏 Turn rod.${numRodada}`);
     await delay(1000);
 
     // River
     board.push(deck.splice((Math.random()*deck.length)|0,1)[0]);
     renderBoard();
-    console.log(`🃏 River rod.${numRodada}`);
     await delay(1000);
 
-    // Resultado (soma ponto após o river)
-    if (window.MultiSim?.playRound)
+    if(window.MultiSim?.playRound)
       window.MultiSim.playRound(players, board);
-
-    console.log(`🏁 Fim da rodada ${numRodada}/${total}`);
   }
 
-  // ================================
-  // 🧩 Renderização do Board
-  // ================================
   function renderBoard(){
     const row=q('#boardRow');
     if(row.children.length===0)
-      for(let i=0;i<5;i++){
-        const d=document.createElement('div');
-        d.className='slot back';
-        row.appendChild(d);
-      }
+      for(let i=0;i<5;i++){const d=document.createElement('div');d.className='slot back';row.appendChild(d);}
 
     for(let i=0;i<5;i++){
       const slot=row.children[i];
       const c=board[i];
-      if(c){
-        slot.className='slot filled';
-        slot.innerHTML=`<div class="${SUIT_CLASS[c.s]}" style="text-align:center">
-          <div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div>
-          <div style="font-size:18px">${SUIT_GLYPH[c.s]}</div>
-        </div>`;
-      } else {
+      if(c && !slot.classList.contains('filled')){
+        slot.className='slot flip';
+        slot.innerHTML=`
+          <div class="card-inner">
+            <div class="card-back"></div>
+            <div class="card-front ${SUIT_CLASS[c.s]}">
+              <div style="text-align:center">
+                <div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div>
+                <div style="font-size:18px">${SUIT_GLYPH[c.s]}</div>
+              </div>
+            </div>
+          </div>`;
+        setTimeout(()=>{slot.classList.add('filled');slot.classList.remove('flip');},600);
+      } else if(!c){
         slot.className='slot back';
         slot.innerHTML='';
       }
     }
   }
 
-  // ================================
-  // 🔄 Reset
-  // ================================
   function resetSimulador(){
     running=false;
     board.length=0;
@@ -183,9 +164,6 @@ window.board = board;
     if(window.MultiSim?.resetPlacar) window.MultiSim.resetPlacar();
   }
 
-  // ================================
-  // 🎛️ Controles
-  // ================================
   q('#initPlayers').onclick=genPlayers;
   q('#btnAuto').onclick=()=>{
     const qtd=parseInt(q('#numRounds').value)||10;
