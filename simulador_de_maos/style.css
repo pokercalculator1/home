@@ -7,362 +7,184 @@ body {
   text-align:center;
 }
 
-.header {
-  margin-top: 20px;
-}
-.brand-logo {
-  width: 220px;
-  margin: 0 auto;
-  display:block;
-}
-.sub {
-  color: #94a3b8;
-  font-size: 14px;
-  margin-top: 4px;
-  margin-bottom: 20px;
-}
+.header { margin-top: 20px; }
+.brand-logo { width: 220px; margin: 0 auto; display:block; }
+.sub { color:#94a3b8; font-size:14px; margin:4px 0 20px; }
 
 #multi-sim {
-  background:#111827;
-  border:1px solid #334155;
-  border-radius:14px;
-  padding:14px;
-  width:720px;
-  margin:0 auto 40px;
+  background:#111827; border:1px solid #334155; border-radius:14px;
+  padding:14px; width:720px; margin:0 auto 40px;
   box-shadow:0 12px 30px rgba(0,0,0,.35);
 }
 
 .controls, .round-controls {
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  gap:10px;
-  margin:10px 0;
-  flex-wrap: wrap;
+  display:flex; justify-content:center; align-items:center;
+  gap:10px; margin:10px 0; flex-wrap:wrap;
 }
 
 button {
-  background:#22c55e;
-  color:#000;
-  border:none;
-  padding:6px 12px;
-  border-radius:6px;
-  cursor:pointer;
-  font-weight:bold;
+  background:#22c55e; color:#000; border:none; padding:6px 12px;
+  border-radius:6px; cursor:pointer; font-weight:bold;
 }
 button:hover { filter:brightness(1.1); }
-button.danger {
-  background:#ef4444;
-  color:#fff;
-}
+button.danger { background:#ef4444; color:#fff; }
 
 input[type="number"], select {
-  padding:4px 8px;
-  border-radius:6px;
-  border:1px solid #334155;
-  background:#0f172a;
-  color:#e5e7eb;
-  text-align:center;
+  padding:4px 8px; border-radius:6px; border:1px solid #334155;
+  background:#0f172a; color:#e5e7eb; text-align:center;
 }
 
-/* === Correção completa do <select> === */
+/* === Select === */
 select {
-  background-color: #0f172a;
-  border: 1px solid #334155;
-  border-radius: 8px;
-  padding: 8px;
-  color: #e5e7eb;
-  text-align: center;
-  text-align-last: center;
-  width: 100%;
-  max-width: 280px;
-  margin: 0 auto;
-  display: block;
-  box-sizing: border-box;
+  background:#0f172a; border:1px solid #334155; border-radius:8px;
+  padding:8px; color:#e5e7eb; text-align:center; text-align-last:center;
+  width:100%; max-width:280px; margin:0 auto; display:block; box-sizing:border-box;
 }
-
 @supports (-webkit-appearance: none) {
-  select {
-    -webkit-appearance: none;
-    appearance: none;
-  }
+  select { -webkit-appearance:none; appearance:none; }
 }
-
-select option {
-  background-color: #0f172a;
-  color: #e5e7eb;
-}
+select option { background:#0f172a; color:#e5e7eb; }
 
 /* === Áreas de Jogadores === */
-#heroArea, #villainArea {
-  margin-top:12px;
-}
+#heroArea, #villainArea { margin-top:12px; }
 .player-row {
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:8px;
-  margin:6px 0;
-  flex-wrap:wrap;
+  display:flex; align-items:center; justify-content:center;
+  gap:8px; margin:6px 0; flex-wrap:wrap;
 }
-.player-name {
-  font-weight:bold;
-  color:#94a3b8;
-  min-width:80px;
-}
-.player-name.hero {
-  color:#facc15;
-}
+.player-name { font-weight:bold; color:#94a3b8; min-width:80px; }
+.player-name.hero { color:#facc15; }
 
 .slot {
-  width:52px;
-  height:70px;
-  border-radius:10px;
-  border:1px dashed #334155;
-  display:grid;
-  place-items:center;
-  background:#0b1324;
-  cursor:pointer;
+  width:52px; height:70px; border-radius:10px; border:1px dashed #334155;
+  display:grid; place-items:center; background:#0b1324; cursor:pointer;
   transition:transform .2s ease;
 }
 .slot:hover { transform:scale(1.05); }
 .slot.filled { border:1px solid #334155; background:#111827; }
 .slot.back {
   background:linear-gradient(145deg,#1e293b,#0f172a);
-  border:1px solid #334155;
-  position:relative;
+  border:1px solid #334155; position:relative;
 }
-.slot.back::after {
-  content:"?";
-  color:#64748b;
-  font-weight:900;
-  font-size:22px;
-}
+.slot.back::after { content:"?"; color:#64748b; font-weight:900; font-size:22px; }
 
-/* Cores de Naipes */
+/* Naipes */
 .s { color:#60a5fa; } /* espadas */
-.h { color:#ef4444; } /* copas */
-.d { color:#22c55e; } /* ouros */
-.c { color:#e5e7eb; } /* paus */
+.h { color:#ef4444; } /* copas   */
+.d { color:#22c55e; } /* ouros   */
+.c { color:#e5e7eb; } /* paus    */
 
-/* === Modal === */
+/* === Modal (desktop/base) === */
 #cardModal {
-  position:fixed;
-  inset:0;
-  background:rgba(0,0,0,0.85);
-  display:none;
-  justify-content:center;
-  align-items:center;
-  z-index:9999;
+  position:fixed; inset:0; background:rgba(0,0,0,0.85);
+  display:none; justify-content:center; align-items:center; z-index:9999;
 }
 #cardGrid {
-  background:#111827;
-  border:1px solid #334155;
-  padding:14px;
-  border-radius:12px;
-  display:grid;
-  grid-template-columns:repeat(13,1fr);
-  gap:4px;
+  background:#111827; border:1px solid #334155; padding:14px; border-radius:12px;
+  display:grid; grid-template-columns:repeat(13,1fr); gap:4px;
 }
 .modal-card {
-  width:50px; height:70px;
-  border-radius:10px;
-  border:1px solid #334155;
-  background:#0b1324;
-  display:grid;
-  place-items:center;
-  font-weight:700;
-  font-size:18px;
-  cursor:pointer;
+  width:50px; height:70px; border-radius:10px; border:1px solid #334155;
+  background:#0b1324; display:grid; place-items:center; font-weight:700; font-size:18px; cursor:pointer;
 }
-.modal-card.used {
-  opacity:.3;
-  pointer-events:none;
-  filter:grayscale(.8);
-}
+.modal-card.used { opacity:.3; pointer-events:none; filter:grayscale(.8); }
 
-/* === Board === */
+/* === Board & Placar === */
 #boardArea { margin-top:16px; }
-#boardRow {
-  display:flex;
-  justify-content:center;
-  gap:8px;
-}
+#boardRow { display:flex; justify-content:center; gap:8px; }
 
-/* === Placar === */
 #scoreArea {
-  display:flex;
-  justify-content:center;
-  flex-wrap:wrap;
-  gap:10px;
-  margin-top:14px;
-  padding:8px;
-  background:#0f172a;
-  border-radius:10px;
-  border:1px solid #334155;
+  display:flex; justify-content:center; flex-wrap:wrap; gap:10px; margin-top:14px;
+  padding:8px; background:#0f172a; border-radius:10px; border:1px solid #334155;
 }
 .score-item {
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  background:#1e293b;
-  padding:8px 12px;
-  border-radius:8px;
-  min-width:70px;
+  display:flex; flex-direction:column; align-items:center;
+  background:#1e293b; padding:8px 12px; border-radius:8px; min-width:70px;
 }
-.score-item.hero {
-  background:linear-gradient(135deg,#facc15,#eab308);
-  color:#000;
-}
+.score-item.hero { background:linear-gradient(135deg,#facc15,#eab308); color:#000; }
 
-/* === MOBILE (Responsivo) === */
+/* === MOBILE === */
 @media (max-width: 768px) {
-  body {
-    text-align: center;
-  }
+  .brand-logo { width:65%; margin-bottom:10px; }
 
-  .brand-logo {
-    width: 65%;
-    margin-bottom: 10px;
-  }
-
-  #multi-sim {
-    width: 92%;
-    padding: 12px;
-    margin: 0 auto 20px;
-  }
+  #multi-sim { width:92%; padding:12px; margin:0 auto 20px; }
 
   .controls, .round-controls {
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
+    flex-direction:column; align-items:center; justify-content:center; gap:10px;
   }
 
   select, input[type="number"], button {
-    width: 90%;
-    max-width: 240px;
-    box-sizing: border-box;
-    text-align: center;
+    width:90%; max-width:240px; box-sizing:border-box; text-align:center;
   }
-
-  select {
-    text-align: center;
-    width: 50%;
-  }
+  select { width:50%; }
 
   input[type="number"] {
-    background-color: #0f172a;
-    border: 1px solid #334155;
-    border-radius: 8px;
-    padding: 8px;
-    color: #e5e7eb;
+    background:#0f172a; border:1px solid #334155; border-radius:8px; padding:8px; color:#e5e7eb;
   }
 
-  button {
-    width: 90%;
-    max-width: 240px;
-    margin: 2px 0;
-    font-size: 1rem;
-  }
+  button { width:90%; max-width:240px; margin:2px 0; font-size:1rem; }
 
-  #boardRow {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-
-  #scoreArea {
-    flex-direction: column;
-    align-items: center;
-  }
+  #boardRow { flex-wrap:wrap; justify-content:center; }
+  #scoreArea { flex-direction:column; align-items:center; }
 
   /* Hero */
   #heroArea {
-    display: flex;
-    justify-content: center;
-    flex-wrap: wrap;
-    margin-bottom: 10px;
+    display:flex; justify-content:center; flex-wrap:wrap; margin-bottom:10px;
   }
 
-  /* Vilões 2x2 fixo */
+  /* Vilões 2x2 */
   #villainArea {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-    justify-items: center;
+    display:grid; grid-template-columns:repeat(2, 1fr);
+    gap:10px; justify-items:center;
   }
-
-  .villain-row { display: contents; }
+  .villain-row { display:contents; }
 
   .player-row.villain {
-    flex-direction: row;
-    align-items: center;
-    justify-content: center;
-    background: #0f172a;
-    padding: 6px;
-    border-radius: 10px;
-    border: 1px solid #1e293b;
-    flex-wrap: nowrap;
-    gap: 4px;
-    width: 100%;
-    max-width: 160px;
-    box-sizing: border-box;
+    flex-direction:row; align-items:center; justify-content:center;
+    background:#0f172a; padding:6px; border-radius:10px; border:1px solid #1e293b;
+    flex-wrap:nowrap; gap:4px; width:100%; max-width:160px; box-sizing:border-box;
   }
 
-  .player-name {
-    font-size: 12px;
-    text-align: center;
-    flex-basis: 100%;
-  }
+  .player-name { font-size:12px; text-align:center; flex-basis:100%; }
 
-  /* Cartas menores no mobile */
-  .slot {
-    width: 46px;
-    height: 62px;
-  }
+  /* Cartas menores no mobile (mão dos jogadores) */
+  .slot { width:46px; height:62px; }
 
-  /* === Modal: 4 linhas fixas, uma por naipe === */
+  /* === Modal no mobile: 4 linhas (naipe) com SCROLL HORIZONTAL === */
   #cardModal {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.88);
-    display: none;
-    justify-content: center;
-    align-items: center;
-    z-index: 9999;
+    position:fixed; inset:0; background:rgba(0,0,0,0.88);
+    display:none; justify-content:center; align-items:center; z-index:9999;
   }
 
+  /* O grid inteiro vira uma "faixa" rolável horizontalmente */
   #cardGrid {
-    display: grid;
-    grid-template-columns: repeat(13, 1fr); /* 13 cartas por linha */
-    grid-template-rows: repeat(4, auto);    /* 4 linhas (naipe) */
-    width: 100vw;
-    max-width: 100vw;
-    padding: 0;
-    margin: 0;
-    gap: 1px;
-    justify-items: center;
-    background: #111827;
-    border: none;
-    border-radius: 0;
+    display:grid;
+    /* 13 colunas medem o conteúdo, não encolhem: gera overflow-x controlado */
+    grid-template-columns: repeat(13, max-content);
+    grid-template-rows: repeat(4, max-content);
+    gap:4px;
+
+    width:100vw; max-width:100vw;
+    padding:8px 6px; margin:0;
+
+    overflow-x:auto;     /* ← scroll horizontal */
+    overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+    background:#111827;
+    border:none; border-radius:0;
   }
 
+  /* Cada carta tem largura fixa (não encolhe), garantindo 13 por linha e scroll quando necessário */
   .modal-card {
-    width: calc(100% / 13 - 2px);
-    aspect-ratio: 34 / 48;
-    border: 1px solid #334155;
-    background: #0b1324;
-    display: grid;
-    place-items: center;
-    font-weight: 700;
-    font-size: 15px;
-    border-radius: 6px;
-    box-sizing: border-box;
+    width:48px; height:66px;
+    border:1px solid #334155; background:#0b1324;
+    display:grid; place-items:center; font-weight:700; font-size:16px;
+    border-radius:8px; box-sizing:border-box;
   }
 
-  .modal-card.used {
-    opacity: 0.3;
-    pointer-events: none;
-    filter: grayscale(0.8);
+  /* Ajuste fino para telas muito estreitas (≤ 360px) */
+  @media (max-width: 360px) {
+    .modal-card { width:44px; height:60px; font-size:15px; }
   }
+
+  .modal-card.used { opacity:.3; pointer-events:none; filter:grayscale(.8); }
 }
