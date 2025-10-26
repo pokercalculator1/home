@@ -302,7 +302,7 @@ select option {
     padding: 6px;
     border-radius: 10px;
     border: 1px solid #1e293b;
-    flex-wrap: nowrap; /* força cartas lado a lado */
+    flex-wrap: nowrap;
     gap: 4px;
     width: 100%;
     max-width: 160px;
@@ -321,10 +321,22 @@ select option {
     height: 62px;
   }
 
+  /* === Modal: 4 linhas fixas, uma por naipe === */
   #cardGrid {
-    grid-template-columns: repeat(8, 1fr);
-    width: 95%;
-    max-height: 85vh;
-    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(13, 1fr); /* 13 cartas por linha */
+    grid-template-rows: repeat(4, auto);    /* 4 linhas fixas */
+    width: 98%;
+    max-width: 480px;
+    gap: 3px;
+    overflow: hidden;
+    justify-items: center;
+  }
+
+  .modal-card {
+    width: 34px;
+    height: 48px;
+    font-size: 15px;
+    border-radius: 8px;
   }
 }
