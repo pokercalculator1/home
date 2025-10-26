@@ -14,12 +14,13 @@ body {
   gap: 12px;
   margin: 0 0 12px;
   flex-wrap: wrap;
-  justify-content: center;
+  /* sem justify-content:center no desktop */
 }
 .brand-logo {
   height: 56px;
   max-width: 100%;
   margin: 0;
+  margin-left: 12%; /* desloca levemente à esquerda */
 }
 h1.brand-title {
   margin: 0;
@@ -35,7 +36,7 @@ h1.brand-title {
   border: 1px solid #334155;
   border-radius: 14px;
   padding: 14px;
-  width: 74%;              /* antes 80%, agora mais compacto */
+  width: 74%;
   max-width: 1100px;
   margin: 0 auto 40px;
   box-shadow: 0 12px 30px rgba(0, 0, 0, .35);
@@ -283,8 +284,15 @@ button.danger:hover { filter:brightness(1.1); }
 
 /* === MOBILE === */
 @media (max-width: 768px) {
-  .brand { flex-direction: column; }
-  .brand-logo { height: 48px; }
+  .brand {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .brand-logo {
+    margin-left: 0;
+    height: 48px;
+  }
   #multi-sim { width:92%; padding:12px; margin:0 auto 20px; }
   .controls, .round-controls {
     flex-direction:column;
