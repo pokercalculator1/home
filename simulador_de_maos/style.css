@@ -276,37 +276,46 @@ select option {
     align-items: center;
   }
 
-  /* Hero em cima, vilões 2x2 */
+  /* Hero em cima */
   #heroArea {
     display: flex;
     justify-content: center;
     flex-wrap: wrap;
     margin-bottom: 10px;
   }
+
+  /* Vilões 2x2 e cartas lado a lado */
   #villainArea {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 10px;
     justify-items: center;
   }
+
   .villain-row { display: contents; }
+
   .player-row.villain {
-    flex-direction: column;
+    flex-direction: row; /* ← cartas lado a lado */
     align-items: center;
     justify-content: center;
     background: #0f172a;
     padding: 8px 6px;
     border-radius: 10px;
     border: 1px solid #1e293b;
+    flex-wrap: nowrap; /* evita quebra */
+    gap: 6px;
   }
+
   .player-name {
     font-size: 13px;
     text-align: center;
   }
+
   .slot {
     width: 58px;
     height: 80px;
   }
+
   #cardGrid {
     grid-template-columns: repeat(8, 1fr);
     width: 95%;
