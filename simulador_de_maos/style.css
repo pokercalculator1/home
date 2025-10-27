@@ -2,14 +2,14 @@
    🎨 Variáveis Globais
    ========================= */
 :root {
-  --bg: #0f172a;
-  --panel: #111827;
-  --muted: #94a3b8;
-  --text: #e5e7eb;
-  --accent: #22c55e;
-  --line: #1f2937;
-  --warn: #f59e0b;
-  --danger: #ef4444;
+  --bg:#0f172a;
+  --panel:#111827;
+  --muted:#94a3b8;
+  --text:#e5e7eb;
+  --accent:#22c55e;
+  --line:#1f2937;
+  --warn:#f59e0b;
+  --danger:#ef4444;
 }
 
 /* =========================
@@ -20,43 +20,53 @@
 }
 
 body {
-  background: linear-gradient(180deg, #0b1220, #0b1220 40%, #0f172a);
-  color: var(--text);
-  font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif;
   margin: 0;
-  padding: 0;
+  background: linear-gradient(180deg,#0b1220,#0b1220 40%,#0f172a);
+  color: var(--text);
+  font: 14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;
   text-align: center;
 }
 
 /* =========================
-   🪪 BRAND HEADER
+   🪪 Branding (igual ao modelo ideal)
    ========================= */
+.wrap {
+  max-width: 1100px;
+  margin: 24px auto;
+  padding: 0 16px;
+}
+
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
   margin: 0 0 12px;
   flex-wrap: wrap;
-  /* sem justify-content:center no desktop */
 }
 
 .brand-logo {
   height: 56px;
+  width: auto;
   max-width: 100%;
   margin: 0;
   margin-left: 12%;
 }
 
-h1.brand-title {
+.brand-title {
   margin: 0;
   font-size: 20px;
   line-height: 1.2;
-  text-align: center;
   color: var(--text);
 }
 
+.sub {
+  color: var(--muted);
+  margin: 4px 0 16px;
+  text-align: center;
+}
+
 /* =========================
-   📦 MAIN CONTAINER
+   📦 Painel Principal
    ========================= */
 #multi-sim {
   background: var(--panel);
@@ -66,11 +76,11 @@ h1.brand-title {
   width: 74%;
   max-width: 1100px;
   margin: 0 auto 40px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .35);
 }
 
 /* =========================
-   🎛️ CONTROLES
+   🎛️ Controles
    ========================= */
 .controls, .round-controls {
   display: flex;
@@ -91,7 +101,7 @@ h1.brand-title {
 }
 
 /* =========================
-   ⌨️ SELECT e INPUT
+   ⌨️ Select e Input
    ========================= */
 select, #numRounds {
   background: #0f172a;
@@ -123,7 +133,7 @@ select:focus, #numRounds:focus {
 }
 
 /* =========================
-   🔘 BOTÕES
+   🔘 Botões
    ========================= */
 button {
   background: var(--accent);
@@ -164,9 +174,7 @@ button.danger:hover { filter: brightness(1.1); }
   min-width: 80px;
 }
 
-.player-name.hero {
-  color: #facc15;
-}
+.player-name.hero { color: #facc15; }
 
 /* === Vilões (Desktop 4 por linha) === */
 #villainArea {
@@ -253,7 +261,7 @@ button.danger:hover { filter: brightness(1.1); }
 .c { color: #e5e7eb; }
 
 /* =========================
-   🪟 Modal de Seleção de Cartas
+   🪟 Modal de Cartas
    ========================= */
 #cardModal {
   position: fixed;
@@ -335,7 +343,7 @@ button.danger:hover { filter: brightness(1.1); }
 }
 
 .score-item.hero {
-  background: linear-gradient(135deg, #facc15, #eab308);
+  background: linear-gradient(135deg,#facc15,#eab308);
   color: #000;
   font-weight: bold;
 }
@@ -349,18 +357,21 @@ button.danger:hover { filter: brightness(1.1); }
 /* =========================
    📱 MOBILE
    ========================= */
-@media (max-width: 768px) {
+@media (max-width: 980px) {
   .brand {
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    align-items: flex-start;
+    gap: 8px;
   }
 
   .brand-logo {
-    margin-left: 0;
-    height: 48px;
+    display: block;
+    height: 40px;
+    margin: 0 auto;
   }
+}
 
+@media (max-width: 768px) {
   #multi-sim {
     width: 92%;
     padding: 12px;
@@ -374,17 +385,12 @@ button.danger:hover { filter: brightness(1.1); }
     gap: 10px;
   }
 
-  .controls label, .round-controls label { margin-right: 0; }
-
   .controls select, .controls button, #numRounds, .round-controls button {
     width: 90%;
     max-width: 240px;
   }
 
-  #boardRow {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
+  #boardRow { flex-wrap: wrap; justify-content: center; }
 
   #scoreArea {
     display: grid;
@@ -394,81 +400,19 @@ button.danger:hover { filter: brightness(1.1); }
     width: 92%;
   }
 
-  #heroArea {
-    display: flex;
-    justify-content: center;
-    flex-wrap: wrap;
-    margin-bottom: 10px;
-  }
-
   #villainArea {
     grid-template-columns: repeat(2, 1fr);
     gap: 10px;
     justify-items: center;
   }
 
-  .villain-row { display: contents; }
-
   .player-row.villain {
     max-width: 160px;
-    flex-direction: row;
     padding: 6px;
-  }
-
-  .player-name {
-    font-size: 12px;
-    text-align: center;
-    flex-basis: 100%;
   }
 
   .slot {
     width: 46px;
     height: 62px;
   }
-
-  #cardModal {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.88);
-    display: none;
-    justify-content: center;
-    align-items: center;
-    z-index: 9999;
-  }
-
-  #cardGrid {
-    display: grid;
-    grid-template-columns: repeat(13, max-content);
-    grid-template-rows: repeat(4, max-content);
-    gap: 4px;
-    width: 100vw;
-    max-width: 100vw;
-    padding: 8px 6px;
-    margin: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    background: var(--panel);
-    border: none;
-    border-radius: 0;
-  }
-
-  .modal-card {
-    width: 48px;
-    height: 66px;
-    border: 1px solid #334155;
-    background: #0b1324;
-    display: grid;
-    place-items: center;
-    font-weight: 700;
-    font-size: 16px;
-    border-radius: 8px;
-    box-sizing: border-box;
-  }
-
-  @media (max-width: 360px) {
-    .modal-card { width: 44px; height: 60px; font-size: 15px; }
-  }
-
-  .modal-card.used { opacity: .3; pointer-events: none; filter: grayscale(.8); }
 }
