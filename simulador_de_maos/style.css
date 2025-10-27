@@ -367,7 +367,7 @@ button.danger:hover { filter: brightness(1.1); }
 
   .brand-logo {
     display: block;
-    height: 40px;
+    height: 56px;
     margin: 0 auto;
   }
    .sub {
@@ -424,5 +424,6 @@ button.danger:hover { filter: brightness(1.1); }
     height: 62px;
   }
 }
+
 
 
