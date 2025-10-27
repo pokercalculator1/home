@@ -63,6 +63,7 @@ body {
   color: var(--muted);
   margin: 4px 0 16px;
   text-align: center;
+   margin-left:12%;
 }
 
 /* =========================
@@ -416,3 +417,4 @@ button.danger:hover { filter: brightness(1.1); }
     height: 62px;
   }
 }
+
