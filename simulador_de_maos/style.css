@@ -385,7 +385,7 @@ button.danger:hover { filter: brightness(1.1); }
     padding: 12px;
     margin: 0 auto 20px;
   }
-
+  
   .controls, .round-controls {
     flex-direction: column;
     align-items: center;
@@ -397,7 +397,8 @@ button.danger:hover { filter: brightness(1.1); }
     width: 90%;
     max-width: 240px;
   }
-
+   
+  #cardGrid { overflow-x: auto;}
   #boardRow { flex-wrap: wrap; justify-content: center; }
 
   #scoreArea {
@@ -424,6 +425,7 @@ button.danger:hover { filter: brightness(1.1); }
     height: 62px;
   }
 }
+
 
 
 
