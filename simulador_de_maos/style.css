@@ -370,9 +370,16 @@ button.danger:hover { filter: brightness(1.1); }
     height: 40px;
     margin: 0 auto;
   }
+   .sub {
+  color: var(--muted);
+  margin: 4px 0 16px;
+  text-align: center;
+   margin-left:0;
+
 }
 
 @media (max-width: 768px) {
+   
   #multi-sim {
     width: 92%;
     padding: 12px;
@@ -417,4 +424,5 @@ button.danger:hover { filter: brightness(1.1); }
     height: 62px;
   }
 }
+
 
