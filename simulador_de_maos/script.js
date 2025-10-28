@@ -1,84 +1,140 @@
 (() => {
-  const q = (s, r = document) => r.querySelector(s);
+  const q = (s, r=document) => r.querySelector(s);
+  const qq = (s, r=document) => Array.from(r.querySelectorAll(s));
 
-  // =========================
-  // 🏆 Mostrar Podium Final
-  // =========================
-  window.mostrarPodium = function (resultados) {
-    // Remove podium anterior
-    const antigo = document.getElementById("podium");
-    if (antigo) antigo.remove();
+  const playerCountSelect = q('#playerCount');
+  const numRoundsInput = q('#numRounds');
+  const btnSimulate = q('#btnSimulate');
+  const btnReset = q('#btnReset');
+  const heroArea = q('#heroArea');
+  const villainArea = q('#villainArea');
+  const boardRow = q('#boardRow');
+  const scoreArea = q('#scoreArea');
+  const modal = q('#cardModal');
+  const grid = q('#cardGrid');
 
-    // Espera a área principal existir
-    const area = document.querySelector("#multi-sim");
-    if (!area) {
-      setTimeout(() => mostrarPodium(resultados), 100);
-      return;
+  let selectedCard = null;
+  let players = [];
+  let board = [];
+
+  function init() {
+    renderCardGrid();
+    renderPlayers(parseInt(playerCountSelect.value, 10));
+  }
+
+  function renderCardGrid() {
+    grid.innerHTML = '';
+    const ranks = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+    const suits = ['s','h','d','c'];
+    for (const r of ranks) {
+      for (const s of suits) {
+        const card = document.createElement('div');
+        card.className = `modal-card ${s}`;
+        card.textContent = r + getSuitSymbol(s);
+        card.dataset.card = r + s;
+        card.addEventListener('click', () => selectCard(r, s));
+        grid.appendChild(card);
+      }
+    }
+  }
+
+  function getSuitSymbol(s) {
+    return {s:'♠',h:'♥',d:'♦',c:'♣'}[s];
+  }
+
+  function renderPlayers(count) {
+    heroArea.innerHTML = '';
+    villainArea.innerHTML = '';
+    players = [];
+
+    // Hero
+    const hero = createPlayer('Hero', true);
+    heroArea.appendChild(hero.elem);
+    players.push(hero);
+
+    // Vilões
+    for (let i = 2; i <= count; i++) {
+      const v = createPlayer(`Vilão ${i-1}`, false);
+      villainArea.appendChild(v.elem);
+      players.push(v);
     }
 
-    // Cria o elemento podium
-    const podium = document.createElement("div");
-    podium.id = "podium";
-    podium.style.cssText = `
-      position: relative;
-      margin: 20px auto;
-      text-align: center;
-      background: #111827;
-      border: 1px dashed #22c55e;
-      border-radius: 10px;
-      padding: 16px;
-      width: fit-content;
-      max-width: 90%;
-      box-shadow: 0 0 20px rgba(0,0,0,0.5);
-      z-index: 999;
-    `;
+    renderBoard();
+  }
 
-    const titulo = document.createElement("h3");
-    titulo.textContent = "🏆 Resultado Final";
-    titulo.style.color = "#22c55e";
-    titulo.style.marginBottom = "10px";
-    podium.appendChild(titulo);
+  function createPlayer(name, isHero=false) {
+    const playerElem = document.createElement('div');
+    playerElem.className = `player-row ${isHero ? 'hero' : 'villain'}`;
 
-    resultados.forEach((r, i) => {
-      const linha = document.createElement("div");
-      linha.textContent = `${i + 1}º ${r.nome} - ${r.equity}%`;
-      linha.style.color = i === 0 ? "#22c55e" : "#e5e7eb";
-      linha.style.fontWeight = i === 0 ? "700" : "400";
-      podium.appendChild(linha);
-    });
+    const nameElem = document.createElement('div');
+    nameElem.className = 'player-name' + (isHero ? ' hero' : '');
+    nameElem.textContent = name;
+    playerElem.appendChild(nameElem);
 
-    area.appendChild(podium);
-    podium.scrollIntoView({ behavior: "smooth", block: "center" });
-  };
+    const cardsWrap = document.createElement('div');
+    cardsWrap.className = isHero ? 'hero-cards' : 'villain-cards';
+    playerElem.appendChild(cardsWrap);
 
-  // =========================
-  // 🔄 Reset Podium
-  // =========================
-  window.removerPodium = function () {
-    const p = document.getElementById("podium");
-    if (p) p.remove();
-  };
+    const cards = [];
+    for (let i = 0; i < 2; i++) {
+      const slot = document.createElement('div');
+      slot.className = 'slot';
+      slot.dataset.owner = name;
+      slot.addEventListener('click', () => openModal(slot));
+      cardsWrap.appendChild(slot);
+      cards.push(slot);
+    }
 
-  // =========================
-  // 💡 Mock MultiSim (caso ainda não exista)
-  // =========================
-  if (!window.MultiSim) window.MultiSim = {};
+    return { name, elem: playerElem, cards };
+  }
 
-  window.MultiSim.playRound = function (players, board) {
-    // Simula cálculo de equity
-    const resultados = players.map((p, i) => ({
-      nome: i === 0 ? "Hero" : `Vilão ${i}`,
-      equity: (Math.random() * 100).toFixed(1),
-    }));
+  function renderBoard() {
+    boardRow.innerHTML = '';
+    board = [];
+    for (let i = 0; i < 5; i++) {
+      const slot = document.createElement('div');
+      slot.className = 'slot back';
+      slot.addEventListener('click', () => openModal(slot));
+      boardRow.appendChild(slot);
+      board.push(slot);
+    }
+  }
 
-    // Ordena do maior para menor
-    resultados.sort((a, b) => b.equity - a.equity);
+  function openModal(slot) {
+    selectedCard = slot;
+    modal.style.display = 'flex';
+  }
 
-    // Chama o podium com pequeno delay para garantir renderização
-    setTimeout(() => mostrarPodium(resultados), 150);
-  };
+  function selectCard(r, s) {
+    if (!selectedCard) return;
+    const txt = `${r}${getSuitSymbol(s)}`;
+    selectedCard.innerHTML = txt;
+    selectedCard.classList.add('filled', s);
+    modal.style.display = 'none';
+    selectedCard = null;
+  }
 
-  window.MultiSim.resetPlacar = function () {
-    removerPodium();
-  };
+  function resetAll() {
+    heroArea.innerHTML = '';
+    villainArea.innerHTML = '';
+    boardRow.innerHTML = '';
+    scoreArea.innerHTML = '';
+    init();
+  }
+
+  btnReset.addEventListener('click', resetAll);
+  playerCountSelect.addEventListener('change', () => {
+    renderPlayers(parseInt(playerCountSelect.value, 10));
+  });
+
+  // Simulação (placeholder)
+  btnSimulate.addEventListener('click', () => {
+    scoreArea.innerHTML = '';
+    const item = document.createElement('div');
+    item.textContent = `Simulando ${numRoundsInput.value} rodadas...`;
+    item.style.color = '#22c55e';
+    scoreArea.appendChild(item);
+  });
+
+  init();
 })();
