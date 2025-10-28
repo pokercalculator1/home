@@ -1,6 +1,6 @@
 (() => {
-  const q = (s, r=document) => r.querySelector(s);
-  const qq = (s, r=document) => Array.from(r.querySelectorAll(s));
+  const q = (s, r = document) => r.querySelector(s);
+  const qq = (s, r = document) => Array.from(r.querySelectorAll(s));
 
   const playerCountSelect = q('#playerCount');
   const numRoundsInput = q('#numRounds');
@@ -17,11 +17,17 @@
   let players = [];
   let board = [];
 
+  // ===============================
+  // Inicialização principal
+  // ===============================
   function init() {
     renderCardGrid();
     renderPlayers(parseInt(playerCountSelect.value, 10));
   }
 
+  // ===============================
+  // Gera o grid de cartas do modal
+  // ===============================
   function renderCardGrid() {
     grid.innerHTML = '';
     const ranks = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
@@ -39,13 +45,22 @@
   }
 
   function getSuitSymbol(s) {
-    return {s:'♠',h:'♥',d:'♦',c:'♣'}[s];
+    return { s: '♠', h: '♥', d: '♦', c: '♣' }[s];
   }
 
+  // ===============================
+  // Renderização de jogadores
+  // ===============================
   function renderPlayers(count) {
     heroArea.innerHTML = '';
     villainArea.innerHTML = '';
     players = [];
+
+    // Estilo automático para múltiplos vilões
+    villainArea.style.display = 'flex';
+    villainArea.style.flexWrap = 'wrap';
+    villainArea.style.justifyContent = 'center';
+    villainArea.style.gap = '12px';
 
     // Hero
     const hero = createPlayer('Hero', true);
@@ -54,7 +69,7 @@
 
     // Vilões
     for (let i = 2; i <= count; i++) {
-      const v = createPlayer(`Vilão ${i-1}`, false);
+      const v = createPlayer(`Vilão ${i - 1}`, false);
       villainArea.appendChild(v.elem);
       players.push(v);
     }
@@ -62,7 +77,7 @@
     renderBoard();
   }
 
-  function createPlayer(name, isHero=false) {
+  function createPlayer(name, isHero = false) {
     const playerElem = document.createElement('div');
     playerElem.className = `player-row ${isHero ? 'hero' : 'villain'}`;
 
@@ -88,6 +103,9 @@
     return { name, elem: playerElem, cards };
   }
 
+  // ===============================
+  // Renderiza o board (mesa)
+  // ===============================
   function renderBoard() {
     boardRow.innerHTML = '';
     board = [];
@@ -100,6 +118,9 @@
     }
   }
 
+  // ===============================
+  // Modal de seleção de cartas
+  // ===============================
   function openModal(slot) {
     selectedCard = slot;
     modal.style.display = 'flex';
@@ -114,6 +135,9 @@
     selectedCard = null;
   }
 
+  // ===============================
+  // Reset geral
+  // ===============================
   function resetAll() {
     heroArea.innerHTML = '';
     villainArea.innerHTML = '';
@@ -122,19 +146,28 @@
     init();
   }
 
+  // ===============================
+  // Eventos dos botões
+  // ===============================
   btnReset.addEventListener('click', resetAll);
+
   playerCountSelect.addEventListener('change', () => {
     renderPlayers(parseInt(playerCountSelect.value, 10));
   });
 
-  // Simulação (placeholder)
+  // Simulação placeholder (visual apenas)
   btnSimulate.addEventListener('click', () => {
     scoreArea.innerHTML = '';
     const item = document.createElement('div');
     item.textContent = `Simulando ${numRoundsInput.value} rodadas...`;
     item.style.color = '#22c55e';
+    item.style.textAlign = 'center';
+    item.style.marginTop = '8px';
     scoreArea.appendChild(item);
   });
 
+  // ===============================
+  // Inicialização inicial
+  // ===============================
   init();
 })();
