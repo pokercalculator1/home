@@ -1,134 +1,230 @@
+let players = [];
+let board = [];
+window.players = players;
+window.board = board;
+
 (() => {
+  const SUITS = ['s', 'h', 'd', 'c'];
+  const RANKS = [2,3,4,5,6,7,8,9,10,11,12,13,14];
+  const SUIT_GLYPH = { s:'♠', h:'♥', d:'♦', c:'♣' };
+  const SUIT_CLASS = { s:'s', h:'h', d:'d', c:'c' };
+
   const q = (s, r=document) => r.querySelector(s);
-  const PC = window.PCALC;
-  if (!PC) {
-    console.error("pcalc-core.js não carregado.");
-    return;
+  let currentSlot = null;
+  let running = false;
+
+  const fmtRank = r => r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'10':String(r);
+  const makeDeck = () => {
+    const d=[]; for (const s of SUITS) for (const r of RANKS) d.push({r,s}); return d;
+  };
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+
+  // =========================
+  // Geração de Jogadores
+  // =========================
+  function genPlayers() {
+    const n = parseInt(q('#playerCount').value);
+    players.length = 0;
+    board.length = 0;
+
+    ['#heroArea','#villainRow1','#villainRow2','#boardRow','#resultArea','#scoreArea']
+      .forEach(id => q(id)?.replaceChildren());
+
+    // Hero
+    players.push([null, null]);
+    const hero = document.createElement('div');
+    hero.className = 'player-row hero';
+    hero.innerHTML = `
+      <div class="player-name hero">Hero</div>
+      <div class="slot" data-player="0" data-slot="0">+</div>
+      <div class="slot" data-player="0" data-slot="1">+</div>`;
+    q('#heroArea').appendChild(hero);
+
+    // Vilões
+    const viloes = n - 1;
+    if (viloes > 0) {
+      const metade = Math.ceil(viloes / 2);
+      const row1 = q('#villainRow1');
+      const row2 = q('#villainRow2');
+      for (let i = 1; i <= viloes; i++) {
+        const div = document.createElement('div');
+        div.className = 'player-row villain';
+        div.innerHTML = `
+          <div class="player-name">Vilão ${i}</div>
+          <div class="slot" data-player="${i}" data-slot="0">+</div>
+          <div class="slot" data-player="${i}" data-slot="1">+</div>`;
+        (i <= metade ? row1 : row2).appendChild(div);
+        players.push([null, null]);
+      }
+    }
+
+    document.querySelectorAll('.slot').forEach(el => el.onclick = () => openCardSelector(el));
+    renderBoard(true);
   }
 
-  let placar = {};
-  let totalRounds = 0;
-  let currentRound = 0;
+  // =========================
+  // Seletor de cartas
+  // =========================
+  function openCardSelector(el) {
+    currentSlot = el;
+    const modal = q('#cardModal');
+    const grid = q('#cardGrid');
+    grid.innerHTML = '';
 
-  // === Renderiza o placar + contador ===
-  function renderPlacar(players) {
-    const s = q("#scoreArea");
-    if (!s) return;
+    const deck = makeDeck();
+    const usadas = new Set();
+    players.flat().concat(board).forEach(c => { if (c) usadas.add(`${c.r}${c.s}`); });
 
-    let html = "";
-    players.forEach((_, i) => {
-      const nome = i === 0 ? "Hero" : `Vilão ${i}`;
-      const classe = i === 0 ? "score-item hero" : "score-item";
-      html += `
-        <div class="${classe}">
-          <div class="score-name">${nome}</div>
-          <div class="score-points">${placar[i] || 0}</div>
-        </div>`;
-    });
+    for (const c of deck) {
+      const div = document.createElement('div');
+      div.className = `modal-card ${SUIT_CLASS[c.s]}`;
+      div.innerHTML = `<div>${fmtRank(c.r)}</div><div>${SUIT_GLYPH[c.s]}</div>`;
+      const id = `${c.r}${c.s}`;
+      if (usadas.has(id)) div.classList.add('used');
+      else div.onclick = () => { selectCard(c); modal.style.display = 'none'; };
+      grid.appendChild(div);
+    }
 
-    // contador de rodadas restantes
-    const restantes = Math.max(totalRounds - currentRound, 0);
-    html += `
-      <div class="score-item counter">
-        <div class="score-name">Rodadas restantes</div>
-        <div class="score-points">${restantes > 0 ? restantes : "🏁"}</div>
+    modal.style.display = 'flex';
+    modal.onclick = e => { if (e.target.id === 'cardModal') modal.style.display = 'none'; };
+  }
+
+  function selectCard(c) {
+    if (!currentSlot) return;
+    const p = parseInt(currentSlot.dataset.player);
+    const s = parseInt(currentSlot.dataset.slot);
+    players[p][s] = c;
+
+    currentSlot.classList.add('filled');
+    currentSlot.innerHTML = `
+      <div class="${SUIT_CLASS[c.s]}" style="text-align:center">
+        <div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div>
+        <div style="font-size:18px">${SUIT_GLYPH[c.s]}</div>
       </div>`;
-
-    s.innerHTML = html;
   }
 
-  // === Mostra resultado ===
-  function showResult(text) {
-    const r = q("#resultArea");
-    if (!r) return;
-    r.innerHTML = `
-      <div style="text-align:center;margin-top:10px;">
-        <div style="font-size:16px;font-weight:bold;color:#22c55e;">${text}</div>
-      </div>`;
-  }
+  // =========================
+  // Renderização do Board
+  // =========================
+  function renderBoard(initial = false) {
+    const row = q('#boardRow');
+    if (initial || row.children.length === 0) {
+      row.innerHTML = '';
+      for (let i = 0; i < 5; i++) {
+        const d = document.createElement('div');
+        d.className = 'slot back';
+        row.appendChild(d);
+      }
+    }
 
-  // === Cálculo de vencedor ===
-  function playRound(players, board) {
-    if (!players?.length || board.length !== 5) return;
-    currentRound++;
-
-    const results = [];
-    players.forEach((hand, i) => {
-      if (!hand[0] || !hand[1]) return;
-      const cards = [...hand, ...board];
-      const evalRes = PC.evalBest(cards);
-      results.push({ i, evalRes });
-    });
-    if (results.length === 0) return;
-
-    results.sort((a, b) => PC.cmpEval(b.evalRes, a.evalRes));
-    const best = results[0].evalRes;
-    const winners = results.filter(r => PC.cmpEval(r.evalRes, best) === 0).map(r => r.i);
-
-    winners.forEach(w => (placar[w] = (placar[w] || 0) + 1));
-
-    const catName = PC.CAT_NAME[best.cat] || "Desconhecida";
-    const msg = winners.length > 1
-      ? `Empate (${catName})`
-      : `${winners[0] === 0 ? "Hero" : "Vilão " + winners[0]} venceu com ${catName}!`;
-
-    showResult(msg);
-    renderPlacar(players);
-
-    if (currentRound === totalRounds) {
-      setTimeout(() => showPodium(players), 1200);
+    for (let i = 0; i < 5; i++) {
+      const slot = row.children[i];
+      const c = board[i];
+      if (c) {
+        if (slot.dataset.shown !== '1') {
+          slot.className = 'slot';
+          slot.innerHTML = `
+            <div class="card-inner">
+              <div class="card-back"></div>
+              <div class="card-front ${SUIT_CLASS[c.s]}">
+                <div style="text-align:center">
+                  <div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div>
+                  <div style="font-size:18px">${SUIT_GLYPH[c.s]}</div>
+                </div>
+              </div>
+            </div>`;
+          slot.dataset.shown = '1';
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => slot.classList.add('faceup'))
+          );
+        }
+      } else {
+        slot.className = 'slot back';
+        slot.innerHTML = '';
+        delete slot.dataset.shown;
+      }
     }
   }
 
-  // === Reset ===
-  function resetPlacar() {
-    placar = {};
-    totalRounds = 0;
-    currentRound = 0;
-    const s = q("#scoreArea"); if (s) s.innerHTML = "";
-    const r = q("#resultArea"); if (r) r.innerHTML = "";
-    const modal = q("#podiumModal"); if (modal) modal.remove();
+  // =========================
+  // Simulação Automática
+  // =========================
+  async function autoSimular(qtd) {
+    if (running) return;
+    running = true;
+
+    if (window.MultiSim?.setRounds) window.MultiSim.setRounds(qtd);
+
+    for (let i = 1; i <= qtd; i++) {
+      await rodadaCompleta(i, qtd);
+      await delay(800);
+      if (!running) break;
+    }
+
+    running = false;
   }
 
-  window.MultiSim = window.MultiSim || {};
-  window.MultiSim.playRound = playRound;
-  window.MultiSim.resetPlacar = resetPlacar;
-  window.MultiSim.setRounds = (n) => totalRounds = n;
+  async function rodadaCompleta(numRodada, total) {
+    const deck = makeDeck();
 
-  // === Modal de pódio final ===
-  function showPodium(players) {
-    const modal = document.createElement("div");
-    modal.id = "podiumModal";
-    modal.innerHTML = `
-      <div class="podium-back">
-        <div class="podium-content">
-          <h2>🏆 Resultado Final</h2>
-          <div id="podiumList"></div>
-          <button id="closePodium" class="btn primary">Fechar</button>
-        </div>
-      </div>`;
-    document.body.appendChild(modal);
-
-    const list = modal.querySelector("#podiumList");
-    const arr = Object.entries(placar).map(([i, p]) => ({ i: parseInt(i), p }));
-    arr.sort((a, b) => b.p - a.p);
-
-    const nomes = players.map((_, i) => (i === 0 ? "Hero" : `Vilão ${i}`));
-
-    let html = "";
-    arr.slice(0, 4).forEach((x, idx) => {
-      const rank = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "4º";
-      const classe = idx === 0 ? "first" : idx === 1 ? "second" : idx === 2 ? "third" : "";
-      html += `
-        <div class="podium-item ${classe}" style="animation-delay:${idx * 0.2}s">
-          <div class="podium-rank">${rank}</div>
-          <div class="podium-name">${nomes[x.i]}</div>
-          <div class="podium-score">${x.p || 0} vitória${x.p === 1 ? "" : "s"}</div>
-        </div>`;
+    // Remove cartas já escolhidas
+    players.flat().forEach(c => {
+      if (!c) return;
+      const idx = deck.findIndex(x => x.r === c.r && x.s === c.s);
+      if (idx >= 0) deck.splice(idx, 1);
     });
 
-    list.innerHTML = html;
-    modal.style.display = "flex";
-    modal.querySelector("#closePodium").onclick = () => modal.remove();
+    board.length = 0;
+    renderBoard();
+
+    // Flop
+    await delay(400);
+    for (let i = 0; i < 3; i++) board.push(deck.splice((Math.random() * deck.length) | 0, 1)[0]);
+    renderBoard();
+    await delay(600);
+
+    // Turn
+    board.push(deck.splice((Math.random() * deck.length) | 0, 1)[0]);
+    renderBoard();
+    await delay(600);
+
+    // River
+    board.push(deck.splice((Math.random() * deck.length) | 0, 1)[0]);
+    renderBoard();
+    await delay(600);
+
+    // ⚡ Delay mínimo para garantir DOM estável
+    await delay(200);
+    if (window.MultiSim?.playRound) {
+      try {
+        window.MultiSim.playRound(players, board);
+      } catch (err) {
+        console.warn("Erro ao chamar playRound:", err);
+      }
+    }
   }
+
+  // =========================
+  // Reset
+  // =========================
+  function resetSimulador() {
+    running = false;
+    board.length = 0;
+    players.length = 0;
+    ['#heroArea','#villainRow1','#villainRow2','#boardRow','#resultArea','#scoreArea']
+      .forEach(id => q(id)?.replaceChildren());
+    if (window.MultiSim?.resetPlacar) window.MultiSim.resetPlacar();
+  }
+
+  // =========================
+  // Botões
+  // =========================
+  q('#initPlayers').onclick = genPlayers;
+  q('#btnAuto').onclick = () => {
+    const qtd = parseInt(q('#numRounds').value) || 10;
+    if (!players.length) return alert("Gere jogadores antes!");
+    if (players.some(p => !p[0] || !p[1])) return alert("Todos os jogadores precisam ter cartas!");
+    autoSimular(qtd);
+  };
+  q('#btnReset').onclick = resetSimulador;
 })();
