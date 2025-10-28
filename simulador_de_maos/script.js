@@ -1,224 +1,84 @@
-let players = [];
-let board = [];
-window.players = players;
-window.board = board;
-
 (() => {
-  const SUITS = ['s', 'h', 'd', 'c'];
-  const RANKS = [2,3,4,5,6,7,8,9,10,11,12,13,14];
-  const SUIT_GLYPH = { s:'♠', h:'♥', d:'♦', c:'♣' };
-  const SUIT_CLASS = { s:'s', h:'h', d:'d', c:'c' };
-
-  const q = (s, r=document) => r.querySelector(s);
-  let currentSlot = null;
-  let running = false;
-
-  const fmtRank = r => r===14?'A':r===13?'K':r===12?'Q':r===11?'J':r===10?'10':String(r);
-  const makeDeck = () => {
-    const d=[]; for (const s of SUITS) for (const r of RANKS) d.push({r,s}); return d;
-  };
-  const delay = ms => new Promise(r => setTimeout(r, ms));
+  const q = (s, r = document) => r.querySelector(s);
 
   // =========================
-  // Geração de Jogadores
+  // 🏆 Mostrar Podium Final
   // =========================
-  function genPlayers() {
-    const n = parseInt(q('#playerCount').value);
-    players.length = 0;
-    board.length = 0;
+  window.mostrarPodium = function (resultados) {
+    // Remove podium anterior
+    const antigo = document.getElementById("podium");
+    if (antigo) antigo.remove();
 
-    ['#heroArea','#villainRow1','#villainRow2','#boardRow','#resultArea','#scoreArea']
-      .forEach(id => q(id)?.replaceChildren());
-
-    // Hero
-    players.push([null, null]);
-    const hero = document.createElement('div');
-    hero.className = 'player-row hero';
-    hero.innerHTML = `
-      <div class="player-name hero">Hero</div>
-      <div class="slot" data-player="0" data-slot="0">+</div>
-      <div class="slot" data-player="0" data-slot="1">+</div>`;
-    q('#heroArea').appendChild(hero);
-
-    // Vilões
-    const viloes = n - 1;
-    if (viloes > 0) {
-      const metade = Math.ceil(viloes / 2);
-      const row1 = q('#villainRow1');
-      const row2 = q('#villainRow2');
-      for (let i = 1; i <= viloes; i++) {
-        const div = document.createElement('div');
-        div.className = 'player-row villain';
-        div.innerHTML = `
-          <div class="player-name">Vilão ${i}</div>
-          <div class="slot" data-player="${i}" data-slot="0">+</div>
-          <div class="slot" data-player="${i}" data-slot="1">+</div>`;
-        (i <= metade ? row1 : row2).appendChild(div);
-        players.push([null, null]);
-      }
+    // Espera a área principal existir
+    const area = document.querySelector("#multi-sim");
+    if (!area) {
+      setTimeout(() => mostrarPodium(resultados), 100);
+      return;
     }
 
-    document.querySelectorAll('.slot').forEach(el => el.onclick = () => openCardSelector(el));
-    renderBoard(true);
-  }
+    // Cria o elemento podium
+    const podium = document.createElement("div");
+    podium.id = "podium";
+    podium.style.cssText = `
+      position: relative;
+      margin: 20px auto;
+      text-align: center;
+      background: #111827;
+      border: 1px dashed #22c55e;
+      border-radius: 10px;
+      padding: 16px;
+      width: fit-content;
+      max-width: 90%;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+      z-index: 999;
+    `;
 
-  // =========================
-  // Seletor de cartas
-  // =========================
-  function openCardSelector(el) {
-    currentSlot = el;
-    const modal = q('#cardModal');
-    const grid = q('#cardGrid');
-    grid.innerHTML = '';
+    const titulo = document.createElement("h3");
+    titulo.textContent = "🏆 Resultado Final";
+    titulo.style.color = "#22c55e";
+    titulo.style.marginBottom = "10px";
+    podium.appendChild(titulo);
 
-    const deck = makeDeck();
-    const usadas = new Set();
-    players.flat().concat(board).forEach(c => { if (c) usadas.add(`${c.r}${c.s}`); });
-
-    for (const c of deck) {
-      const div = document.createElement('div');
-      div.className = `modal-card ${SUIT_CLASS[c.s]}`;
-      div.innerHTML = `<div>${fmtRank(c.r)}</div><div>${SUIT_GLYPH[c.s]}</div>`;
-      const id = `${c.r}${c.s}`;
-      if (usadas.has(id)) div.classList.add('used');
-      else div.onclick = () => { selectCard(c); modal.style.display = 'none'; };
-      grid.appendChild(div);
-    }
-
-    modal.style.display = 'flex';
-    modal.onclick = e => { if (e.target.id === 'cardModal') modal.style.display = 'none'; };
-  }
-
-  function selectCard(c) {
-    if (!currentSlot) return;
-    const p = parseInt(currentSlot.dataset.player);
-    const s = parseInt(currentSlot.dataset.slot);
-    players[p][s] = c;
-
-    currentSlot.classList.add('filled');
-    currentSlot.innerHTML = `
-      <div class="${SUIT_CLASS[c.s]}" style="text-align:center">
-        <div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div>
-        <div style="font-size:18px">${SUIT_GLYPH[c.s]}</div>
-      </div>`;
-  }
-
-  // =========================
-  // Renderização do Board
-  // =========================
-  function renderBoard(initial = false) {
-    const row = q('#boardRow');
-    if (initial || row.children.length === 0) {
-      row.innerHTML = '';
-      for (let i = 0; i < 5; i++) {
-        const d = document.createElement('div');
-        d.className = 'slot back';
-        row.appendChild(d);
-      }
-    }
-
-    for (let i = 0; i < 5; i++) {
-      const slot = row.children[i];
-      const c = board[i];
-      if (c) {
-        if (slot.dataset.shown !== '1') {
-          slot.className = 'slot';
-          slot.innerHTML = `
-            <div class="card-inner">
-              <div class="card-back"></div>
-              <div class="card-front ${SUIT_CLASS[c.s]}">
-                <div style="text-align:center">
-                  <div style="font-weight:700;font-size:18px">${fmtRank(c.r)}</div>
-                  <div style="font-size:18px">${SUIT_GLYPH[c.s]}</div>
-                </div>
-              </div>
-            </div>`;
-          slot.dataset.shown = '1';
-          requestAnimationFrame(() =>
-            requestAnimationFrame(() => slot.classList.add('faceup'))
-          );
-        }
-      } else {
-        slot.className = 'slot back';
-        slot.innerHTML = '';
-        delete slot.dataset.shown;
-      }
-    }
-  }
-
-  // =========================
-  // Simulação Automática
-  // =========================
-  async function autoSimular(qtd) {
-    if (running) return;
-    running = true;
-
-    if (window.MultiSim?.setRounds) window.MultiSim.setRounds(qtd);
-
-    for (let i = 1; i <= qtd; i++) {
-      await rodadaCompleta(i, qtd);
-      await delay(800);
-      if (!running) break;
-    }
-
-    running = false;
-  }
-
-  async function rodadaCompleta(numRodada, total) {
-    const deck = makeDeck();
-
-    // Remove cartas já escolhidas
-    players.flat().forEach(c => {
-      if (!c) return;
-      const idx = deck.findIndex(x => x.r === c.r && x.s === c.s);
-      if (idx >= 0) deck.splice(idx, 1);
+    resultados.forEach((r, i) => {
+      const linha = document.createElement("div");
+      linha.textContent = `${i + 1}º ${r.nome} - ${r.equity}%`;
+      linha.style.color = i === 0 ? "#22c55e" : "#e5e7eb";
+      linha.style.fontWeight = i === 0 ? "700" : "400";
+      podium.appendChild(linha);
     });
 
-    board.length = 0;
-    renderBoard();
-
-    // Flop
-    await delay(400);
-    for (let i = 0; i < 3; i++) board.push(deck.splice((Math.random() * deck.length) | 0, 1)[0]);
-    renderBoard();
-    await delay(600);
-
-    // Turn
-    board.push(deck.splice((Math.random() * deck.length) | 0, 1)[0]);
-    renderBoard();
-    await delay(600);
-
-    // River
-    board.push(deck.splice((Math.random() * deck.length) | 0, 1)[0]);
-    renderBoard();
-    await delay(600);
-
-    // ⚡ Delay mínimo para garantir DOM antes do podium
-    await delay(50);
-    if (window.MultiSim?.playRound) window.MultiSim.playRound(players, board);
-  }
-
-  // =========================
-  // Reset
-  // =========================
-  function resetSimulador() {
-    running = false;
-    board.length = 0;
-    players.length = 0;
-    ['#heroArea','#villainRow1','#villainRow2','#boardRow','#resultArea','#scoreArea']
-      .forEach(id => q(id)?.replaceChildren());
-    if (window.MultiSim?.resetPlacar) window.MultiSim.resetPlacar();
-  }
-
-  // =========================
-  // Botões
-  // =========================
-  q('#initPlayers').onclick = genPlayers;
-  q('#btnAuto').onclick = () => {
-    const qtd = parseInt(q('#numRounds').value) || 10;
-    if (!players.length) return alert("Gere jogadores antes!");
-    if (players.some(p => !p[0] || !p[1])) return alert("Todos os jogadores precisam ter cartas!");
-    autoSimular(qtd);
+    area.appendChild(podium);
+    podium.scrollIntoView({ behavior: "smooth", block: "center" });
   };
-  q('#btnReset').onclick = resetSimulador;
+
+  // =========================
+  // 🔄 Reset Podium
+  // =========================
+  window.removerPodium = function () {
+    const p = document.getElementById("podium");
+    if (p) p.remove();
+  };
+
+  // =========================
+  // 💡 Mock MultiSim (caso ainda não exista)
+  // =========================
+  if (!window.MultiSim) window.MultiSim = {};
+
+  window.MultiSim.playRound = function (players, board) {
+    // Simula cálculo de equity
+    const resultados = players.map((p, i) => ({
+      nome: i === 0 ? "Hero" : `Vilão ${i}`,
+      equity: (Math.random() * 100).toFixed(1),
+    }));
+
+    // Ordena do maior para menor
+    resultados.sort((a, b) => b.equity - a.equity);
+
+    // Chama o podium com pequeno delay para garantir renderização
+    setTimeout(() => mostrarPodium(resultados), 150);
+  };
+
+  window.MultiSim.resetPlacar = function () {
+    removerPodium();
+  };
 })();
