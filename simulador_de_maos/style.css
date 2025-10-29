@@ -1,77 +1,39 @@
-/* =========================
-   🎨 Variáveis Globais
-   ========================= */
-:root {
-  --bg:#0f172a;
-  --panel:#111827;
-  --muted:#94a3b8;
-  --text:#e5e7eb;
-  --accent:#22c55e;
-  --line:#1f2937;
-  --warn:#f59e0b;
-  --danger:#ef4444;
-}
-
-/* =========================
-   🧱 Base
-   ========================= */
-* {
-  box-sizing: border-box;
-}
-
 body {
-  margin: 0;
-  background: linear-gradient(180deg,#0b1220,#0b1220 40%,#0f172a);
-  color: var(--text);
-  font: 14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;
-  text-align: center;
+  background:#0b1220;
+  color:#e5e7eb;
+  font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif;
+  margin:0;
+  padding:0;
+  text-align:center;
 }
 
-/* =========================
-   🪪 Branding (igual ao modelo ideal)
-   ========================= */
-.wrap {
-  max-width: 1100px;
-  margin: 24px auto;
-  padding: 0 16px;
-}
-
+/* ===== BRAND HEADER ===== */
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
   margin: 0 0 12px;
   flex-wrap: wrap;
+  /* sem justify-content:center no desktop */
 }
-
 .brand-logo {
   height: 56px;
-  width: auto;
   max-width: 100%;
   margin: 0;
-  margin-left: 12%;
+  margin-left: 12%; /* desloca levemente à esquerda */
 }
-
-.brand-title {
+h1.brand-title {
   margin: 0;
   font-size: 20px;
   line-height: 1.2;
-  color: var(--text);
-}
-
-.sub {
-  color: var(--muted);
-  margin: 4px 0 16px;
   text-align: center;
-   margin-left:12%;
+  color: #e5e7eb;
 }
 
-/* =========================
-   📦 Painel Principal
-   ========================= */
+/* ===== MAIN CONTAINER ===== */
 #multi-sim {
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background: #111827;
+  border: 1px solid #334155;
   border-radius: 14px;
   padding: 14px;
   width: 74%;
@@ -80,9 +42,7 @@ body {
   box-shadow: 0 12px 30px rgba(0, 0, 0, .35);
 }
 
-/* =========================
-   🎛️ Controles
-   ========================= */
+/* ===== CONTROLES ===== */
 .controls, .round-controls {
   display: flex;
   justify-content: center;
@@ -97,85 +57,68 @@ body {
 .round-controls label {
   font-weight: 600;
   font-size: 15px;
-  color: var(--text);
+  color: #e5e7eb;
   margin-right: 4px;
 }
 
-/* =========================
-   ⌨️ Select e Input
-   ========================= */
+/* ===== SELECT e INPUT ===== */
 select, #numRounds {
   background: #0f172a;
   border: 1px solid #334155;
   border-radius: 8px;
   padding: 8px 10px;
-  color: var(--text);
+  color: #e5e7eb;
   text-align: center;
   text-align-last: center;
   font-size: 15px;
   transition: border-color .2s, box-shadow .2s;
 }
-
 select:focus, #numRounds:focus {
   outline: none;
-  border-color: var(--accent);
+  border-color: #22c55e;
   box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
 }
-
 #numRounds {
   width: 100px;
   appearance: textfield;
 }
-
 #numRounds::-webkit-inner-spin-button,
 #numRounds::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
 
-/* =========================
-   🔘 Botões
-   ========================= */
+/* ===== BOTÕES ===== */
 button {
-  background: var(--accent);
-  color: #000;
-  border: none;
-  padding: 8px 14px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: bold;
-  font-size: 15px;
+  background:#22c55e;
+  color:#000;
+  border:none;
+  padding:8px 14px;
+  border-radius:8px;
+  cursor:pointer;
+  font-weight:bold;
+  font-size:15px;
   transition: all .2s ease;
 }
-button:hover { filter: brightness(1.1); transform: translateY(-1px); }
-
+button:hover { filter:brightness(1.1); transform: translateY(-1px); }
 button.danger {
-  background: var(--danger);
-  color: #fff;
+  background:#ef4444;
+  color:#fff;
 }
-button.danger:hover { filter: brightness(1.1); }
+button.danger:hover { filter:brightness(1.1); }
 
-/* =========================
-   🎮 Áreas de Jogadores
-   ========================= */
-#heroArea, #villainArea { margin-top: 12px; }
-
+/* === Áreas de Jogadores === */
+#heroArea, #villainArea { margin-top:12px; }
 .player-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin: 6px 0;
-  flex-wrap: wrap;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  margin:6px 0;
+  flex-wrap:wrap;
 }
-
-.player-name {
-  font-weight: bold;
-  color: var(--muted);
-  min-width: 80px;
-}
-
-.player-name.hero { color: #facc15; }
+.player-name { font-weight:bold; color:#94a3b8; min-width:80px; }
+.player-name.hero { color:#facc15; }
 
 /* === Vilões (Desktop 4 por linha) === */
 #villainArea {
@@ -186,7 +129,6 @@ button.danger:hover { filter: brightness(1.1); }
   align-items: start;
   margin-top: 16px;
 }
-
 .villain-row { display: contents; }
 
 .player-row.villain {
@@ -203,27 +145,24 @@ button.danger:hover { filter: brightness(1.1); }
   max-width: 200px;
   box-sizing: border-box;
 }
-
 .player-name {
   font-size: 13px;
   text-align: center;
-  color: var(--muted);
+  color: #94a3b8;
 }
 
-/* =========================
-   🃏 Cartas / Slots
-   ========================= */
+/* === Cartas === */
 .slot {
-  width: 52px;
-  height: 70px;
-  border-radius: 10px;
-  border: 1px dashed #334155;
-  display: grid;
-  place-items: center;
-  background: #0b1324;
-  cursor: pointer;
-  perspective: 800px;
-  position: relative;
+  width:52px;
+  height:70px;
+  border-radius:10px;
+  border:1px dashed #334155;
+  display:grid;
+  place-items:center;
+  background:#0b1324;
+  cursor:pointer;
+  perspective:800px;
+  position:relative;
 }
 
 /* === Efeito de Virada 3D === */
@@ -256,62 +195,53 @@ button.danger:hover { filter: brightness(1.1); }
 .slot.faceup .card-inner { transform: rotateY(180deg); }
 
 /* Naipes */
-.s { color: #60a5fa; }
-.h { color: #ef4444; }
-.d { color: #22c55e; }
-.c { color: #e5e7eb; }
+.s { color:#60a5fa; }
+.h { color:#ef4444; }
+.d { color:#22c55e; }
+.c { color:#e5e7eb; }
 
-/* =========================
-   🪟 Modal de Cartas
-   ========================= */
+/* === Modal === */
 #cardModal {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.85);
-  display: none;
-  justify-content: center;
-  align-items: center;
-  z-index: 9999;
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.85);
+  display:none;
+  justify-content:center;
+  align-items:center;
+  z-index:9999;
 }
-
 #cardGrid {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  padding: 14px;
-  border-radius: 12px;
-  display: grid;
-  grid-template-columns: repeat(13, 1fr);
-  gap: 4px;
+  background:#111827;
+  border:1px solid #334155;
+  padding:14px;
+  border-radius:12px;
+  display:grid;
+  grid-template-columns:repeat(13,1fr);
+  gap:4px;
 }
-
 .modal-card {
-  width: 50px;
-  height: 70px;
-  border-radius: 10px;
-  border: 1px solid #334155;
-  background: #0b1324;
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  font-size: 18px;
-  cursor: pointer;
+  width:50px;
+  height:70px;
+  border-radius:10px;
+  border:1px solid #334155;
+  background:#0b1324;
+  display:grid;
+  place-items:center;
+  font-weight:700;
+  font-size:18px;
+  cursor:pointer;
 }
-
 .modal-card.used {
-  opacity: .3;
-  pointer-events: none;
-  filter: grayscale(.8);
+  opacity:.3;
+  pointer-events:none;
+  filter:grayscale(.8);
 }
 
-/* =========================
-   🃏 Board
-   ========================= */
-#boardArea { margin-top: 16px; }
-#boardRow { display: flex; justify-content: center; gap: 8px; }
+/* === Board === */
+#boardArea { margin-top:16px; }
+#boardRow { display:flex; justify-content:center; gap:8px; }
 
-/* =========================
-   📊 Placar
-   ========================= */
+/* === Placar (Desktop: tudo em uma linha, 90% de largura) === */
 #scoreArea {
   display: flex;
   justify-content: center;
@@ -321,16 +251,15 @@ button.danger:hover { filter: brightness(1.1); }
   gap: 6px;
   margin-top: 14px;
   padding: 8px;
-  background: var(--bg);
+  background: #0f172a;
   border-radius: 10px;
-  border: 1px solid var(--line);
+  border: 1px solid #334155;
   width: 90%;
   margin-left: auto;
   margin-right: auto;
   scrollbar-width: thin;
-  scrollbar-color: var(--accent) #111827;
+  scrollbar-color: #22c55e #111827;
 }
-
 .score-item {
   display: flex;
   flex-direction: column;
@@ -342,90 +271,101 @@ button.danger:hover { filter: brightness(1.1); }
   font-size: 13px;
   flex-shrink: 0;
 }
-
 .score-item.hero {
-  background: linear-gradient(135deg,#facc15,#eab308);
+  background: linear-gradient(135deg, #facc15, #eab308);
   color: #000;
   font-weight: bold;
 }
-
 .score-item.counter {
   background: #334155;
   color: #fff;
   font-weight: bold;
 }
 
-/* =========================
-   📱 MOBILE
-   ========================= */
-@media (max-width: 980px) {
-  .brand {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-
-  .brand-logo {
-    display: block;
-    height: 56px;
-    margin: 0 auto;
-  }
-   .sub {
-  color: var(--muted);
-  margin: 4px 0 16px;
-  text-align: center;
-   margin-left:0;
-
-}
-
+/* === MOBILE === */
 @media (max-width: 768px) {
-   
-  #multi-sim {
-    width: 92%;
-    padding: 12px;
-    margin: 0 auto 20px;
-  }
-  
-  .controls, .round-controls {
+  .brand {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 10px;
   }
-
+  .brand-logo {
+    margin-left: 0;
+    height: 48px;
+  }
+  #multi-sim { width:92%; padding:12px; margin:0 auto 20px; }
+  .controls, .round-controls {
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+  }
+  .controls label, .round-controls label { margin-right:0; }
   .controls select, .controls button, #numRounds, .round-controls button {
-    width: 90%;
-    max-width: 240px;
+    width:90%;
+    max-width:240px;
   }
-   
-  #cardGrid { overflow-x: auto;}
-  #boardRow { flex-wrap: wrap; justify-content: center; }
-
+  #boardRow { flex-wrap:wrap; justify-content:center; }
   #scoreArea {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 8px;
-    padding: 6px;
-    width: 92%;
+    gap:8px;
+    padding:6px;
+    width:92%;
   }
-
+  #heroArea { display:flex; justify-content:center; flex-wrap:wrap; margin-bottom:10px; }
   #villainArea {
     grid-template-columns: repeat(2, 1fr);
     gap: 10px;
     justify-items: center;
   }
-
+  .villain-row { display: contents; }
   .player-row.villain {
     max-width: 160px;
+    flex-direction: row;
     padding: 6px;
   }
-
-  .slot {
-    width: 46px;
-    height: 62px;
+  .player-name { font-size:12px; text-align:center; flex-basis:100%; }
+  .slot { width:46px; height:62px; }
+  #cardModal {
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.88);
+    display:none;
+    justify-content:center;
+    align-items:center;
+    z-index:9999;
   }
+  #cardGrid {
+    display:grid;
+    grid-template-columns: repeat(13, max-content);
+    grid-template-rows: repeat(4, max-content);
+    gap:4px;
+    width:100vw;
+    max-width:100vw;
+    padding:8px 6px;
+    margin:0;
+    overflow-x:auto;
+    overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+    background:#111827;
+    border:none;
+    border-radius:0;
+  }
+  .modal-card {
+    width:48px;
+    height:66px;
+    border:1px solid #334155;
+    background:#0b1324;
+    display:grid;
+    place-items:center;
+    font-weight:700;
+    font-size:16px;
+    border-radius:8px;
+    box-sizing:border-box;
+  }
+  @media (max-width: 360px) {
+    .modal-card { width:44px; height:60px; font-size:15px; }
+  }
+  .modal-card.used { opacity:.3; pointer-events:none; filter:grayscale(.8); }
 }
-
-
-
-
